@@ -1,35 +1,46 @@
 
 module clima_types
-  use clima_const, only: dp
+  use clima_const, only: dp, s_str_len
+  use linear_interpolation_module, only: linear_interp_2d
   implicit none
   
+  !!!!!!!!!!!!!!!!
+  !!! Settings !!!
+  !!!!!!!!!!!!!!!!
+  type :: ClimaSettings
+    
+    
+  end type
+  
+  
+  
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !!! Optical Properties and thermodynamics !!!
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  
   type :: Ktable
-    integer :: ngauss  
-    integer :: npress
+    integer :: ngauss 
     integer :: ntemp
-    real(dp), allocatable :: kappa(:,:,:,:) ! (ngauss, npress, ntemp, nwav)
+    integer :: npress
+    integer :: nwav
     real(dp), allocatable :: weights(:) ! (ngauss)
+    real(dp), allocatable :: temp(:) ! (ntemp)
+    real(dp), allocatable :: press(:) ! (nwav)
+    type(linear_interp_2d), allocatable :: kappa(:,:) ! (ngauss, nwav)
   end type
   
   type :: ThermodynamicData
-    integer :: dtype ! shomate = 1
+    integer :: dtype
     integer :: ntemps
     real(dp), allocatable :: temps(:)
     real(dp), allocatable :: data(:,:)
   end type
   
-  type :: Atom
-    character(:), allocatable :: name
-    real(dp) :: mass
-  end type
-  
-  enum, bind(c)
-    enumerator :: KTableGas, BackgroundGas
-  end enum
+  !!!!!!!!!!!!!!!
+  !!! Species !!!
+  !!!!!!!!!!!!!!!
   
   type :: Species
-    integer :: type
-    
     character(:), allocatable :: name
     integer, allocatable :: composition(:) ! (natoms)
     real(dp) :: mass
@@ -37,23 +48,45 @@ module clima_types
     ! thermodynamics
     type(ThermodynamicData) :: thermo
     
-    ! Optical properties
-    type(Ktable), allocatable :: k_solar
-    type(Ktable), allocatable :: k_ir
-    
   end type
 
   type :: ClimaData
     
     integer :: natoms
-    type(Atom), allocatable :: atoms(:)
+    character(s_str_len), allocatable :: atoms_names(:)
+    real(dp), allocatable :: atoms_mass(:)
     
     integer :: ng
     type(Species), allocatable :: sp(:)
-        
+    
+    !!! Optical properties !!!
+    ! K-distribution
+    integer :: ng_k
+    type(Ktable), allocatable :: k_solar(:)
+    type(Ktable), allocatable :: k_ir(:)
+    integer, allocatable :: k_sp_inds(:)
+    ! Rayleigh Scattering
+    integer :: nray
+    real(dp), allocatable :: sigray(:,:) ! (nray, nw)
+    integer, allocatable :: ray_sp_inds(:) ! species number of rayleigh species
+    
   end type
-
-
-
-
+  
+  type :: ClimaVars
+    
+    character(:), allocatable :: data_dir
+    
+    
+    integer :: nz
+    
+    real(dp), allocatable :: mix(:)
+    
+    
+    
+  end type
+  
+  type :: ClimaWrk
+    ! work variables
+  end type
+  
 end module

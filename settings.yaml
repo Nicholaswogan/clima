@@ -1,0 +1,35 @@
+
+
+planet:
+  surface-pressure: 1.0 # bar
+  planet-mass: 5.972e27 # grams
+  planet-radius: 6.371e8 # cm. Radius to bottom of atmosphere-grid
+  surface-albedo: 0.25 # cm
+  diurnal-averaging-factor: 0.5
+  solar-zenith-angle: 50.0
+
+opacities:
+- name: H2O kdistribution
+  type: kdistribution
+  species: H2O
+  solar-filename: HITRAN2016_solar_H2O.dat
+  ir-filename: HITRAN2016_ir_H2O.dat
+- name: CO2 kdistribution
+  type: kdistribution
+  species: CO2
+  solar-filename: HITRAN2016_solar_CO2.dat
+  ir-filename: HITRAN2016_ir_CO2.dat
+- name: N2 Rayleigh
+  type: Rayleigh
+  species: "N2"
+- name: CO2 Rayleigh
+  type: Rayleigh
+  species: CO2
+- name: H2O Rayleigh
+  type: Rayleigh
+  species: H2O
+  
+mixing-ratios:
+  N2: 0.9
+  CO2:   
+  
