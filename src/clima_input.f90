@@ -1,14 +1,15 @@
 
 module clima_input
   use clima_const, only: dp
-  use clima_types, only: ClimaData, ClimaVars, Ktable
+  use clima_types, only: ClimaData, ClimaVars, Ktable, CIAtable
   implicit none
-  
+
 contains
   
-  function create_ktable(filename, wavenums, err) result(kt)
+  function create_ktable(filename, sp_ind, wavenums, err) result(kt)
     
     character(*) :: filename
+    integer, intent(in) :: sp_ind
     real(dp), intent(in) :: wavenums(:)
     character(:), allocatable, intent(out) :: err
     
@@ -87,26 +88,95 @@ contains
           if (allocated(read_err)) deallocate(read_err)
           allocate(character(3)::read_err)
           write(read_err,'(i3)') iflag
-          err = 'Failed to initialize 2d interpolator for "'//filename//'"'// &
+          err = 'Failed to initialize interpolator for "'//filename//'"'// &
                 '. Error code: '//read_err
           return
         endif
       enddo
     enddo
     
+    kt%sp_ind = sp_ind
+    
   end function
   
-  
-  ! function create_settings(err) result(s)
-  ! 
-  ! 
-  ! 
-  ! 
-  ! 
-  ! end function
-  
-  
-  
+  function create_CIAtable(filename, sp_inds, wavenums, err) result(cia)
+    
+    character(*) :: filename
+    integer, intent(in) :: sp_inds(2)
+    real(dp), intent(in) :: wavenums(:)
+    character(:), allocatable, intent(out) :: err
+    
+    type(CIAtable) :: cia
+    
+    integer :: i, j, io, iflag
+    character(:), allocatable :: read_err
+    real(dp), allocatable :: file_wavenums(:)
+    real(dp), allocatable :: coeffs(:,:)
+    real(dp) :: fval
+    
+    read_err = 'Failed to read "'//filename//'".'
+    
+    ! Ktables are unformatted binary files
+    open(unit=1, file=filename, form='unformatted', status='old', iostat=io)
+    if (io /= 0) then
+      err = 'Problem opening "'//filename//'".'
+      return
+    endif
+    
+    read(1,iostat=io) cia%ntemp
+    if (io /= 0) then; err = read_err; return; endif
+    read(1,iostat=io) cia%nwav
+    if (io /= 0) then; err = read_err; return; endif
+      
+    ! nwav must be equal
+    if (cia%nwav /= size(wavenums)-1) then
+      err = 'ktable "'//filename// &
+            '" has the wrong number of wavelength bins.'
+      return
+    endif
+
+    allocate(cia%temp(cia%ntemp))
+    read(1,iostat=io) cia%temp
+    if (io /= 0) then; err = read_err; return; endif
+    
+    allocate(file_wavenums(cia%nwav+1))
+    read(1,iostat=io) file_wavenums
+    if (io /= 0) then; err = read_err; return; endif
+      
+    ! wavenumber must be equal
+    if (.not. all(file_wavenums == wavenums)) then
+      err = 'ktable "'//filename// &
+            '" does not have the correct wavenumber bins.'
+      return
+    endif
+      
+    allocate(coeffs(cia%ntemp,cia%nwav))
+    read(1,iostat=io) coeffs
+    if (io /= 0) then; err = read_err; return; endif
+    
+    ! end of file should be reached
+    read(1,iostat=io) i
+    if (io /= -1) then; err = read_err; return; endif
+    
+    close(1)
+    
+    ! build interpolators
+    allocate(cia%kappa(cia%nwav))
+    do i = 1,cia%nwav
+      call cia%kappa(i)%initialize(cia%temp, coeffs(:,i), iflag)
+      if (iflag /= 0) then
+        if (allocated(read_err)) deallocate(read_err)
+        allocate(character(3)::read_err)
+        write(read_err,'(i3)') iflag
+        err = 'Failed to initialize interpolator for "'//filename//'"'// &
+              '. Error code: '//read_err
+        return
+      endif
+    enddo
+    
+    cia%sp_inds = sp_inds
+    
+  end function
   
   
 end module

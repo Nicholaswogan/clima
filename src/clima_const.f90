@@ -55,7 +55,6 @@ module clima_const
        1.0e4_dp/ir_wavenums(52), 1.0e4_dp/ir_wavenums(53), 1.0e4_dp/ir_wavenums(54), &
        1.0e4_dp/ir_wavenums(55), 1.0e4_dp/ir_wavenums(56)]
          
-
   ! Solar wavenumbers (1/cm)
   ! Note solar wavenumbers go the OPPOSITE direction than IR.
   integer, parameter :: n_sol = 38
