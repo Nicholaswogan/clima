@@ -5,6 +5,8 @@ program test_clima
   implicit none
   type(ktable) :: kt
   type(CIAtable) :: cia
+  type(ClimaSettings) :: s
+  type(ClimaData) :: dat
   character(:), allocatable :: err
   
   kt = create_ktable('../data/kdistributions/CO2_ir.dat', 0, ir_wavenums, err)
@@ -54,5 +56,18 @@ program test_clima
     print*,err
     stop 1
   endif
+  
+  s = create_ClimaSettings('../settings.yaml', err)
+  if (allocated(err)) then
+    print*,err
+    stop 1
+  endif
+  
+  dat = create_ClimaData('../species.yaml', s, err)
+  if (allocated(err)) then
+    print*,err
+    stop 1
+  endif
+  
   
 end program

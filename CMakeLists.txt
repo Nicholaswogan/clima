@@ -4,6 +4,12 @@ project(CLIMA LANGUAGES Fortran)
 
 set(CMAKE_Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 
+if ("${CMAKE_Fortran_COMPILER_ID}" MATCHES "GNU")
+  if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -Wunused")
+  endif()
+endif()
+
 # includes
 include(cmake/CPM.cmake)
 

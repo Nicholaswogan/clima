@@ -7,7 +7,19 @@ module clima_types
   !!!!!!!!!!!!!!!!
   !!! Settings !!!
   !!!!!!!!!!!!!!!!
+  
+  type :: SettingsOpacity
+    character(:), allocatable :: name
+    character(:), allocatable :: type
+    character(s_str_len), allocatable :: species(:)
+    character(:), allocatable :: solar_filename
+    character(:), allocatable :: ir_filename
+  end type
+  
   type :: ClimaSettings
+    
+    
+    type(SettingsOpacity), allocatable :: op(:)
     
   end type
 
@@ -23,8 +35,8 @@ module clima_types
     integer :: nwav
     real(dp), allocatable :: weights(:) ! (ngauss)
     real(dp), allocatable :: temp(:) ! (ntemp)
-    real(dp), allocatable :: press(:) ! (nwav)
-    type(linear_interp_2d), allocatable :: kappa(:,:) ! (ngauss, nwav)
+    real(dp), allocatable :: log10P(:) ! (nwav)
+    type(linear_interp_2d), allocatable :: log10kappa(:,:) ! (ngauss, nwav)
   end type
   
   type :: CIAtable
@@ -32,14 +44,38 @@ module clima_types
     integer :: ntemp
     integer :: nwav
     real(dp), allocatable :: temp(:) ! (ntemp)
-    type(linear_interp_1d), allocatable :: kappa(:) ! (nwav) ! [cm^-1*(cm^3/molecules)^-2]
+    type(linear_interp_1d), allocatable :: log10kappa(:) ! (nwav) ! [cm^-1*(cm^3/molecules)^-2]
+
   end type
   
-  type :: XsectionData
+  type :: Xsection
     integer :: sp_ind
     integer :: ntemp
     real(dp), allocatable :: temp(:) ! (ntemp)
-    real(dp), allocatable :: xs(:,:) ! (ntemp, nw)
+    ! if ntemp == 1, use xs
+    real(dp), allocatable :: xs(:) ! (nw) 
+    ! else, use xs_i
+    type(linear_interp_1d), allocatable :: xs_i(:) ! (nw) 
+  end type
+  
+  type :: OpticalProperties
+    integer :: nw
+    real(dp), allocatable :: wavenumbers(:)
+    
+    ! K-distributions (e.g. H2O)
+    integer :: nk
+    type(Ktable), allocatable :: k(:)
+    ! T-dependent CIA coefficients (e.g. H2-H2)
+    integer :: ncia
+    type(CIAtable), allocatable :: cia(:)
+    ! Cross sections (e.g. O3 photolysis)
+    integer :: nxs
+    type(Xsection), allocatable :: xs(:)
+    ! Rayleigh Scattering
+    integer :: nray
+    real(dp), allocatable :: sigray(:,:) ! (nray, nw)
+    integer, allocatable :: ray_sp_inds(:) ! species number of rayleigh species
+    
   end type
   
   !!!!!!!!!!!!!!!
@@ -73,25 +109,8 @@ module clima_types
     type(Species), allocatable :: sp(:)
     
     !!! Optical properties !!!
-    ! K-distributions (e.g. H2O)
-    integer :: nk_sol
-    type(Ktable), allocatable :: k_sol(:)
-    integer :: nk_ir
-    type(Ktable), allocatable :: k_ir(:)
-    ! T-dependent CIA coefficients (e.g. H2-H2)
-    integer :: ncia_sol
-    type(CIAtable), allocatable :: cia_sol(:)
-    integer :: ncia_ir
-    type(CIAtable), allocatable :: cia_ir(:)
-    ! Cross sections (e.g. O3 photolysis)
-    integer :: nxs_sol
-    type(XsectionData), allocatable :: xs_sol(:)
-    integer :: nxs_ir
-    type(XsectionData), allocatable :: xs_ir(:)
-    ! Rayleigh Scattering
-    integer :: nray
-    real(dp), allocatable :: sigray(:,:) ! (nray, nw)
-    integer, allocatable :: ray_sp_inds(:) ! species number of rayleigh species
+    type(OpticalProperties) :: sol
+    type(OpticalProperties) :: ir
     
   end type
   
