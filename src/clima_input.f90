@@ -1,7 +1,8 @@
 
 module clima_input
   use clima_const, only: dp
-  use clima_types, only: ClimaData, ClimaVars, Ktable, CIAtable, ClimaSettings
+  use clima_types, only: ClimaData, ClimaVars, Ktable, CIAtable, Xsection, &
+                         ClimaSettings, OpticalProperties, SettingsOpacity, Species
   
   use yaml_types, only : type_node, type_dictionary, type_list, type_error, &
                          type_list_item, type_scalar, type_key_value_pair
@@ -10,20 +11,28 @@ module clima_input
 contains
   
   
-  function create_ClimaData(spfile, s, err) result(dat)
+  function create_ClimaData(spfile, datadir, s, err) result(dat)
+    use clima_const, only: sol_wavenums, ir_wavenums
+    use clima_types, only: SolarOpticalProperties, IROpticalProperties
     character(*), intent(in) :: spfile
+    character(*), intent(in) :: datadir
     type(ClimaSettings), intent(in) :: s
     character(:), allocatable, intent(out) :: err
     
     type(ClimaData) :: dat
     
-    ! reads species yaml file
+    ! Reads species yaml file
     call read_speciesfile(spfile, dat, err)
     if (allocated(err)) return
     
+    ! Opacities
+    dat%sol = create_OpticalProperties(datadir, SolarOpticalProperties, sol_wavenums, dat%species_names, s%op, err)
+    if (allocated(err)) return
+    
+    dat%ir = create_OpticalProperties(datadir, IROpticalProperties, ir_wavenums, dat%species_names, s%op, err)
+    if (allocated(err)) return
+
     ! other stuff
-    
-    
   end function
   
   subroutine read_speciesfile(filename, dat, err)
@@ -58,11 +67,13 @@ contains
     type(ClimaData), intent(inout) :: dat
     character(:), allocatable, intent(out) :: err
     
-    type (type_list), pointer :: atoms, species
-    type (type_list_item), pointer :: item
-    type (type_error), allocatable :: io_err
+    type(type_list), pointer :: atoms, species
+    type(type_dictionary), pointer :: dict
+    type(type_key_value_pair), pointer :: key_value_pair
+    type(type_list_item), pointer :: item
+    type(type_error), allocatable :: io_err
 
-    integer :: j
+    integer :: i, j, ind
 
     !!! atoms !!!
     atoms => root%get_list('atoms',.true.,error = io_err)
@@ -82,7 +93,7 @@ contains
         dat%atoms_mass(j) = element%get_real("mass",error = io_err)
         if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
       class default
-        err = 'atoms in "'//trim(filename)//'" must made of dictionaries.'
+        err = '"atoms" in "'//trim(filename)//'" must made of dictionaries.'
         return 
       end select
       j = j + 1
@@ -95,15 +106,62 @@ contains
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
       
     dat%ng = species%size()
-        
+    allocate(dat%species_names(dat%ng))
+    allocate(dat%sp(dat%ng))
+    do j = 1,dat%ng
+      allocate(dat%sp(j)%composition(dat%natoms))
+      dat%sp(j)%composition = 0
+    enddo
     
+    j = 1
+    item => species%first
+    do while(associated(item))
+      select type (element => item%node)
+      class is (type_dictionary)
+        ! name
+        dat%sp(j)%name = trim(element%get_string("name",error = io_err))
+        if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+        dat%species_names(j) = dat%sp(j)%name
+        
+        ! composition
+        dict => element%get_dictionary("composition",.true.,error = io_err)
+        if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+        key_value_pair => dict%first
+        do while (associated(key_value_pair))
+          ind = findloc(dat%atoms_names,trim(key_value_pair%key), 1)
+          if (ind == 0) then
+            err = 'The atom "'// trim(key_value_pair%key)//'" in species "'// &
+                  dat%sp(j)%name//'" is not in the list of atoms.'
+            return
+          endif
+          key_value_pair =>key_value_pair%next
+        enddo
+        do i=1,dat%natoms
+          dat%sp(j)%composition(i) =  &
+              dict%get_integer(dat%atoms_names(i), default = 0, error = io_err)
+          if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+        enddo
+        
+        ! mass
+        dat%sp(j)%mass = sum(dat%sp(j)%composition*dat%atoms_mass)
+        
+        ! thermodynamics
+        call unpack_thermo(element, dat%sp(j)%name, filename, dat%sp(j)%thermo, err)
+        if (allocated(err)) return
+        
+      class default
+        err = '"species" in "'//trim(filename)//'" must made of dictionaries.'
+        return 
+      end select
+      j = j + 1
+      item => item%next
+    enddo
     !!! done with species !!!
     
     
   end subroutine
   
-  subroutine get_thermodata(molecule, molecule_name, infile, &
-                            thermo, err)
+  subroutine unpack_thermo(molecule, molecule_name, infile, thermo, err)
     use clima_types, only: ThermodynamicData
     class(type_dictionary), intent(in) :: molecule
     character(len=*), intent(in) :: molecule_name
@@ -221,6 +279,156 @@ contains
                             
   end subroutine
   
+  
+  function create_OpticalProperties(datadir, optype, wavenums, species_names, sop, err) result(op)
+    character(*), intent(in) :: datadir
+    integer, intent(in) :: optype
+    real(dp), intent(in) :: wavenums(:)
+    character(*), intent(in) :: species_names(:)
+    type(SettingsOpacity), intent(in) :: sop(:)
+    character(:), allocatable, intent(out) :: err
+    
+    type(OpticalProperties) :: op
+    
+    character(:), allocatable :: filename
+    integer :: i, j, ind1, ind2
+    
+    op%type = optype
+    
+    ! wavenums
+    op%nw = size(wavenums)-1
+    op%wavenums = wavenums
+    
+    ! count different types of optical properties
+    op%nk = 0
+    op%ncia = 0
+    op%nxs = 0
+    op%nray = 0
+    do i = 1,size(sop)
+      select case (sop(i)%type)
+      case("kdistribution")
+        op%nk = op%nk + count_opfilename(sop(i), optype)
+      case("CIA")
+        op%ncia = op%ncia + count_opfilename(sop(i), optype)
+      case("xsection")
+        op%nxs = op%nxs + count_opfilename(sop(i), optype)
+      case("rayleigh")
+        op%nray = op%nray + 1
+      end select
+    enddo
+    
+    ! allocate
+    allocate(op%k(op%nk))
+    allocate(op%cia(op%ncia))
+    allocate(op%xs(op%nxs))
+    allocate(op%sigray(op%nray,op%nw))
+    allocate(op%ray_sp_inds(op%nray))
+    
+    ! get optical properties
+    op%nk = 0
+    op%ncia = 0
+    op%nxs = 0
+    op%nray = 0
+    do i = 1,size(sop)
+      select case (sop(i)%type)
+      case("kdistribution")
+        j = count_opfilename(sop(i), optype)
+        op%nk = op%nk + j
+        if (j == 1) then ! if there is data to read
+          filename = get_opfilename(sop(i), optype)
+          filename = datadir//"/kdistributions/"//filename
+          ind1 = findloc(species_names, sop(i)%species(1), 1)
+          if (ind1 == 0) then
+            err = 'Species "'//trim(sop(i)%species(1))//'" in optical property "'// &
+                  sop(i)%name//'" is not in the list of species.'
+            return
+          endif
+          op%k(op%nk) = create_ktable(filename, ind1, op%wavenums, err)
+          if (allocated(err)) return
+        endif
+      case("CIA")
+        j = count_opfilename(sop(i), optype)
+        op%ncia = op%ncia + j
+        if (j == 1) then ! if there is data to read
+          filename = get_opfilename(sop(i), optype)
+          filename = datadir//"/CIA/"//filename
+          ind1 = findloc(species_names, sop(i)%species(1), 1)
+          if (ind1 == 0) then
+            err = 'Species "'//trim(sop(i)%species(1))//'" in optical property "'// &
+                  sop(i)%name//'" is not in the list of species.'
+            return
+          endif
+          ind2 = findloc(species_names, sop(i)%species(2), 1)
+          if (ind2 == 0) then
+            err = 'Species "'//trim(sop(i)%species(2))//'" in optical property "'// &
+                  sop(i)%name//'" is not in the list of species.'
+            return
+          endif
+          op%cia(op%ncia) = create_CIAtable(filename, [ind1,ind2], op%wavenums, err)
+          if (allocated(err)) return
+        endif
+      case("xsection")
+        j = count_opfilename(sop(i), optype)
+        op%nxs = op%nxs + j
+        if (j == 1) then ! if there is data to read
+          filename = get_opfilename(sop(i), optype)
+          filename = datadir//"/xsections/"//filename
+          ind1 = findloc(species_names, sop(i)%species(1), 1)
+          if (ind1 == 0) then
+            err = 'Species "'//trim(sop(i)%species(1))//'" in optical property "'// &
+                  sop(i)%name//'" is not in the list of species.'
+            return
+          endif
+          
+          op%xs(op%nxs) = create_Xsection(filename, ind1, op%wavenums, err)
+          if (allocated(err)) return
+        endif
+      case("rayleigh")
+        op%nray = op%nray + 1
+        
+        ind1 = findloc(species_names, sop(i)%species(1), 1)
+        if (ind1 == 0) then
+          err = 'Species "'//trim(sop(i)%species(1))//'" in optical property "'// &
+                sop(i)%name//'" is not in the list of species.'
+          return
+        endif
+        
+        op%ray_sp_inds(op%nray) = ind1
+        
+        ! get rayleigh data
+      end select
+    enddo
+    
+    
+  end function
+  
+  function count_opfilename(sop, optype) result(i)
+    use clima_types, only: SolarOpticalProperties, IROpticalProperties
+    type(SettingsOpacity), intent(in) :: sop
+    integer, intent(in) :: optype
+    integer :: i
+    i = 0
+    if (optype == SolarOpticalProperties .and. allocated(sop%solar_filename)) then
+      i = 1
+    elseif (optype == IROpticalProperties .and. allocated(sop%ir_filename)) then
+      i = 1
+    endif 
+  end function
+  
+  function get_opfilename(sop, optype) result(filename)
+    use clima_types, only: SolarOpticalProperties, IROpticalProperties
+    type(SettingsOpacity), intent(in) :: sop
+    integer, intent(in) :: optype
+    
+    character(:), allocatable :: filename
+    
+    if (optype == SolarOpticalProperties .and. allocated(sop%solar_filename)) then
+      filename = sop%solar_filename
+    elseif (optype == IROpticalProperties .and. allocated(sop%ir_filename)) then
+      filename = sop%ir_filename
+    endif 
+  
+  end function
   
   
   function create_ktable(filename, sp_ind, wavenums, err) result(kt)
@@ -396,7 +604,42 @@ contains
     
   end function
   
-  
+  function create_Xsection(filename, sp_ind, wavenums, err) result(xs)
+    character(*), intent(in) :: filename
+    integer, intent(in) :: sp_ind
+    real(dp), intent(in) :: wavenums(:)
+    character(:), allocatable, intent(out) :: err
+    
+    type(Xsection) :: xs
+    
+    integer :: i, io, iflag
+    character(:), allocatable :: read_err
+    real(dp), allocatable :: file_wavenums(:)
+    real(dp), allocatable :: coeffs(:,:)
+    
+    read_err = 'Failed to read "'//filename//'".'
+    
+    ! Ktables are unformatted binary files
+    open(unit=1, file=filename, form='formatted', status='old', iostat=io)
+    if (io /= 0) then
+      err = 'Problem opening "'//filename//'".'
+      return
+    endif
+      
+      
+      
+    
+    
+    close(1)
+    
+    
+    
+    xs%sp_ind = sp_ind
+    
+    
+    
+  end function
+
   function create_ClimaSettings(filename, err) result(s)
     use fortran_yaml_c, only : parse, error_length
     character(*), intent(in) :: filename
@@ -463,6 +706,7 @@ contains
           s%op(i)%solar_filename = trim(e%get_string("solar-filename",error = io_err))
           if (allocated(io_err)) then
             deallocate(io_err)
+            deallocate(s%op(i)%solar_filename)
           else
             present = .true. 
           endif
@@ -470,6 +714,7 @@ contains
           s%op(i)%ir_filename = trim(e%get_string("ir-filename",error = io_err))
           if (allocated(io_err)) then
             deallocate(io_err)
+            deallocate(s%op(i)%ir_filename)
           else
             present = .true. 
           endif

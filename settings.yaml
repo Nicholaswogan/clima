@@ -17,7 +17,6 @@ opacities:
   species: H2O
   solar-filename: H2O_solar.dat
   ir-filename: H2O_ir.dat
-  
 - name: CO2 kdistribution
   type: kdistribution
   species: CO2
@@ -33,8 +32,8 @@ opacities:
 # xsections
 - name: O3 photolysis
   type: xsection
-  species: "O2"
-  ir-filename: O3_xs.txt
+  species: "O3"
+  solar-filename: O3_xs.txt
   
 # Rayleigh scattering
 - name: N2 Rayleigh
@@ -46,6 +45,9 @@ opacities:
 - name: H2O Rayleigh
   type: rayleigh
   species: H2O
+  
+
+
   
 
   

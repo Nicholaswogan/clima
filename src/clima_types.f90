@@ -18,7 +18,6 @@ module clima_types
   
   type :: ClimaSettings
     
-    
     type(SettingsOpacity), allocatable :: op(:)
     
   end type
@@ -58,9 +57,14 @@ module clima_types
     type(linear_interp_1d), allocatable :: xs_i(:) ! (nw) 
   end type
   
+  enum, bind(c)
+    enumerator :: SolarOpticalProperties, IROpticalProperties
+  end enum
+  
   type :: OpticalProperties
+    integer :: type
     integer :: nw
-    real(dp), allocatable :: wavenumbers(:)
+    real(dp), allocatable :: wavenums(:)
     
     ! K-distributions (e.g. H2O)
     integer :: nk
@@ -106,6 +110,7 @@ module clima_types
     real(dp), allocatable :: atoms_mass(:)
     
     integer :: ng
+    character(s_str_len), allocatable :: species_names(:) ! copy of species name
     type(Species), allocatable :: sp(:)
     
     !!! Optical properties !!!
