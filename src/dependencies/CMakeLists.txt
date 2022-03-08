@@ -8,6 +8,23 @@ CPMAddPackage(
   EXCLUDE_FROM_ALL ON
 )
 
+# h5fortran
+CPMAddPackage(
+  NAME h5fortran
+  VERSION 4.4.4
+  GITHUB_REPOSITORY "geospace-code/h5fortran"
+  GIT_TAG "v4.4.4"
+  EXCLUDE_FROM_ALL ON
+)
+
+# futils
+CPMAddPackage(
+  NAME futils
+  VERSION 0.1.0
+  URL "https://github.com/Nicholaswogan/futils/archive/5a8a0b3ff82f1b851ffaa7d5da50584afe2d9866.zip"
+  EXCLUDE_FROM_ALL ON
+)
+
 # finterp
 CPMAddPackage(
   NAME finterp

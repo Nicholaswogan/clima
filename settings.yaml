@@ -9,42 +9,15 @@ planet:
   surface-albedo: 0.25 # cm
   diurnal-averaging-factor: 0.5
   solar-zenith-angle: 50.0
-
+  
 opacities:
-# kdistributions
-- name: H2O kdistribution
-  type: kdistribution
-  species: H2O
-  solar-filename: H2O_solar.dat
-  ir-filename: H2O_ir.dat
-- name: CO2 kdistribution
-  type: kdistribution
-  species: CO2
-  solar-filename: CO2_solar.dat
-  ir-filename: CO2_ir.dat
+  k-distributions: [H2O, CO2]
+  CIA: [CO2-CO2]
+  rayleigh: [N2, CO2]
+  # absorption-xs: [O2]
+  photolysis-xs: [O3]
   
-# CIA
-- name: CO2-CO2 CIA
-  type: CIA
-  species: [CO2, CO2]
-  ir-filename: CO2_CO2_CIA_ir.dat
   
-# xsections
-- name: O3 photolysis
-  type: xsection
-  species: "O3"
-  solar-filename: O3_xs.txt
-  
-# Rayleigh scattering
-- name: N2 Rayleigh
-  type: rayleigh
-  species: "N2"
-- name: CO2 Rayleigh
-  type: rayleigh
-  species: CO2
-- name: H2O Rayleigh
-  type: rayleigh
-  species: H2O
   
 
 

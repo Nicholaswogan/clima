@@ -31,14 +31,28 @@ We can add to the PDE describing temperature change, and put in quasi-realistic 
 
 Clima uses lots of cross sections. For example, H2-H2 CIA is cross section I think. Also Rayleigh scattering is a cross section.
 
-Also, Clima computes and interpolates this cross sections (and tau's) way more times than is necessary. It does it inside of the correlated-k loops. These calculations can happen before correlaed-k loops.
+Also, Clima computes and interpolates this cross sections (and tau's) way more times than is necessary. It does it inside of the correlated-k loops. These calculations can happen before correlated-k loops.
 
-We have 4 types of opacities so far
+To allow easier coupling with photochem, it might make sense to have the following.
 
+One type of line opacity approximation:
 - kdistributions
-- xsections
+
+Different types of assumed continuum opacities:
 - CIA
 - Rayleigh
+- photolysis xsections
+- absorption xsections
+
+For climate modeling only, there is no difference between photolysis and absorption cross sections. But distinguishing will make things easier for integration with photochemical modeling.
+
+0-D, 1-D data will have two file types: ".txt" and ".dat". We will assume .txt is a text file, and that .dat is a fortran binary file. .txt will use photochem convention. We will make new convention for .dat.
+
+2-D (xs as a function of lambda, T, P) data will only be binary: ".dat". Too confusing!
+
+
+
+
 
 
 
