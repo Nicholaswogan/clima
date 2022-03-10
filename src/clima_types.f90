@@ -5,6 +5,16 @@ module clima_types
   implicit none
   public
   
+  ! type :: CondensationRate
+  !   real(dp) :: A
+  !   real(dp) :: rhc
+  !   real(dp) :: rh0
+  ! end type
+  ! 
+  ! type :: BoundaryCondition
+  !   integer :: bc_type
+  ! end type
+  
   !!!!!!!!!!!!!!!!
   !!! Settings !!!
   !!!!!!!!!!!!!!!!
@@ -19,7 +29,6 @@ module clima_types
   end type
   
   type :: ClimaSettings
-    
     type(SettingsOpacity) :: op
     
   end type
@@ -33,6 +42,11 @@ module clima_types
   ! **`Xsection`** is a continuum opacity source There are 4 types (CIA, Rayleigh,
   ! Photolysis, Absorption), and can be grids, which are interpolated over 
   ! constant (no interpolation), or T or T and log10P.
+  
+  type :: Kcoefficients
+    integer :: ngauss
+    real(dp), allocatable :: k(:,:) ! (nz, ngauss)
+  end type
   
   type :: Ktable
     integer :: sp_ind
@@ -71,7 +85,7 @@ module clima_types
   type :: OpticalProperties
     integer :: op_type
     integer :: nw
-    real(dp), allocatable :: wavenums(:)
+    real(dp), allocatable :: wavl(:)
     
     ! K-distributions (e.g. H2O)
     integer :: nk
@@ -102,7 +116,12 @@ module clima_types
     real(dp), allocatable :: data(:,:)
   end type
   
+  ! enum, bind(c)
+  !   enumerator :: CondensingGas, FixedGas, BackgroundGas
+  ! end enum
+  
   type :: Species
+    ! integer :: sp_type
     character(:), allocatable :: name
     integer, allocatable :: composition(:) ! (natoms)
     real(dp) :: mass
@@ -111,16 +130,18 @@ module clima_types
     type(ThermodynamicData) :: thermo
     
   end type
-
+  
   type :: ClimaData
+    
+    character(:), allocatable :: data_dir
     
     integer :: natoms
     character(s_str_len), allocatable :: atoms_names(:)
     real(dp), allocatable :: atoms_mass(:)
     
     integer :: ng
-    character(s_str_len), allocatable :: species_names(:) ! copy of species name
-    type(Species), allocatable :: sp(:)
+    character(s_str_len), allocatable :: species_names(:) ! (ng) copy of species name
+    type(Species), allocatable :: sp(:) ! (ng)
     
     !!! Optical properties !!!
     type(OpticalProperties) :: sol
@@ -130,9 +151,21 @@ module clima_types
   
   type :: ClimaVars
     
-    character(:), allocatable :: data_dir
     integer :: nz
-    real(dp), allocatable :: mix(:)
+    real(dp), allocatable :: z(:) ! (nz) cm
+    real(dp), allocatable :: dz(:) ! (nz) cm
+    real(dp), allocatable :: T(:) ! (nz) K
+    real(dp), allocatable :: P(:) ! (nz) bars
+    real(dp), allocatable :: mix(:,:) ! (nz,ng) mixing ratios
+    ! not read in
+    real(dp), allocatable :: density(:) ! (nz) molecules/cm3
+    real(dp), allocatable :: densities(:,:) ! (nz,ng) molecules/cm3
+    
+    real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2 in each bin
+    
+    ! type(CondensationRate), allocatable :: con(:) !(ncg)
+    ! type(BoundaryCondition), allocatable :: lbc(:) !(ncg)
+    ! type(BoundaryCondition), allocatable :: ubc(:) !(ncg)
   
   end type
   

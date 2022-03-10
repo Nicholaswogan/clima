@@ -21,7 +21,7 @@ CPMAddPackage(
 CPMAddPackage(
   NAME futils
   VERSION 0.1.0
-  URL "https://github.com/Nicholaswogan/futils/archive/5a8a0b3ff82f1b851ffaa7d5da50584afe2d9866.zip"
+  URL "https://github.com/Nicholaswogan/futils/archive/8f0705fccabeac549975c0d42999a0454c43032f.zip"
   EXCLUDE_FROM_ALL ON
 )
 

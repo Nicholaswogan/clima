@@ -1,10 +1,10 @@
 
 
-We might have 3 read-infiles
+We might have 4 read-infiles
 
 **species.yaml**
 
-Stuff that never changes
+Stuff that almost never changes
 
 - Species and atoms in the atmosphere, and their thermodynamic properties.
 
@@ -14,11 +14,16 @@ Stuff that might change
 
 - Planet parameters (gravity, etc.). What do to with water.
 - opacities (k coeffs, rayleigh, ...)
-- mixing ratios???
+- boundary conditions (species types, and BC types)
 
 **star.txt**
 
 - ascii file of solar flux
+
+**atmosphere.txt**
+
+- ascii file of initial atmospheric composition, and temperature.
+
 
 
 # convection
@@ -51,7 +56,19 @@ For climate modeling only, there is no difference between photolysis and absorpt
 2-D (xs as a function of lambda, T, P) data will only be binary: ".dat". Too confusing!
 
 
+# Species types
 
+Three different species types
+- background filler gas
+- fixed mixing ratio (fixed as a function of altitude)
+- condensing gas (has boundary conditions)
+
+default is fixed mixing ratio
+
+Condensing gas + Temperature evolves through time.
+
+
+Next the goal is to compute the heating rates. Given T, P, mixing ratio profile
 
 
 

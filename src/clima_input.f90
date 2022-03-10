@@ -1,14 +1,215 @@
 
 module clima_input
-  use clima_const, only: dp
-  use clima_types
-  
+  use clima_const, only: dp, s_str_len
+  use clima_types, only: ClimaSettings, ClimaData, ClimaVars
   use yaml_types, only : type_node, type_dictionary, type_list, type_error, &
                          type_list_item, type_scalar, type_key_value_pair
   implicit none
 
 contains
   
+  function create_ClimaVars(atm_file, star_file, dat, err) result(v)
+    use clima_const, only: n_sol, sol_wavl
+    character(*), intent(in) :: atm_file
+    character(*), intent(in) :: star_file
+    type(ClimaData), intent(in) :: dat
+    character(:), allocatable, intent(out) :: err
+    
+    type(ClimaVars) :: v
+    
+    call read_atmosphere_txt(atm_file, dat, v, err)
+    if (allocated(err)) return
+    
+    allocate(v%photons_sol(n_sol))
+    call read_stellar_flux(star_file, n_sol, sol_wavl, v%photons_sol, err)
+    if (allocated(err)) return
+    
+  end function
+  
+  subroutine read_atmosphere_txt(atm_file, dat, v, err)
+    character(*), intent(in) :: atm_file
+    type(ClimaData), intent(in) :: dat
+    type(ClimaVars), intent(inout) :: v
+    character(:), allocatable, intent(out) :: err
+    
+    character(len=10000) :: line
+    character(len=s_str_len) :: arr1(1000)
+    character(len=s_str_len) :: arr11(1000)
+    character(len=s_str_len),allocatable, dimension(:) :: labels
+    real(dp), allocatable :: temp(:,:)
+    integer :: io, n, nn, i, ii, ind, ind1
+    
+    open(4, file=trim(atm_file),status='old',iostat=io)
+    if (io /= 0) then
+      err = 'Can not open file '//trim(atm_file)
+      return
+    endif
+    read(4,'(A)') line
+    
+    v%nz = -1
+    io = 0
+    do while (io == 0)
+      read(4,*,iostat=io)
+      v%nz = v%nz + 1
+    enddo
+    
+    allocate(v%z(v%nz))
+    allocate(v%dz(v%nz))
+    allocate(v%T(v%nz))
+    allocate(v%P(v%nz))
+    allocate(v%mix(v%nz,dat%ng))
+    
+    rewind(4)
+    read(4,'(A)') line
+    n = 0
+    nn = 0
+    do i=1,1000
+      read(line,*,iostat=io) arr1(1:i)
+      if (io==-1) exit
+      n = n+1
+    enddo
+    read(4,'(A)') line
+    do i=1,1000
+      read(line,*,iostat=io) arr11(1:i)
+      if (io==-1) exit
+      nn = nn+1
+    enddo
+    if (n /= nn) then
+      err = 'There is a missing column label in the file '//trim(atm_file)
+      return
+    endif
+    
+    allocate(labels(n))
+    allocate(temp(n,v%nz))
+    rewind(4)
+    
+    ! read labels
+    read(4,'(A)') line
+    read(line,*) (labels(i),i=1,n)
+    
+    ! First read in all the data into big array
+    do i = 1,v%nz
+      read(4,*,iostat=io) (temp(ii,i),ii=1,n)
+      if (io /= 0) then
+        err = 'Problem reading in initial atmosphere in "'//trim(atm_file)//'"'
+        return
+      endif
+    enddo
+    close(4)
+    
+    do i=1,dat%ng
+      ind = findloc(labels,dat%species_names(i), 1)
+      if (ind /= 0) then
+        v%mix(:,i) = temp(ind,:)
+      else
+        err = 'Species "'//trim(dat%species_names(i))//'" was not found in "'// &
+              trim(atm_file)//'"'
+        return
+      endif
+    enddo
+    
+    ! check mix sums to 1
+    do i = 1,v%nz
+      if (.not. is_close(sum(v%mix(i,:)), 1.0_dp)) then
+        err = 'mixing ratios do not sum to close to 1 in "'//trim(atm_file)//'"'
+      endif
+    enddo
+    
+    ind = findloc(labels,'alt-low',1)
+    ind1 = findloc(labels,'alt-high',1)
+    if (ind /= 0 .and. ind1 /= 0) then
+      v%dz = (temp(ind1,:) - temp(ind,:))*1.0e5_dp
+      v%z = (temp(ind1,:) + temp(ind,:))*0.5_dp*1.0e5_dp
+    else
+      err = '"alt-low" or "alt-high" was not found in input file "'//trim(atm_file)//'"'
+      return
+    endif
+    
+    ind = findloc(labels,'temp',1)
+    if (ind /= 0) then
+      v%T = temp(ind,:)
+    else
+      err = '"temp" was not found in input file "'//trim(atm_file)//'"'
+      return
+    endif
+    
+    ind = findloc(labels,'press',1)
+    if (ind /= 0) then
+      v%P = temp(ind,:)
+    else
+      err = '"press" was not found in input file "'//trim(atm_file)//'"'
+      return
+    endif
+    
+  end subroutine
+  
+  subroutine read_stellar_flux(star_file, nw, wavl, photon_flux, err)
+    use futils, only: inter2, addpnt
+    use clima_const, only: c_light, plank
+    
+    character(len=*), intent(in) :: star_file
+    integer, intent(in) :: nw
+    real(dp), intent(in) :: wavl(nw+1)
+    real(dp), intent(out) :: photon_flux(nw)
+    character(:), allocatable, intent(out) :: err
+    
+    real(dp), allocatable :: file_wav(:), file_flux(:)
+    real(dp) :: flux(nw)
+    real(dp) :: dum1, dum2
+    integer :: io, i, n, ierr
+    real(dp), parameter :: rdelta = 1.0e-4_dp
+    
+    open(1,file=star_file,status='old',iostat=io)
+    if (io /= 0) then
+      err = "The input file "//star_file//' does not exist.'
+      return
+    endif
+    
+    ! count lines
+    n = -1 
+    read(1,*)
+    do while (io == 0)
+      read(1,*,iostat=io) dum1, dum2
+      n = n + 1
+    enddo
+    
+    allocate(file_wav(n+4), file_flux(n+4))
+    
+    ! read data
+    rewind(1)
+    read(1,*)
+    do i = 1,n
+      read(1,*,iostat=io) file_wav(i), file_flux(i)
+      if (io /= 0) then
+        err = "Problem reading "//star_file
+        return
+      endif
+    enddo
+    close(1)
+    
+    i = n
+    ! interpolate 
+    call addpnt(file_wav, file_flux, n+4, i, file_wav(1)*(1.0_dp-rdelta), 0.0_dp, ierr)
+    call addpnt(file_wav, file_flux, n+4, i, 0.0_dp, 0.0_dp, ierr)
+    call addpnt(file_wav, file_flux, n+4, i, file_wav(i)*(1.0_dp+rdelta), 0.0_dp,ierr)
+    call addpnt(file_wav, file_flux, n+4, i, huge(rdelta), 0.0_dp,ierr)
+    if (ierr /= 0) then
+      err = "Problem interpolating "//trim(star_file)
+      return
+    endif
+
+    call inter2(nw+1, wavl, flux, n+4, file_wav, file_flux, ierr)
+    if (ierr /= 0) then
+      err = "Problem interpolating "//trim(star_file)
+      return
+    endif
+    
+    ! compute mW/m2 in each bin
+    do i = 1,nw
+      photon_flux(i) = flux(i)*(wavl(i+1)-wavl(i))
+    enddo
+
+  end subroutine
   
   function create_ClimaData(spfile, datadir, s, err) result(dat)
     use clima_const, only: sol_wavl, ir_wavl
@@ -21,7 +222,7 @@ contains
     type(ClimaData) :: dat
     
     ! Reads species yaml file
-    call read_speciesfile(spfile, dat, err)
+    call read_speciesfile(spfile, s, dat, err)
     if (allocated(err)) return
     
     dat%sol = create_OpticalProperties(datadir, SolarOpticalProperties,&
@@ -36,9 +237,10 @@ contains
     ! other stuff
   end function
   
-  subroutine read_speciesfile(filename, dat, err)
+  subroutine read_speciesfile(filename, s, dat, err)
     use fortran_yaml_c, only: parse, error_length
     character(*), intent(in) :: filename
+    type(ClimaSettings), intent(in) :: s
     type(ClimaData), intent(inout) :: dat
     character(:), allocatable, intent(out) :: err
     
@@ -52,7 +254,7 @@ contains
     end if
     select type (root)
       class is (type_dictionary)
-        call unpack_speciesfile(root, filename, dat, err)
+        call unpack_speciesfile(root, s, filename, dat, err)
       class default
         err = 'yaml file "'//filename//'" must have dictionaries at the root level.'
     end select
@@ -62,9 +264,10 @@ contains
     
   end subroutine
   
-  subroutine unpack_speciesfile(root, filename, dat, err)
+  subroutine unpack_speciesfile(root, s, filename, dat, err)
     type(type_dictionary), pointer :: root
     character(*), intent(in) :: filename
+    type(ClimaSettings), intent(in) :: s
     type(ClimaData), intent(inout) :: dat
     character(:), allocatable, intent(out) :: err
     
@@ -281,6 +484,8 @@ contains
   end subroutine
   
   function create_OpticalProperties(datadir, optype, wavl, species_names, sop, err) result(op)
+    use fortran_yaml_c, only : parse, error_length
+    use clima_types, only: OpticalProperties, SettingsOpacity
     character(*), intent(in) :: datadir
     integer, intent(in) :: optype
     real(dp), intent(in) :: wavl(:)
@@ -292,7 +497,18 @@ contains
     
     character(:), allocatable :: filename
     integer :: i, j, ind1, ind2
+    character(error_length) :: error
+    class(type_node), pointer :: root
+    class(type_dictionary), pointer :: root_dict
     
+    op%op_type = optype
+    op%nw = size(wavl) - 1
+    allocate(op%wavl(size(wavl)))
+    op%wavl = wavl
+    
+    !!!!!!!!!!!!!!!!!!!!!!!
+    !!! k-distributions !!!
+    !!!!!!!!!!!!!!!!!!!!!!!
     op%nk = size(sop%k_distributions)
     allocate(op%k(op%nk))
     
@@ -308,71 +524,173 @@ contains
       if (allocated(err)) return
     enddo
     
-    op%ncia = size(sop%cia)
-    allocate(op%cia(op%ncia))
+    !!!!!!!!!!!
+    !!! CIA !!!
+    !!!!!!!!!!!
+    if (allocated(sop%cia)) then
+      op%ncia = size(sop%cia)
+      allocate(op%cia(op%ncia))
+      
+      do i = 1,op%ncia
+        
+        j = index(sop%cia(i), "-")
+        if (j == 0) then
+          err = 'missing "-" in CIA species "'//trim(sop%cia(i))//'"'
+          return
+        endif
+        ind1 = findloc(species_names, trim(sop%cia(i)(1:j-1)), 1)
+        ind2 = findloc(species_names, trim(sop%cia(i)(j+1:)), 1)
+        if (ind1 == 0) then
+          err = 'Species "'//trim(sop%cia(i)(1:j-1))//'" in optical property '// &
+                '"CIA" is not in the list of species.'
+          return
+        endif
+        if (ind2 == 0) then
+          err = 'Species "'//trim(sop%cia(i)(j+1:))//'" in optical property '// &
+                '"CIA" is not in the list of species.'
+          return
+        endif
+        
+        filename = datadir//"/CIA/"//trim(sop%cia(i))//".h5"
+        op%cia(i) = create_CIAXsection(filename, [ind1, ind2], wavl, err)
+        if (allocated(err)) return
+        
+      enddo
+    else
+      op%ncia = 0
+    endif
     
-    do i = 1,op%ncia
-      
-      j = index(sop%cia(i), "-")
-      if (j == 0) then
-        err = 'missing "-" in CIA species "'//trim(sop%cia(i))//'"'
+    !!!!!!!!!!!!!!!!
+    !!! Rayleigh !!!
+    !!!!!!!!!!!!!!!!
+    if (allocated(sop%rayleigh)) then
+      op%nray = size(sop%rayleigh)
+      allocate(op%ray(op%nray)) 
+      filename = datadir//"/rayleigh/rayleigh.yaml"
+      root => parse(filename, error=error)
+      if (len_trim(error) /= 0) then
+        err = trim(error)
         return
-      endif
-      ind1 = findloc(species_names, trim(sop%cia(i)(1:j-1)), 1)
-      ind2 = findloc(species_names, trim(sop%cia(i)(j+1:)), 1)
-      if (ind1 == 0) then
-        err = 'Species "'//trim(sop%cia(i)(1:j-1))//'" in optical property '// &
-              '"CIA" is not in the list of species.'
-        return
-      endif
-      if (ind2 == 0) then
-        err = 'Species "'//trim(sop%cia(i)(j+1:))//'" in optical property '// &
-              '"CIA" is not in the list of species.'
-        return
-      endif
-      
-      filename = datadir//"/CIA/"//trim(sop%cia(i))//".h5"
-      op%cia(i) = create_Xsection(filename, CIAXsection, [ind1, ind2], wavl, err)
-      if (allocated(err)) return
-      
-    enddo
-    
+      end if
 
+      select type(root)
+      class is (type_dictionary)
+        root_dict => root
+      class default
+        err = 'There is an issue with formatting in "'//filename//'"'
+        call root%finalize()
+        deallocate(root)  
+        return
+      end select
+      do i = 1,op%nray
+        ind1 = findloc(species_names, trim(sop%rayleigh(i)), 1)
+        if (ind1 == 0) then
+          err = 'Species "'//trim(sop%rayleigh(i))//'" in optical property '// &
+                '"rayleigh" is not in the list of species.'
+          exit
+        endif
+        op%ray(i) = create_RayleighXsection(filename, root_dict, &
+                    trim(sop%rayleigh(i)), ind1, wavl, err)
+        if (allocated(err)) exit
+      enddo
+      call root%finalize()
+      deallocate(root)  
+      if (allocated(err)) return
+    else
+      op%nray = 0
+    endif
+    
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!! Absorption Xsections !!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    if (allocated(sop%absorption_xs)) then
+      err = "sop%absorption_xs not implemented"
+      return
+    else
+      op%naxs = 0
+    endif
+    
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!! Photolysis Xsections !!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    if (allocated(sop%photolysis_xs)) then
+      err = "sop%photolysis_xs not implemented"
+      return
+    else
+      op%npxs = 0
+    endif
+    
   end function
   
-  function create_Xsection(filename, xs_type, sp_inds, wavl, err) result(xs)
+  function create_RayleighXsection(filename, dict, sp, sp_ind, wavl, err) result(xs)
+    use clima_types, only: Xsection, RayleighXsection
     character(*), intent(in) :: filename
-    integer, intent(in) :: xs_type
+    type(type_dictionary), intent(in) :: dict
+    character(*), intent(in) :: sp
+    integer, intent(in) :: sp_ind
+    real(dp), intent(in) :: wavl(:)
+    character(:), allocatable, intent(out) :: err
+    
+    type(Xsection) :: xs
+    
+    integer :: i
+    type(type_dictionary), pointer :: tmp1, tmp2
+    type (type_error), allocatable :: io_err
+    real(dp) :: Delta, A, B
+    
+    xs%xs_type = RayleighXsection
+    allocate(xs%sp_ind(1))
+    xs%sp_ind(1) = sp_ind
+    xs%dim = 0
+    
+    tmp1 => dict%get_dictionary(sp, required=.true., error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+      
+    tmp2 => tmp1%get_dictionary("data", required=.true., error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    
+    Delta = tmp2%get_real("Delta",error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    A = tmp2%get_real("A",error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    B = tmp2%get_real("B",error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    
+    ! compute xsection for all lamda
+    allocate(xs%log10_xs_0d(size(wavl)-1))
+    do i = 1,size(wavl)-1
+      xs%log10_xs_0d(i) = log10(rayleigh_vardavas(A, B, Delta, wavl(i)))
+    enddo
+  
+  end function
+  
+  pure function rayleigh_vardavas(A, B, Delta, lambda) result(sigray)
+    real(dp), intent(in) :: A, B, Delta, lambda
+    real(dp) :: sigray
+    sigray = 4.577e-21_dp*((6.0_dp+3.0_dp*Delta)/(6.0_dp-7.0_dp*Delta)) * &
+            (A*(1.0_dp+B/(lambda*1.0e-3_dp)**2.0_dp))**2.0_dp * &
+            (1.0_dp/(lambda*1.0e-3_dp)**4.0_dp)
+  end function
+  
+  function create_CIAXsection(filename, sp_inds, wavl, err) result(xs)
+    use clima_types, only: Xsection, CIAXsection
+    character(*), intent(in) :: filename
     integer, intent(in) :: sp_inds(:)
     real(dp), intent(in) :: wavl(:)
     character(:), allocatable, intent(out) :: err
     
     type(Xsection) :: xs
     
-    xs%xs_type = xs_type
-    
-    select case (xs_type)
-    case (CIAXsection)
-      allocate(xs%sp_ind(2))
-      xs%sp_ind = sp_inds
-      call read_h5_Xsection(filename, wavl, xs, err)
-    case (RayleighXsection)
-      err = "RayleighXsection not implemented"
-      return
-    case (AbsorptionXsection)
-      err = "AbsorptionXsection not implemented"
-      return
-    case (PhotolysisXsection)
-      err = "PhotolysisXsection not implemented"
-      return
-    case default
-      err = 'Issue creating xsection from filename "'//filename//'"'
-      return
-    end select
-    
+    xs%xs_type = CIAXsection
+    allocate(xs%sp_ind(2))
+    xs%sp_ind = sp_inds
+    call read_h5_Xsection(filename, wavl, xs, err)
+  
   end function
 
   subroutine read_h5_Xsection(filename, wavl, xs, err)
+    use clima_types, only: Xsection
+    use futils, only: addpnt, inter2
     use h5fortran
     character(*), intent(in) :: filename
     real(dp), intent(in) :: wavl(:)
@@ -381,10 +699,12 @@ contains
     
     type(hdf5_file) :: h
     integer(HSIZE_T), allocatable :: dims(:)
-    real(dp), allocatable :: wavl_f(:)
+    real(dp), allocatable :: wav_f(:), wav_f_save(:), tmp_xs(:,:)
     real(dp), allocatable :: log10_xs_0d(:)
     real(dp), allocatable :: log10_xs_1d(:,:)
     real(dp), allocatable :: log10_xs_2d(:,:,:)
+    integer :: i, k, kk, ierr
+    real(dp), parameter :: rdelta = 1.0e-4_dp
     
     if (.not. is_hdf5(filename)) then
       err = 'Failed to read "'//filename//'".'
@@ -414,9 +734,11 @@ contains
         return
       endif
       call h%shape("wavelengths", dims)
-      allocate(wavl_f(dims(1)))
-      call h%read("wavelengths", wavl_f)
-      wavl_f = wavl_f*1.0e3_dp ! convert to nm
+      allocate(wav_f(dims(1)+4))
+      wav_f = 0.0_dp
+      call h%read("wavelengths", wav_f(1:dims(1)))
+      wav_f = wav_f*1.0e3_dp ! convert from um to nm
+      wav_f_save = wav_f
     endif
     
     if (xs%dim == 1 .or. xs%dim == 2) then
@@ -426,7 +748,9 @@ contains
         return
       endif
       call h%shape("T", dims)
-      allocate(xs%temp(dims(1)))
+      allocate(xs%ntemp)
+      xs%ntemp = dims(1)
+      allocate(xs%temp(xs%ntemp))
       call h%read("T", xs%temp)
     endif
     
@@ -449,8 +773,29 @@ contains
         return
       endif
       call h%shape("log10xs", dims)
-      allocate(log10_xs_0d(dims(1)))
-      call h%read("log10xs", log10_xs_0d)
+      allocate(log10_xs_0d(dims(1)+4))
+      call h%read("log10xs", log10_xs_0d(1:dims(1)))
+      
+      kk = dims(1) + 4
+      k = dims(1)
+      call addpnt(wav_f, log10_xs_0d, kk, k, wav_f(1)*(1.0_dp-rdelta), 0.0_dp,ierr)
+      call addpnt(wav_f, log10_xs_0d, kk, k, 0.0_dp, 0.0_dp,ierr)
+      call addpnt(wav_f, log10_xs_0d, kk, k, wav_f(k)*(1.0_dp+rdelta), 0.0_dp,ierr)
+      call addpnt(wav_f, log10_xs_0d, kk, k, huge(rdelta), 0.0_dp,ierr)
+      if (ierr /= 0) then
+        err = 'Problem interpolating data in "'//trim(filename)//'"'
+        call h%close()
+        return
+      endif
+      allocate(xs%log10_xs_0d(size(wavl)-1))
+      call inter2(size(wavl), wavl, xs%log10_xs_0d, &
+                  kk, wav_f, log10_xs_0d, ierr)
+      if (ierr /= 0) then
+        err = 'Problem interpolating data in "'//trim(filename)//'"'
+        call h%close()
+        return
+      endif
+      
     elseif (xs%dim == 1) then
       call check_h5_dataset(h, "log10xs", 2, H5T_FLOAT_F, filename, err)
       if (allocated(err)) then
@@ -458,17 +803,54 @@ contains
         return
       endif
       call h%shape("log10xs", dims)
-      allocate(log10_xs_1d(dims(1),dims(2)))
-      call h%read("log10xs", log10_xs_1d)
-    elseif (xs%dim == 2) then
-      call check_h5_dataset(h, "log10xs", 3, H5T_FLOAT_F, filename, err)
-      if (allocated(err)) then
+      if (dims(1) /= xs%ntemp) then
+        err = '"log10xs" has a bad dimension in "'//trim(filename)//'"'
         call h%close()
         return
       endif
-      call h%shape("log10xs", dims)
-      allocate(log10_xs_2d(dims(1),dims(2),dims(3)))
-      call h%read("log10xs", log10_xs_2d)
+      allocate(log10_xs_1d(dims(1), dims(2)+4))
+      log10_xs_1d = 0.0_dp
+      call h%read("log10xs", log10_xs_1d(:,1:dims(2)))
+      
+      allocate(tmp_xs(xs%ntemp,size(wavl)))
+      
+      kk = dims(2) + 4
+      do i = 1,xs%ntemp
+        k = dims(2)
+        call addpnt(wav_f, log10_xs_1d(i,:), kk, k, wav_f(1)*(1.0_dp-rdelta), 0.0_dp,ierr)
+        call addpnt(wav_f, log10_xs_1d(i,:), kk, k, 0.0_dp, 0.0_dp,ierr)
+        call addpnt(wav_f, log10_xs_1d(i,:), kk, k, wav_f(k)*(1.0_dp+rdelta), 0.0_dp,ierr)
+        call addpnt(wav_f, log10_xs_1d(i,:), kk, k, huge(rdelta), 0.0_dp,ierr)
+        if (ierr /= 0) then
+          err = 'Problem interpolating data in "'//trim(filename)//'"'
+          call h%close()
+          return
+        endif
+        call inter2(size(wavl), wavl, tmp_xs(:,i), &
+                    kk, wav_f, log10_xs_1d(i,:), ierr)
+        if (ierr /= 0) then
+          err = 'Problem interpolating data in "'//trim(filename)//'"'
+          call h%close()
+          return
+        endif
+        
+        wav_f = wav_f_save
+      enddo
+      
+      allocate(xs%log10_xs_1d(size(wavl) - 1))
+      do i = 1,size(wavl)-1
+        call xs%log10_xs_1d(i)%initialize(xs%temp, tmp_xs(:,i), ierr)
+        if (ierr /= 0) then
+          err = 'Failed to initialize interpolator for "'//filename//'"'
+          call h%close()
+          return
+        endif
+      enddo
+
+    elseif (xs%dim == 2) then
+      err = "xs%dim == 2 not implemented"
+      call h%close()
+      return
     endif
 
     call h%close()
@@ -476,7 +858,7 @@ contains
   end subroutine
   
   function create_Ktable(filename, sp_ind, optype, wavl, err) result(k)
-    use clima_types, only: SolarOpticalProperties, IROpticalProperties
+    use clima_types, only: SolarOpticalProperties, IROpticalProperties, Ktable
     use h5fortran
     
     character(*), intent(in) :: filename
@@ -663,12 +1045,11 @@ contains
     type(ClimaSettings), intent(out) :: s
     character(:), allocatable, intent(out) :: err
     
-    type(type_dictionary), pointer :: opacities
+    type(type_dictionary), pointer :: opacities, grd
     type(type_list), pointer :: tmp
     class(type_node), pointer :: node
-    type(type_list_item), pointer :: item
     type (type_error), allocatable :: io_err
-    integer :: i, ind
+    integer :: ind
     logical :: success
     
     !!!!!!!!!!!!!!!!!
@@ -703,30 +1084,28 @@ contains
     
     ! rayleigh
     node => opacities%get("rayleigh")
-    if (.not. associated(node)) then
-      err = '"'//trim(opacities%path)//'" does not have key "rayleigh"'
-      return
+    if (associated(node)) then
+      select type (node)
+      class is (type_list)
+        call unpack_string_list(filename, node, s%op%rayleigh, err)
+        if (allocated(err)) return
+        ind = check_for_duplicates(s%op%rayleigh)
+        if (ind /= 0) then
+          err = '"'//trim(s%op%rayleigh(ind))//'" is a duplicate in '//trim(node%path)
+          return
+        endif
+      class is (type_scalar)
+        allocate(s%op%rayleigh_bool)
+        s%op%rayleigh_bool = node%to_logical(default=.true.,success=success)
+        if (.not. success) then
+          err = 'Failed to convert "'//trim(node%path)//'" to logical'
+          return
+        endif
+      class default
+        err = '"'//trim(node%path)//'" must be a list or a scalar.'
+        return
+      end select
     endif
-    select type (node)
-    class is (type_list)
-      call unpack_string_list(filename, node, s%op%rayleigh, err)
-      if (allocated(err)) return
-      ind = check_for_duplicates(s%op%rayleigh)
-      if (ind /= 0) then
-        err = '"'//trim(s%op%rayleigh(ind))//'" is a duplicate in '//trim(node%path)
-        return
-      endif
-    class is (type_scalar)
-      allocate(s%op%rayleigh_bool)
-      s%op%rayleigh_bool = node%to_logical(default=.true.,success=success)
-      if (.not. success) then
-        err = 'Failed to convert "'//trim(node%path)//'" to logical'
-        return
-      endif
-    class default
-      err = '"'//trim(node%path)//'" must be a list or a scalar.'
-      return
-    end select
     
     ! absorption-xs
     tmp => opacities%get_list("absorption-xs", required=.false., error=io_err)
@@ -779,7 +1158,6 @@ contains
     
     integer :: i
     type(type_list_item), pointer :: item
-    type (type_error), allocatable :: io_err
     
     allocate(str_list(list%size()))
     i = 1
