@@ -5,16 +5,6 @@ module clima_types
   implicit none
   public
   
-  ! type :: CondensationRate
-  !   real(dp) :: A
-  !   real(dp) :: rhc
-  !   real(dp) :: rh0
-  ! end type
-  ! 
-  ! type :: BoundaryCondition
-  !   integer :: bc_type
-  ! end type
-  
   !!!!!!!!!!!!!!!!
   !!! Settings !!!
   !!!!!!!!!!!!!!!!
@@ -29,7 +19,9 @@ module clima_types
   end type
   
   type :: ClimaSettings
-    type(SettingsOpacity) :: op
+    type(SettingsOpacity) :: uv
+    type(SettingsOpacity) :: sol
+    type(SettingsOpacity) :: ir
     
   end type
 
@@ -73,13 +65,13 @@ module clima_types
     integer, allocatable :: npress ! number of pressure (only for xs_dim = 2)
     real(dp), allocatable :: temp(:) ! (ntemp) Kelvin
     real(dp), allocatable :: log10P(:) ! (npress) log10(bars)
-    real(dp), allocatable :: log10_xs_0d(:) ! (nw) 
+    real(dp), allocatable :: xs_0d(:) ! (nw) 
     type(linear_interp_1d), allocatable :: log10_xs_1d(:) ! (nw) 
     type(linear_interp_2d), allocatable :: log10_xs_2d(:) ! (nw)
   end type
   
   enum, bind(c)
-    enumerator :: SolarOpticalProperties, IROpticalProperties
+    enumerator :: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
   end enum
   
   type :: OpticalProperties
@@ -116,12 +108,7 @@ module clima_types
     real(dp), allocatable :: data(:,:)
   end type
   
-  ! enum, bind(c)
-  !   enumerator :: CondensingGas, FixedGas, BackgroundGas
-  ! end enum
-  
   type :: Species
-    ! integer :: sp_type
     character(:), allocatable :: name
     integer, allocatable :: composition(:) ! (natoms)
     real(dp) :: mass
@@ -144,6 +131,7 @@ module clima_types
     type(Species), allocatable :: sp(:) ! (ng)
     
     !!! Optical properties !!!
+    type(OpticalProperties) :: uv
     type(OpticalProperties) :: sol
     type(OpticalProperties) :: ir
     
@@ -162,10 +150,6 @@ module clima_types
     real(dp), allocatable :: densities(:,:) ! (nz,ng) molecules/cm3
     
     real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2 in each bin
-    
-    ! type(CondensationRate), allocatable :: con(:) !(ncg)
-    ! type(BoundaryCondition), allocatable :: lbc(:) !(ncg)
-    ! type(BoundaryCondition), allocatable :: ubc(:) !(ncg)
   
   end type
   

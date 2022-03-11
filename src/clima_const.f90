@@ -8,6 +8,7 @@ module clima_const
   ! physical constants
   real(dp), parameter :: Rgas = 8.31446261815324e0_dp ! ideal gas constant (j/(mol*K))
   real(dp), parameter :: k_boltz = 1.380649e-16_dp ! boltzmann's constant cgs units (egs/K)
+  real(dp), parameter :: k_boltz_si = 1.380649e-23_dp ! boltzmann's constant si units (J/K)
   real(dp), parameter :: G_grav = 6.67430e-11_dp ! gravitational constant (N * m2 / kg)
   real(dp), parameter :: plank = 6.62607004e-34_dp ! planks constant (m2 kg / s)
   real(dp), parameter :: c_light = 299792458.0_dp ! Speed of light (m / s)

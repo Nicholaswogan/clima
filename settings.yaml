@@ -1,36 +1,19 @@
-
-atmosphere-grid:
-  bottom: 0.0 # cm
-  top: 1.0e7 # cm
-  number-of-layers: 200
-
-
-planet:
-  background-gas: N2
-  surface-pressure: 1.0 # bar
-  planet-mass: 5.972e27 # grams
-  planet-radius: 6.371e8 # cm. Radius to bottom of atmosphere-grid
-  surface-albedo: 0.25 # cm
-  diurnal-averaging-factor: 0.5
-  solar-zenith-angle: 50.0
   
 opacities:
-  k-distributions: [H2O, CO2]
-  CIA: [CO2-CO2]
-  rayleigh: [N2]
-  # absorption-xs: [O2]
-  # photolysis-xs: [O3]
-  
-boundary-conditions:
-- name: O3
-  type: fixed
-- name: CO2
-  type: fixed
-- name: H2O
-  type: condensing
-  condensation-rate: {A: 1.0e-5, rhc: 0.01, rh0: 0.015}
-  lower-boundary: {type: saturation}
-  upper-boundary: {type: veff, veff: 0.0}
+  faruv:
+    CIA: [CO2-CO2]
+    rayleigh: [N2, H2O, CO2]
+  solar:
+    k-distributions: [H2O, CO2]
+    CIA: [CO2-CO2]
+    rayleigh: [N2, H2O, CO2]
+  ir:
+    k-distributions: [H2O, CO2]
+    CIA: [CO2-CO2]
+    rayleigh: [N2, H2O, CO2]
+    # absorption-xs: [O2]
+    # photolysis-xs: [O3]
+
   
 
   

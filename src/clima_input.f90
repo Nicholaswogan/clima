@@ -213,7 +213,7 @@ contains
   
   function create_ClimaData(spfile, datadir, s, err) result(dat)
     use clima_const, only: sol_wavl, ir_wavl
-    use clima_types, only: SolarOpticalProperties, IROpticalProperties
+    use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     character(*), intent(in) :: spfile
     character(*), intent(in) :: datadir
     type(ClimaSettings), intent(in) :: s
@@ -225,12 +225,16 @@ contains
     call read_speciesfile(spfile, s, dat, err)
     if (allocated(err)) return
     
+    dat%uv = create_OpticalProperties(datadir, FarUVOpticalProperties,&
+                                      sol_wavl, dat%species_names, s%uv, err)
+    if (allocated(err)) return
+    
     dat%sol = create_OpticalProperties(datadir, SolarOpticalProperties,&
-                                      sol_wavl, dat%species_names, s%op, err)
+                                      sol_wavl, dat%species_names, s%sol, err)
     if (allocated(err)) return
     
     dat%ir = create_OpticalProperties(datadir, IROpticalProperties,&
-                                      ir_wavl, dat%species_names, s%op, err)
+                                      ir_wavl, dat%species_names, s%ir, err)
     if (allocated(err)) return
     
     
@@ -509,20 +513,24 @@ contains
     !!!!!!!!!!!!!!!!!!!!!!!
     !!! k-distributions !!!
     !!!!!!!!!!!!!!!!!!!!!!!
-    op%nk = size(sop%k_distributions)
-    allocate(op%k(op%nk))
-    
-    do i = 1,op%nk
-      filename = datadir//"/kdistributions/"//trim(sop%k_distributions(i))//".h5"
-      ind1 = findloc(species_names, trim(sop%k_distributions(i)), 1)
-      if (ind1 == 0) then
-        err = 'Species "'//trim(sop%k_distributions(i))//'" in optical property '// &
-              '"k-distributions" is not in the list of species.'
-        return
-      endif
-      op%k(i) = create_Ktable(filename, ind1, optype, wavl, err)
-      if (allocated(err)) return
-    enddo
+    if (allocated(sop%k_distributions)) then
+      op%nk = size(sop%k_distributions)
+      allocate(op%k(op%nk))
+      
+      do i = 1,op%nk
+        filename = datadir//"/kdistributions/"//trim(sop%k_distributions(i))//".h5"
+        ind1 = findloc(species_names, trim(sop%k_distributions(i)), 1)
+        if (ind1 == 0) then
+          err = 'Species "'//trim(sop%k_distributions(i))//'" in optical property '// &
+                '"k-distributions" is not in the list of species.'
+          return
+        endif
+        op%k(i) = create_Ktable(filename, ind1, optype, wavl, err)
+        if (allocated(err)) return
+      enddo
+    else
+      op%nk = 0
+    endif
     
     !!!!!!!!!!!
     !!! CIA !!!
@@ -657,9 +665,9 @@ contains
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     
     ! compute xsection for all lamda
-    allocate(xs%log10_xs_0d(size(wavl)-1))
+    allocate(xs%xs_0d(size(wavl)-1))
     do i = 1,size(wavl)-1
-      xs%log10_xs_0d(i) = log10(rayleigh_vardavas(A, B, Delta, wavl(i)))
+      xs%xs_0d(i) = rayleigh_vardavas(A, B, Delta, wavl(i))
     enddo
   
   end function
@@ -787,14 +795,15 @@ contains
         call h%close()
         return
       endif
-      allocate(xs%log10_xs_0d(size(wavl)-1))
-      call inter2(size(wavl), wavl, xs%log10_xs_0d, &
+      allocate(xs%xs_0d(size(wavl)-1))
+      call inter2(size(wavl), wavl, xs%xs_0d, &
                   kk, wav_f, log10_xs_0d, ierr)
       if (ierr /= 0) then
         err = 'Problem interpolating data in "'//trim(filename)//'"'
         call h%close()
         return
       endif
+      xs%xs_0d = 10.0_dp**xs%xs_0d
       
     elseif (xs%dim == 1) then
       call check_h5_dataset(h, "log10xs", 2, H5T_FLOAT_F, filename, err)
@@ -858,7 +867,8 @@ contains
   end subroutine
   
   function create_Ktable(filename, sp_ind, optype, wavl, err) result(k)
-    use clima_types, only: SolarOpticalProperties, IROpticalProperties, Ktable
+    use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties, &
+                           Ktable
     use h5fortran
     
     character(*), intent(in) :: filename
@@ -876,9 +886,11 @@ contains
     character(:), allocatable :: optype_str, read_err
     integer :: i, j, iflag
     
-    if (optype == SolarOpticalProperties) then
+    if (optype == FarUVOpticalProperties) then
+      optype_str = "faruv"
+    elseif (optype == SolarOpticalProperties) then
       optype_str = "solar"
-    else if (optype == IROpticalProperties) then
+    elseif (optype == IROpticalProperties) then
       optype_str = "ir"
     endif
 
@@ -1045,39 +1057,70 @@ contains
     type(ClimaSettings), intent(out) :: s
     character(:), allocatable, intent(out) :: err
     
-    type(type_dictionary), pointer :: opacities, grd
-    type(type_list), pointer :: tmp
-    class(type_node), pointer :: node
+    type(type_dictionary), pointer :: opacities, tmp_dict
     type (type_error), allocatable :: io_err
-    integer :: ind
-    logical :: success
     
     !!!!!!!!!!!!!!!!!
     !!! opacities !!!
     !!!!!!!!!!!!!!!!!
     opacities => root%get_dictionary("opacities", required=.true., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+      
+    tmp_dict => opacities%get_dictionary("faruv", required=.false., error=io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (associated(tmp_dict)) then
+      call unpack_settingsopacity(tmp_dict, filename, s%uv, err)
+    endif
+    
+    tmp_dict => opacities%get_dictionary("solar", required=.false., error=io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (associated(tmp_dict)) then
+      call unpack_settingsopacity(tmp_dict, filename, s%sol, err)
+    endif
+    
+    tmp_dict => opacities%get_dictionary("ir", required=.false., error=io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (associated(tmp_dict)) then
+      call unpack_settingsopacity(tmp_dict, filename, s%ir, err)
+    endif
+
+  end subroutine
+  
+  subroutine unpack_settingsopacity(opacities, filename, op, err)
+    use clima_types, only: SettingsOpacity
+    type(type_dictionary), intent(in) :: opacities
+    character(*), intent(in) :: filename
+    type(SettingsOpacity), intent(out) :: op
+    character(:), allocatable, intent(out) :: err
+    
+    type(type_list), pointer :: tmp
+    class(type_node), pointer :: node
+    type (type_error), allocatable :: io_err
+    integer :: ind
+    logical :: success
     
     ! k-distributions
-    tmp => opacities%get_list("k-distributions",required=.true., error=io_err)
+    tmp => opacities%get_list("k-distributions",required=.false., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    call unpack_string_list(filename, tmp, s%op%k_distributions, err)
-    if (allocated(err)) return
-    ind = check_for_duplicates(s%op%k_distributions)
-    if (ind /= 0) then
-      err = '"'//trim(s%op%k_distributions(ind))//'" is a duplicate in '//trim(tmp%path)
-      return
+    if (associated(tmp)) then
+      call unpack_string_list(filename, tmp, op%k_distributions, err)
+      if (allocated(err)) return
+      ind = check_for_duplicates(op%k_distributions)
+      if (ind /= 0) then
+        err = '"'//trim(op%k_distributions(ind))//'" is a duplicate in '//trim(tmp%path)
+        return
+      endif
     endif
     
     ! CIA
     tmp => opacities%get_list("CIA", required=.false., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (associated(tmp)) then
-      call unpack_string_list(filename, tmp, s%op%cia, err)
+      call unpack_string_list(filename, tmp, op%cia, err)
       if (allocated(err)) return
-      ind = check_for_duplicates(s%op%cia)
+      ind = check_for_duplicates(op%cia)
       if (ind /= 0) then
-        err = '"'//trim(s%op%cia(ind))//'" is a duplicate in '//trim(tmp%path)
+        err = '"'//trim(op%cia(ind))//'" is a duplicate in '//trim(tmp%path)
         return
       endif
     endif
@@ -1087,16 +1130,16 @@ contains
     if (associated(node)) then
       select type (node)
       class is (type_list)
-        call unpack_string_list(filename, node, s%op%rayleigh, err)
+        call unpack_string_list(filename, node, op%rayleigh, err)
         if (allocated(err)) return
-        ind = check_for_duplicates(s%op%rayleigh)
+        ind = check_for_duplicates(op%rayleigh)
         if (ind /= 0) then
-          err = '"'//trim(s%op%rayleigh(ind))//'" is a duplicate in '//trim(node%path)
+          err = '"'//trim(op%rayleigh(ind))//'" is a duplicate in '//trim(node%path)
           return
         endif
       class is (type_scalar)
-        allocate(s%op%rayleigh_bool)
-        s%op%rayleigh_bool = node%to_logical(default=.true.,success=success)
+        allocate(op%rayleigh_bool)
+        op%rayleigh_bool = node%to_logical(default=.true.,success=success)
         if (.not. success) then
           err = 'Failed to convert "'//trim(node%path)//'" to logical'
           return
@@ -1111,11 +1154,11 @@ contains
     tmp => opacities%get_list("absorption-xs", required=.false., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (associated(tmp)) then
-      call unpack_string_list(filename, tmp, s%op%absorption_xs, err)
+      call unpack_string_list(filename, tmp, op%absorption_xs, err)
       if (allocated(err)) return
-      ind = check_for_duplicates(s%op%absorption_xs)
+      ind = check_for_duplicates(op%absorption_xs)
       if (ind /= 0) then
-        err = '"'//trim(s%op%absorption_xs(ind))//'" is a duplicate in '//trim(tmp%path)
+        err = '"'//trim(op%absorption_xs(ind))//'" is a duplicate in '//trim(tmp%path)
         return
       endif
     endif
@@ -1124,11 +1167,11 @@ contains
     tmp => opacities%get_list("photolysis-xs", required=.false., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (associated(tmp)) then
-      call unpack_string_list(filename, tmp, s%op%photolysis_xs, err)
+      call unpack_string_list(filename, tmp, op%photolysis_xs, err)
       if (allocated(err)) return
-      ind = check_for_duplicates(s%op%photolysis_xs)
+      ind = check_for_duplicates(op%photolysis_xs)
       if (ind /= 0) then
-        err = '"'//trim(s%op%photolysis_xs(ind))//'" is a duplicate in '//trim(tmp%path)
+        err = '"'//trim(op%photolysis_xs(ind))//'" is a duplicate in '//trim(tmp%path)
         return
       endif
     endif

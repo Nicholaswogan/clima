@@ -56,49 +56,81 @@ contains
     type(ClimaVars), intent(in) :: v
     
     ! Solar radiative transfer
-    call solar_rt(d%sol, v)
+    call radiate(d%ir, v)
+    
+    
     
   end subroutine
   
-  subroutine solar_rt(op, v)
+  subroutine radiate(op, v)
+    use clima_const, only: pi
     use clima_types, only: OpticalProperties, Kcoefficients
+    use clima_twostream, only: two_stream
     use futils, only: Timer
     type(OpticalProperties), intent(inout) :: op
     type(ClimaVars), intent(in) :: v
     
-    integer :: i, j, k, l, n, jj, ll
-    integer :: totgauss
+    real(dp), parameter :: max_w0 = 0.99999e0_dp
+    
+    integer :: i, j, k, l, n, jj
+    integer :: i1, i2, i3
+    integer :: j1, j2, j3
+    integer :: ie
+    real(dp) :: u0
+    real(dp) :: surface_albedo, surf_rad
     type(Timer) :: tm
     
     ! work
     real(dp) :: val
     type(Kcoefficients), allocatable :: ks(:)
     real(dp), allocatable :: cia(:,:)
-    real(dp), allocatable :: ray(:,:)
     real(dp), allocatable :: axs(:,:)
     real(dp), allocatable :: pxs(:,:)
     
     real(dp), allocatable :: tausg(:)
     real(dp), allocatable :: taua(:)
+    real(dp), allocatable :: taua_1(:)
+    real(dp), allocatable :: tau(:)
+    real(dp), allocatable :: w0(:)
+    real(dp), allocatable :: gt(:)
+    real(dp), allocatable :: amean(:)
     
     allocate(ks(op%nk))
     do i = 1,op%nk
-      ks(i)%ngauss = op%k(i)%ngauss
       allocate(ks(i)%k(v%nz,op%k(i)%ngauss))
     enddo
     
     allocate(cia(v%nz,op%ncia))
-    allocate(ray(v%nz,op%nray))
     allocate(axs(v%nz,op%naxs))
     allocate(pxs(v%nz,op%npxs))
     allocate(tausg(v%nz))
     allocate(taua(v%nz))
+    allocate(taua_1(v%nz))
+    allocate(tau(v%nz))
+    allocate(w0(v%nz))
+    allocate(gt(v%nz))
+    allocate(amean(v%nz+1))
     
+    
+    ! solar zenith angle
+    u0 = cos(50.0_dp*pi/180.0_dp)
+    surface_albedo = 0.25
+    
+    call tm%start()
+    
+
+    !$omp parallel private(i, j, k, l, n, jj, &
+    !$omp& i1, i2, i3, j1, j2, j3, ie, surf_rad, val, &
+    !$omp& ks, cia, axs, pxs, tausg, taua, taua_1, &
+    !$omp& tau, w0, gt, amean)
+    
+    !$omp do
     do l = 1,op%nw
     
       ! interpolate to T and P grid
       ! k-distributions
       do i = 1,op%nk
+        ks(i)%ngauss = op%k(i)%ngauss
         do k = 1,op%k(i)%ngauss
           do j = 1,v%nz
             call op%k(i)%log10k(k,l)%evaluate(log10(v%P(j)), v%T(j), val)
@@ -112,12 +144,7 @@ contains
         call interpolate_Xsection(op%cia(i), l, v%P, v%T, cia(:,i))
       enddo
       
-      ! Rayleigh
-      do i = 1,op%nray
-        call interpolate_Xsection(op%ray(i), l, v%P, v%T, ray(:,i))
-      enddo
-      
-      ! Absoprtion xs
+      ! Absorption xs
       do i = 1,op%naxs
         call interpolate_Xsection(op%axs(i), l, v%P, v%T, axs(:,i))
       enddo
@@ -134,7 +161,7 @@ contains
         j = op%ray(i)%sp_ind(1)
         do k = 1,v%nz
           n = v%nz+1-k
-          tausg(n) = tausg(n) + ray(k,i)*v%densities(k,j)*v%dz(k)
+          tausg(n) = tausg(n) + op%ray(i)%xs_0d(l)*v%densities(k,j)*v%dz(k)
         enddo
       enddo
       
@@ -167,15 +194,82 @@ contains
         enddo
       enddo
       
-      ! k-distribution loop
-      totgauss = 1
-      do i = 1,op%nk
-        totgauss = totgauss*op%k(i)%ngauss
-      enddo
+      ! gt
+      gt = 0.0_dp
+        
+      ! two species with k coefficients  
+      if (op%nk == 2) then
+        
+        j1 =op%k(1)%sp_ind
+        j2 =op%k(2)%sp_ind
+        
+        do i1 = 1,ks(1)%ngauss
+          do i2 = 1,ks(2)%ngauss
+            
+            taua_1(:) = 0.0_dp
+            do k = 1,v%nz
+              n = v%nz+1-k
+              taua_1(n) = taua_1(n) + &
+                          ks(1)%k(k,i1)*v%densities(k,j1)*v%dz(k) + &
+                          ks(2)%k(k,i2)*v%densities(k,j2)*v%dz(k)
+            enddo
+            
+            ! sum
+            tau = tausg + taua + taua_1
+            do i = 1,v%nz
+              w0(i) = min(max_w0,tausg(i)/tau(i))
+            enddo
+            
+            call two_stream(v%nz, tau, w0, gt, u0, surface_albedo, amean, surf_rad, ie)
+            
+            
+          enddo
+        enddo
+        
+      ! three species with k coefficients
+      elseif (op%nk == 3) then
       
+        j1 =op%k(1)%sp_ind
+        j2 =op%k(2)%sp_ind
+        j3 =op%k(3)%sp_ind
+      
+        do i1 = 1,ks(1)%ngauss
+          do i2 = 1,ks(2)%ngauss
+            do i3 = 1,ks(3)%ngauss
+      
+              taua_1(:) = 0.0_dp
+              do k = 1,v%nz
+                n = v%nz+1-k
+                taua_1(n) = taua_1(n) + &
+                            ks(1)%k(k,i1)*v%densities(k,j1)*v%dz(k) + &
+                            ks(2)%k(k,i2)*v%densities(k,j2)*v%dz(k) + &
+                            ks(2)%k(k,i3)*v%densities(k,j3)*v%dz(k)
+              enddo
+      
+              ! sum
+              tau = tausg + taua + taua_1
+              do i = 1,v%nz
+                w0(i) = min(max_w0,tausg(i)/tau(i))
+              enddo
+      
+              call two_stream(v%nz, tau, w0, gt, u0, surface_albedo, amean, surf_rad, ie)
+
+            enddo
+          enddo
+        enddo
+        
+      
+      else
+        print*,'ERR'
+        stop 1 
+      endif
       
       
     enddo
+    !$omp enddo
+    !$omp end parallel
+    
+    call tm%finish('')
 
     
   end subroutine
@@ -190,12 +284,10 @@ contains
     
     integer :: j
     real(dp) :: val
-    
-    
-    
+
     if (xs%dim == 0) then
       do j = 1,size(P)
-        res(j) = 10.0_dp**xs%log10_xs_0d(l)
+        res(j) = xs%xs_0d(l)
       enddo
     elseif (xs%dim == 1) then
       do j = 1,size(P)
@@ -208,6 +300,14 @@ contains
     endif
     
   end subroutine
+  
+  pure function planck_fcn(v, T) result(B)
+    use clima_const, only: c_light, k_boltz_si, plank
+    real(dp), intent(in) :: v, T
+    real(dp) :: B
+    B = ((2*plank*v**3.0_dp)/(c_light**2.0_dp)) * &
+        ((1.0_dp)/(exp((plank*v)/(k_boltz_si*T)) - 1)) 
+  end function
   
   
 end module
