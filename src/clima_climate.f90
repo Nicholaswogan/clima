@@ -44,7 +44,7 @@ contains
     ! after file read-in
     allocate(c%v%density(c%v%nz))
     allocate(c%v%densities(c%v%nz,c%d%ng))
-    c%v%density = c%v%P/(k_boltz*c%v%T)
+    c%v%density = 1.0e6_dp*c%v%P/(k_boltz*c%v%T)
     do i = 1,c%d%ng
       c%v%densities(:,i) = c%v%mix(:,i)*c%v%density
     enddo
@@ -55,30 +55,46 @@ contains
     type(ClimaData), intent(inout) :: d
     type(ClimaVars), intent(in) :: v
     
-    ! Solar radiative transfer
-    call radiate(d%ir, v)
+    real(dp), allocatable :: fup_sol(:)
+    real(dp), allocatable :: fdn_sol(:)
     
+    real(dp), allocatable :: fup_ir(:)
+    real(dp), allocatable :: fdn_ir(:)
+    
+    real(dp), allocatable :: ftot(:)
+    
+    integer :: i
+    
+    allocate(fup_sol(v%nz),fdn_sol(v%nz),fup_ir(v%nz),fdn_ir(v%nz),ftot(v%nz))
+    
+    ! Solar radiative transfer
+    call radiate(d%ir, v, fup_ir, fdn_ir)
+    call radiate(d%sol, v, fup_sol, fdn_sol)
+    
+    ftot = (fup_sol-fdn_sol) + (fup_ir-fdn_ir)
+
     
     
   end subroutine
   
-  subroutine radiate(op, v)
+  subroutine radiate(op, v, fup_n, fdn_n)
     use clima_const, only: pi
     use clima_types, only: OpticalProperties, Kcoefficients
-    use clima_twostream, only: two_stream
+    use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
+    use clima_twostream, only: two_stream_solar, two_stream_ir
     use futils, only: Timer
     type(OpticalProperties), intent(inout) :: op
     type(ClimaVars), intent(in) :: v
+    real(dp), intent(inout) :: fup_n(:), fdn_n(:)
     
     real(dp), parameter :: max_w0 = 0.99999e0_dp
     
     integer :: i, j, k, l, n, jj
     integer :: i1, i2, i3
     integer :: j1, j2, j3
-    integer :: ie
     real(dp) :: u0
-    real(dp) :: surface_albedo, surf_rad
-    type(Timer) :: tm
+    real(dp) :: surface_albedo
+    real(dp) :: gauss_weight, surf_rad, weights, dfreq
     
     ! work
     real(dp) :: val
@@ -94,6 +110,14 @@ contains
     real(dp), allocatable :: w0(:)
     real(dp), allocatable :: gt(:)
     real(dp), allocatable :: amean(:)
+    real(dp), allocatable :: fup(:)
+    real(dp), allocatable :: fdn(:)
+    real(dp), allocatable :: bplanck(:)
+    
+    real(dp), allocatable :: fup1(:)
+    real(dp), allocatable :: fdn1(:)
+    real(dp), allocatable :: fup_a(:,:)
+    real(dp), allocatable :: fdn_a(:,:)
     
     allocate(ks(op%nk))
     do i = 1,op%nk
@@ -110,22 +134,30 @@ contains
     allocate(w0(v%nz))
     allocate(gt(v%nz))
     allocate(amean(v%nz+1))
+    allocate(fup(v%nz+1))
+    allocate(fdn(v%nz+1))
+    allocate(bplanck(v%nz+1))
     
+    allocate(fup1(v%nz+1))
+    allocate(fdn1(v%nz+1))
+    
+    allocate(fup_a(v%nz+1,op%nw))
+    allocate(fdn_a(v%nz+1,op%nw))
     
     ! solar zenith angle
     u0 = cos(50.0_dp*pi/180.0_dp)
-    surface_albedo = 0.25
+    surface_albedo = 0.25_dp
     
-    call tm%start()
-    
-
     !$omp parallel private(i, j, k, l, n, jj, &
-    !$omp& i1, i2, i3, j1, j2, j3, ie, surf_rad, val, &
+    !$omp& i1, i2, i3, j1, j2, j3, surf_rad, val, &
     !$omp& ks, cia, axs, pxs, tausg, taua, taua_1, &
-    !$omp& tau, w0, gt, amean)
+    !$omp& tau, w0, gt, amean, fup, fdn, bplanck, fup1, fdn1)
     
     !$omp do
     do l = 1,op%nw
+      
+      fup1 = 0.0_dp
+      fdn1 = 0.0_dp
     
       ! interpolate to T and P grid
       ! k-distributions
@@ -194,7 +226,16 @@ contains
         enddo
       enddo
       
-      ! gt
+      ! plank function, only if in the IR
+      ! bplanck has units [W sr^−1 m^−2 Hz^-1]
+      if (op%op_type == IROpticalProperties) then
+        bplanck(v%nz+1) = planck_fcn(op%freq(l), v%T(1)) ! ground level
+        do j = 1,v%nz
+          n = v%nz+1-j
+          bplanck(n) = planck_fcn(op%freq(l), v%T(j))
+        enddo
+      endif
+      
       gt = 0.0_dp
         
       ! two species with k coefficients  
@@ -220,9 +261,19 @@ contains
               w0(i) = min(max_w0,tausg(i)/tau(i))
             enddo
             
-            call two_stream(v%nz, tau, w0, gt, u0, surface_albedo, amean, surf_rad, ie)
+            if (op%op_type == FarUVOpticalProperties .or. &
+                op%op_type == SolarOpticalProperties) then
+              call two_stream_solar(v%nz, tau, w0, gt, u0, surface_albedo, &
+                                    amean, surf_rad, fup, fdn)
+            elseif (op%op_type == IROpticalProperties) then
+              call two_stream_ir(v%nz, tau, w0, gt, surface_albedo, bplanck, &
+                                 fup, fdn)
+            endif
             
-            
+            gauss_weight = op%k(1)%weights(i1)*op%k(2)%weights(i2)
+            fup1 = fup1 + fup*gauss_weight
+            fdn1 = fdn1 + fdn*gauss_weight
+          
           enddo
         enddo
         
@@ -252,25 +303,65 @@ contains
                 w0(i) = min(max_w0,tausg(i)/tau(i))
               enddo
       
-              call two_stream(v%nz, tau, w0, gt, u0, surface_albedo, amean, surf_rad, ie)
+              if (op%op_type == FarUVOpticalProperties .or. &
+                  op%op_type == SolarOpticalProperties) then
+                call two_stream_solar(v%nz, tau, w0, gt, u0, surface_albedo, &
+                                      amean, surf_rad, fup, fdn)
+              elseif (op%op_type == IROpticalProperties) then
+                call two_stream_ir(v%nz, tau, w0, gt, surface_albedo, bplanck, &
+                                   fup, fdn)
+              endif
 
+              gauss_weight = op%k(1)%weights(i1)*op%k(2)%weights(i2)*op%k(3)%weights(i3)
+              fup1 = fup1 + fup*gauss_weight
+              fdn1 = fdn1 + fdn*gauss_weight
+              
             enddo
           enddo
         enddo
         
-      
       else
         print*,'ERR'
         stop 1 
       endif
       
+      fup_a(:,l) =  max(fup1,0.0_dp)
+      fdn_a(:,l) =  max(fdn1,0.0_dp)
       
     enddo
     !$omp enddo
     !$omp end parallel
     
-    call tm%finish('')
+    ! Integrate fluxes over wavelength grid. Move values to grid-center,
+    ! by averaging over edge values.
+    fup_n = 0.0_dp
+    fdn_n = 0.0_dp
 
+    ! THIS IS THE RIGHT UNITS FOR fup_n, and fdn_n
+    ! mW/m2
+    if (op%op_type == FarUVOpticalProperties .or. &
+        op%op_type == SolarOpticalProperties) then
+        
+      do l = 1,op%nw
+        do i = 1,v%nz
+          n = v%nz+1-i
+          fup_n(i) = fup_n(i) + (0.5_dp*(fup_a(n,l)+fup_a(n+1,l)))*v%photons_sol(l)
+          fdn_n(i) = fdn_n(i) + (0.5_dp*(fdn_a(n,l)+fdn_a(n+1,l)))*v%photons_sol(l)
+        enddo
+      enddo
+      
+    elseif (op%op_type == IROpticalProperties) then
+      
+      do l = 1,op%nw
+        dfreq = op%freq(l)-op%freq(l+1)
+        do i = 1,v%nz
+          n = v%nz+1-i
+          fup_n(i) = fup_n(i) + (0.5_dp*(fup_a(n,l)+fup_a(n+1,l)))*dfreq*1.0e3_dp
+          fdn_n(i) = fdn_n(i) + (0.5_dp*(fdn_a(n,l)+fdn_a(n+1,l)))*dfreq*1.0e3_dp
+        enddo
+      enddo
+      
+    endif
     
   end subroutine
   
@@ -301,12 +392,29 @@ contains
     
   end subroutine
   
-  pure function planck_fcn(v, T) result(B)
-    use clima_const, only: c_light, k_boltz_si, plank
-    real(dp), intent(in) :: v, T
-    real(dp) :: B
-    B = ((2*plank*v**3.0_dp)/(c_light**2.0_dp)) * &
-        ((1.0_dp)/(exp((plank*v)/(k_boltz_si*T)) - 1)) 
+  ! function planck_fcn(lambda_nm, T) result(B)
+  !   use clima_const, only: c_light, k_boltz_si, plank
+  !   real(dp), intent(in) :: lambda_nm ! (nm) 
+  !   real(dp), intent(in) :: T ! (K)
+  !   real(dp) :: B ! W sr^−1 m^−2 m^-1
+  ! 
+  !   real(dp) :: lambda
+  ! 
+  !   lambda = lambda_nm*1.0e-9_dp ! convert to meters
+  ! 
+  !   B = ((2.0_dp*plank*c_light**2.0_dp)/(lambda**5.0_dp)) * &
+  !       ((1.0_dp)/(exp((plank*c_light)/(lambda*k_boltz_si*T)) - 1.0_dp)) 
+  ! end function
+  
+  function planck_fcn(nu, T) result(B)
+    use clima_const, only: c_light, k_boltz => k_boltz_si, plank
+    real(dp), intent(in) :: nu ! (1/s) 
+    real(dp), intent(in) :: T ! (K)
+    real(dp) :: B ! W sr^−1 m^−2 Hz^-1
+    
+    B = ((2.0_dp*plank*nu**3.0_dp)/(c_light**2.0_dp)) * &
+        ((1.0_dp)/(exp((plank*nu)/(k_boltz*T)) - 1.0_dp)) 
+    
   end function
   
   

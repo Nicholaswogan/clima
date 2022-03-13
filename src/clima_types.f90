@@ -78,6 +78,7 @@ module clima_types
     integer :: op_type
     integer :: nw
     real(dp), allocatable :: wavl(:)
+    real(dp), allocatable :: freq(:)
     
     ! K-distributions (e.g. H2O)
     integer :: nk

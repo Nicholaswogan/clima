@@ -5,6 +5,10 @@ module clima_input
   use yaml_types, only : type_node, type_dictionary, type_list, type_error, &
                          type_list_item, type_scalar, type_key_value_pair
   implicit none
+  private
+  
+  public :: create_ClimaSettings, create_ClimaVars, create_ClimaData
+  
 
 contains
   
@@ -489,6 +493,7 @@ contains
   
   function create_OpticalProperties(datadir, optype, wavl, species_names, sop, err) result(op)
     use fortran_yaml_c, only : parse, error_length
+    use clima_const, only: c_light
     use clima_types, only: OpticalProperties, SettingsOpacity
     character(*), intent(in) :: datadir
     integer, intent(in) :: optype
@@ -508,7 +513,9 @@ contains
     op%op_type = optype
     op%nw = size(wavl) - 1
     allocate(op%wavl(size(wavl)))
+    allocate(op%freq(size(wavl)))
     op%wavl = wavl
+    op%freq = c_light/(wavl*1.0e-9_dp)
     
     !!!!!!!!!!!!!!!!!!!!!!!
     !!! k-distributions !!!
@@ -697,6 +704,7 @@ contains
   end function
 
   subroutine read_h5_Xsection(filename, wavl, xs, err)
+    use clima_const, only: log10tiny
     use clima_types, only: Xsection
     use futils, only: addpnt, inter2
     use h5fortran
@@ -786,10 +794,10 @@ contains
       
       kk = dims(1) + 4
       k = dims(1)
-      call addpnt(wav_f, log10_xs_0d, kk, k, wav_f(1)*(1.0_dp-rdelta), 0.0_dp,ierr)
-      call addpnt(wav_f, log10_xs_0d, kk, k, 0.0_dp, 0.0_dp,ierr)
-      call addpnt(wav_f, log10_xs_0d, kk, k, wav_f(k)*(1.0_dp+rdelta), 0.0_dp,ierr)
-      call addpnt(wav_f, log10_xs_0d, kk, k, huge(rdelta), 0.0_dp,ierr)
+      call addpnt(wav_f, log10_xs_0d, kk, k, wav_f(1)*(1.0_dp-rdelta), log10tiny,ierr)
+      call addpnt(wav_f, log10_xs_0d, kk, k, 0.0_dp, log10tiny,ierr)
+      call addpnt(wav_f, log10_xs_0d, kk, k, wav_f(k)*(1.0_dp+rdelta), log10tiny,ierr)
+      call addpnt(wav_f, log10_xs_0d, kk, k, huge(rdelta), log10tiny,ierr)
       if (ierr /= 0) then
         err = 'Problem interpolating data in "'//trim(filename)//'"'
         call h%close()
@@ -826,16 +834,16 @@ contains
       kk = dims(2) + 4
       do i = 1,xs%ntemp
         k = dims(2)
-        call addpnt(wav_f, log10_xs_1d(i,:), kk, k, wav_f(1)*(1.0_dp-rdelta), 0.0_dp,ierr)
-        call addpnt(wav_f, log10_xs_1d(i,:), kk, k, 0.0_dp, 0.0_dp,ierr)
-        call addpnt(wav_f, log10_xs_1d(i,:), kk, k, wav_f(k)*(1.0_dp+rdelta), 0.0_dp,ierr)
-        call addpnt(wav_f, log10_xs_1d(i,:), kk, k, huge(rdelta), 0.0_dp,ierr)
+        call addpnt(wav_f, log10_xs_1d(i,:), kk, k, wav_f(1)*(1.0_dp-rdelta), log10tiny,ierr)
+        call addpnt(wav_f, log10_xs_1d(i,:), kk, k, 0.0_dp, log10tiny,ierr)
+        call addpnt(wav_f, log10_xs_1d(i,:), kk, k, wav_f(k)*(1.0_dp+rdelta), log10tiny,ierr)
+        call addpnt(wav_f, log10_xs_1d(i,:), kk, k, huge(rdelta), log10tiny,ierr)
         if (ierr /= 0) then
           err = 'Problem interpolating data in "'//trim(filename)//'"'
           call h%close()
           return
         endif
-        call inter2(size(wavl), wavl, tmp_xs(:,i), &
+        call inter2(size(wavl), wavl, tmp_xs(i,:), &
                     kk, wav_f, log10_xs_1d(i,:), ierr)
         if (ierr /= 0) then
           err = 'Problem interpolating data in "'//trim(filename)//'"'

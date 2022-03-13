@@ -15,6 +15,9 @@ module clima_const
   real(dp), parameter :: N_avo = 6.02214076e23_dp ! avagadros number
   real(dp), parameter :: pi = 3.14159265358979323846e0_dp
   
+  ! useful
+  real(dp), parameter :: log10tiny = log10(sqrt(tiny(1.0_dp)))
+  
   ! For now, we will hard-code wavelength bins. Doing this
   ! because the correlated-k data is specific to this binning.
   
