@@ -151,11 +151,98 @@ module clima_types
     real(dp), allocatable :: densities(:,:) ! (nz,ng) molecules/cm3
     
     real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2 in each bin
+    
+    ! should be read in 
+    real(dp) :: u0
+    real(dp) :: surface_albedo
+    
   
+  end type
+    
+  ! work
+  type :: RadiateXSWrk
+    type(Kcoefficients), allocatable :: ks(:)
+    real(dp), allocatable :: cia(:,:)
+    real(dp), allocatable :: axs(:,:)
+    real(dp), allocatable :: pxs(:,:)  
+  end type
+  
+  type :: RadiateZWrk
+    real(dp), allocatable :: tausg(:)
+    real(dp), allocatable :: taua(:)
+    real(dp), allocatable :: taua_1(:)
+    real(dp), allocatable :: tau(:)
+    real(dp), allocatable :: w0(:)
+    real(dp), allocatable :: gt(:)
+    real(dp), allocatable :: amean(:)
+    real(dp), allocatable :: fup1(:)
+    real(dp), allocatable :: fdn1(:)
+    real(dp), allocatable :: fup(:)
+    real(dp), allocatable :: fdn(:)
+    real(dp), allocatable :: bplanck(:)
   end type
   
   type :: ClimaWrk
-    ! work variables
+    type(RadiateXSWrk) :: rx_uv
+    type(RadiateXSWrk) :: rx_sol
+    type(RadiateXSWrk) :: rx_ir
+    type(RadiateZWrk) :: rz
   end type
+  
+  interface ClimaWrk
+    module procedure :: create_ClimaWrk
+  end interface
+  
+contains
+  
+  function create_ClimaWrk(d, nz) result(w)
+    type(ClimaData), intent(in) :: d
+    integer, intent(in) :: nz
+    
+    type(ClimaWrk) :: w
+    
+    w%rx_uv = create_RadiateXSWrk(d%uv, nz)
+    w%rx_sol = create_RadiateXSWrk(d%sol, nz)
+    w%rx_ir = create_RadiateXSWrk(d%ir, nz)
+    w%rz = create_RadiateZWrk(nz)
+        
+  end function
+  
+  function create_RadiateXSWrk(op, nz) result(rw)
+    type(OpticalProperties), intent(in) :: op
+    integer, intent(in) :: nz
+    
+    type(RadiateXSWrk) :: rw
+    
+    integer :: i
+    
+    allocate(rw%ks(op%nk))
+    do i = 1,op%nk
+      allocate(rw%ks(i)%k(nz,op%k(i)%ngauss))
+    enddo
+    allocate(rw%cia(nz,op%ncia))
+    allocate(rw%axs(nz,op%naxs))
+    allocate(rw%pxs(nz,op%npxs))
+  
+  end function  
+  
+  function create_RadiateZWrk(nz) result(rz)
+    integer, intent(in) :: nz
+    
+    type(RadiateZWrk) :: rz
+  
+    allocate(rz%tausg(nz))
+    allocate(rz%taua(nz))
+    allocate(rz%taua_1(nz))
+    allocate(rz%tau(nz))
+    allocate(rz%w0(nz))
+    allocate(rz%gt(nz))
+    allocate(rz%amean(nz+1))
+    allocate(rz%fup1(nz+1))
+    allocate(rz%fdn1(nz+1))
+    allocate(rz%fup(nz+1))
+    allocate(rz%fdn(nz+1))
+    allocate(rz%bplanck(nz+1))
+  end function
   
 end module

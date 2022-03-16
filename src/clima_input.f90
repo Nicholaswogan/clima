@@ -13,7 +13,7 @@ module clima_input
 contains
   
   function create_ClimaVars(atm_file, star_file, dat, err) result(v)
-    use clima_const, only: n_sol, sol_wavl
+    use clima_const, only: n_sol, sol_wavl, pi
     character(*), intent(in) :: atm_file
     character(*), intent(in) :: star_file
     type(ClimaData), intent(in) :: dat
@@ -27,6 +27,9 @@ contains
     allocate(v%photons_sol(n_sol))
     call read_stellar_flux(star_file, n_sol, sol_wavl, v%photons_sol, err)
     if (allocated(err)) return
+    
+    v%u0 = cos(50.0_dp*pi/180.0_dp)
+    v%surface_albedo = 0.25_dp
     
   end function
   
@@ -718,7 +721,7 @@ contains
     real(dp), allocatable :: wav_f(:), wav_f_save(:), tmp_xs(:,:)
     real(dp), allocatable :: log10_xs_0d(:)
     real(dp), allocatable :: log10_xs_1d(:,:)
-    real(dp), allocatable :: log10_xs_2d(:,:,:)
+    ! real(dp), allocatable :: log10_xs_2d(:,:,:)
     integer :: i, k, kk, ierr
     real(dp), parameter :: rdelta = 1.0e-4_dp
     
@@ -1078,18 +1081,21 @@ contains
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (associated(tmp_dict)) then
       call unpack_settingsopacity(tmp_dict, filename, s%uv, err)
+      if (allocated(err)) return
     endif
     
     tmp_dict => opacities%get_dictionary("solar", required=.false., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (associated(tmp_dict)) then
       call unpack_settingsopacity(tmp_dict, filename, s%sol, err)
+      if (allocated(err)) return
     endif
     
     tmp_dict => opacities%get_dictionary("ir", required=.false., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (associated(tmp_dict)) then
       call unpack_settingsopacity(tmp_dict, filename, s%ir, err)
+      if (allocated(err)) return
     endif
 
   end subroutine

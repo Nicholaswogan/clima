@@ -8,7 +8,7 @@ opacities:
     CIA: [CO2-CO2]
     rayleigh: [N2, H2O, CO2]
   ir:
-    k-distributions: [H2O, CO2]
+    k-distributions: [H2O,CO2]
     CIA: [CO2-CO2]
     rayleigh: [N2, H2O, CO2]
     # absorption-xs: [O2]
