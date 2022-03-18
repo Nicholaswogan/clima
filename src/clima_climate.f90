@@ -44,14 +44,15 @@ contains
     ! after file read-in
     allocate(c%v%density(c%v%nz))
     allocate(c%v%densities(c%v%nz,c%d%ng))
+    allocate(c%v%cols(c%v%nz,c%d%ng))
     c%v%density = 1.0e6_dp*c%v%P/(k_boltz*c%v%T)
     do i = 1,c%d%ng
       c%v%densities(:,i) = c%v%mix(:,i)*c%v%density
+      c%v%cols(:,i) = c%v%densities(:,i)*c%v%dz(:)
     enddo
     
     ! work
     c%w = ClimaWrk(c%d, c%v%nz)
-    
     
   end function
   
@@ -88,6 +89,9 @@ contains
     use clima_types, only: RadiateXSWrk, RadiateZWrk
     use clima_types, only: OpticalProperties, Kcoefficients
     use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
+    use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
+    use clima_eqns, only: planck_fcn
+    
     use futils, only: Timer
     type(OpticalProperties), intent(inout) :: op
     type(ClimaVars), intent(in) :: v
@@ -122,7 +126,6 @@ contains
       ! interpolate to T and P grid
       ! k-distributions
       do i = 1,op%nk
-        rw%ks(i)%ngauss = op%k(i)%ngauss
         do k = 1,op%k(i)%ngauss
           do j = 1,v%nz
             call op%k(i)%log10k(k,l)%evaluate(log10(v%P(j)), v%T(j), rw%ks(i)%k(j,k))
@@ -202,9 +205,120 @@ contains
       rz%fup1 = 0.0_dp
       rz%fdn1 = 0.0_dp
       
-      ! Recursive solution to arbitrary number of 
-      ! nested loops.
-      call k_loops(v, op, rw%ks, rz, iks, 1)
+      if (v%k_method == k_RandomOverlap) then
+        ! Random Overlap method. Very slow.
+        ! k_loops uses recursion to make an arbitrary
+        ! number of nested loops.
+        call k_loops(v, op, rw%ks, rz, iks, 1)
+      elseif (v%k_method == k_RandomOverlapResortRebin) then
+        ! Random Overlap with Resorting and Rebinning.
+        
+        block
+          use futils, only: rebin, argsort
+          use clima_eqns, only: weights_to_bins
+          use clima_twostream, only: two_stream_solar, two_stream_ir
+          real(dp), allocatable :: tau_k(:,:) ! (nz,nbin)
+          real(dp), allocatable :: tau_xy(:,:) ! (nz,nbin*ngauss_max)
+          real(dp), allocatable :: wxy(:)
+          real(dp), allocatable :: wxy1(:)
+          real(dp), allocatable :: wxy_e(:)
+          integer, allocatable :: inds(:)
+          
+          integer :: j1, j2, ngauss_max, ngauss, ngauss_mix
+          real(dp) :: surf_rad
+          
+          
+          allocate(tau_k(v%nz,v%nbin))
+          ! find biggest ngauss
+          ngauss_max = 0
+          do i = 1,op%nk
+            ngauss_max = max(ngauss_max,op%k(i)%ngauss)
+          enddo
+          ! allocate enough space in these arrays for mixing
+          ! all k-coeffs
+          allocate(tau_xy(v%nz,v%nbin*ngauss_max))
+          allocate(wxy(v%nbin*ngauss_max))
+          allocate(wxy1(v%nbin*ngauss_max))
+          allocate(wxy_e(v%nbin*ngauss_max+1))
+          allocate(inds(v%nbin*ngauss_max))
+          
+          ! rebin k-coeffs of first species to new grid
+          do i = 1,v%nz
+            call rebin(op%k(1)%weight_e, rw%ks(1)%k(i,:), v%wbin_e, tau_k(i,:))
+          enddo
+          ! combine k-coefficients with species concentrations (molecules/cm2)
+          j1 = op%k(1)%sp_ind
+          do i = 1,v%nbin
+            tau_k(:,i) = tau_k(:,i)*v%cols(:,j1)
+          enddo
+          
+          ! Mix rest of k-coeff species with the first species
+          do jj = 2,op%nk
+            
+            j2 = op%k(jj)%sp_ind
+            ngauss = op%k(jj)%ngauss
+            ngauss_mix = v%nbin*ngauss
+            
+            do i = 1,v%nbin
+              do j = 1,ngauss
+                tau_xy(:,j + (i-1)*ngauss) = tau_k(:,i) &
+                                                      + rw%ks(jj)%k(:,j)*v%cols(:,j2)
+                wxy(j + (i-1)*ngauss) = v%wbin(i)*op%k(jj)%weights(j) 
+              enddo
+            enddo
+            
+            ! Here we only use the relevant space in 
+            ! each work array.
+            do i = 1,v%nz
+              ! sort tau_xy and the weights
+              inds(1:ngauss_mix) = argsort(tau_xy(i,1:ngauss_mix))
+              tau_xy(i,1:ngauss_mix) = tau_xy(i,inds(1:ngauss_mix))
+              wxy1(1:ngauss_mix) = wxy(inds(1:ngauss_mix))
+              ! rebin to smaller grid
+              call weights_to_bins(wxy1(1:ngauss_mix), wxy_e(1:ngauss_mix+1))
+              call rebin(wxy_e(1:ngauss_mix+1), tau_xy(i,1:ngauss_mix), v%wbin_e, tau_k(i,:))
+            enddo
+            
+          enddo
+          
+          ! loop over mixed k-coeffs
+          do i = 1,v%nbin
+
+            ! tau_k(:,i) is optical depth of ith mixed k-coeff.
+            ! tau_k(1,i) is ground level. Need to reorder so that
+            ! first element in array is top of the atmosphere.
+            do k = 1,v%nz
+              n = v%nz+1-k
+              rz%taua_1(n) = tau_k(k,i)
+            enddo
+            
+            ! sum all optical depths
+            ! total = gas scattering + continumm/gray opacities + k-coeff
+            rz%tau = rz%tausg + rz%taua + rz%taua_1
+            do j = 1,v%nz
+              rz%w0(j) = min(0.99999_dp,rz%tausg(j)/rz%tau(j))
+            enddo
+            
+            if (op%op_type == FarUVOpticalProperties .or. &
+                op%op_type == SolarOpticalProperties) then
+              call two_stream_solar(v%nz, rz%tau, rz%w0, rz%gt, v%u0, v%surface_albedo, &
+                                    rz%amean, surf_rad, rz%fup, rz%fdn)
+            elseif (op%op_type == IROpticalProperties) then
+              call two_stream_ir(v%nz, rz%tau, rz%w0, rz%gt, v%surface_albedo, rz%bplanck, &
+                                 rz%fup, rz%fdn)
+            endif
+            
+            ! weight upward and downward fluxes by
+            ! k-coeff weights (v%wbin(i))
+            rz%fup1 = rz%fup1 + rz%fup*v%wbin(i)
+            rz%fdn1 = rz%fdn1 + rz%fdn*v%wbin(i)
+            
+          enddo
+                
+          
+        end block
+        
+      endif
       
       fup_a(:,l) =  max(rz%fup1,0.0_dp)
       fdn_a(:,l) =  max(rz%fdn1,0.0_dp)
@@ -246,12 +360,11 @@ contains
     
     call tm%finish('')
     
-    ! open(unit=1,file='../fup.dat',form='formatted',status='replace')
+    ! open(unit=1,file='../fup_rorr8.dat',form='formatted',status='replace')
     ! do i = 1,op%nw
     !   write(1,*) op%freq(i),op%wavl(i)*1.0e-3_dp,fup_a(1,i)
     ! enddo
-    ! close(1)
-    
+    ! close(1)  
     
   end subroutine
   
@@ -277,7 +390,7 @@ contains
     integer :: i, j, k, n
     
     
-    do i = 1,ks(ik)%ngauss
+    do i = 1,op%k(ik)%ngauss
       iks(ik) = i
       
       ! if ik = number of k coeffients
@@ -354,31 +467,6 @@ contains
     endif
     
   end subroutine
-  
-  ! function planck_fcn(lambda_nm, T) result(B)
-  !   use clima_const, only: c_light, k_boltz_si, plank
-  !   real(dp), intent(in) :: lambda_nm ! (nm) 
-  !   real(dp), intent(in) :: T ! (K)
-  !   real(dp) :: B ! W sr^−1 m^−2 m^-1
-  ! 
-  !   real(dp) :: lambda
-  ! 
-  !   lambda = lambda_nm*1.0e-9_dp ! convert to meters
-  ! 
-  !   B = ((2.0_dp*plank*c_light**2.0_dp)/(lambda**5.0_dp)) * &
-  !       ((1.0_dp)/(exp((plank*c_light)/(lambda*k_boltz_si*T)) - 1.0_dp)) 
-  ! end function
-  
-  function planck_fcn(nu, T) result(B)
-    use clima_const, only: c_light, k_boltz => k_boltz_si, plank
-    real(dp), intent(in) :: nu ! (1/s) 
-    real(dp), intent(in) :: T ! (K)
-    real(dp) :: B ! W sr^−1 m^−2 Hz^-1
-    
-    B = ((2.0_dp*plank*nu**3.0_dp)/(c_light**2.0_dp)) * &
-        ((1.0_dp)/(exp((plank*nu)/(k_boltz*T)) - 1.0_dp)) 
-    
-  end function
   
   
 end module

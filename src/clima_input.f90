@@ -13,13 +13,17 @@ module clima_input
 contains
   
   function create_ClimaVars(atm_file, star_file, dat, err) result(v)
+    use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
     use clima_const, only: n_sol, sol_wavl, pi
+    use clima_eqns, only: bins_to_weights
     character(*), intent(in) :: atm_file
     character(*), intent(in) :: star_file
     type(ClimaData), intent(in) :: dat
     character(:), allocatable, intent(out) :: err
     
     type(ClimaVars) :: v
+    
+    integer :: i
     
     call read_atmosphere_txt(atm_file, dat, v, err)
     if (allocated(err)) return
@@ -28,12 +32,26 @@ contains
     call read_stellar_flux(star_file, n_sol, sol_wavl, v%photons_sol, err)
     if (allocated(err)) return
     
+    ! all bellow should be read in 
     v%u0 = cos(50.0_dp*pi/180.0_dp)
     v%surface_albedo = 0.25_dp
+    v%k_method = k_RandomOverlapResortRebin
+    v%nbin = 8
+    allocate(v%wbin_e(v%nbin+1))
+    allocate(v%wbin(v%nbin))
+    v%wbin_e = [0.        , 0.16523105, 0.47499999, 0.78476894, 0.94999999, &
+                0.95869636, 0.97499999, 0.99130362, 1.0]
+    ! do i = 1,v%nbin+1
+    !   v%wbin_e(i) = (i-1)*(1.0_dp/((v%nbin+1)-1))
+    ! enddo
+    call bins_to_weights(v%wbin_e,v%wbin)
     
   end function
   
   subroutine read_atmosphere_txt(atm_file, dat, v, err)
+    
+    use futils, only: is_close
+    
     character(*), intent(in) :: atm_file
     type(ClimaData), intent(in) :: dat
     type(ClimaVars), intent(inout) :: v
@@ -881,6 +899,8 @@ contains
     use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties, &
                            Ktable
     use h5fortran
+    use futils, only: is_close
+    use clima_eqns, only: weights_to_bins
     
     character(*), intent(in) :: filename
     integer, intent(in) :: sp_ind
@@ -930,6 +950,10 @@ contains
     k%ngauss = dims(1)
     allocate(k%weights(dims(1)))
     call h%read("weights", k%weights)
+    
+    ! weight edges
+    allocate(k%weight_e(k%ngauss+1))
+    call weights_to_bins(k%weights, k%weight_e)
     
     ! Pressure
     call check_h5_dataset(h, "log10P", 1, H5T_FLOAT_F, filename//"/"//optype_str, err)
@@ -1232,28 +1256,6 @@ contains
     enddo
     
   end subroutine
-  
-  pure elemental function is_close(val1, val2, tol) result(res)
-    real(dp), intent(in) :: val1, val2
-    real(dp), optional, intent(in) :: tol
-    
-    logical :: res
-    
-    real(dp) :: tol_
-
-    if (present(tol)) then
-      tol_ = tol
-    else
-      tol_ = 1.0e-5_dp
-    endif
-    
-    if (val1 < val2 + (val2*tol_) .and. val1 > val2 - (val2*tol_)) then
-      res = .true.
-    else
-      res = .false.
-    endif
-
-  end function
   
 end module
 

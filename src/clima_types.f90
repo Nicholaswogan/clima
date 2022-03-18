@@ -22,7 +22,6 @@ module clima_types
     type(SettingsOpacity) :: uv
     type(SettingsOpacity) :: sol
     type(SettingsOpacity) :: ir
-    
   end type
 
   !!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -35,17 +34,13 @@ module clima_types
   ! Photolysis, Absorption), and can be grids, which are interpolated over 
   ! constant (no interpolation), or T or T and log10P.
   
-  type :: Kcoefficients
-    integer :: ngauss
-    real(dp), allocatable :: k(:,:) ! (nz, ngauss)
-  end type
-  
   type :: Ktable
     integer :: sp_ind
-    integer :: ngauss 
+    integer :: ngauss
     integer :: npress
     integer :: ntemp
     integer :: nwav
+    real(dp), allocatable :: weight_e(:) ! (ngauss+1) bin edges
     real(dp), allocatable :: weights(:) ! (ngauss)
     real(dp), allocatable :: log10P(:) ! (nwav) log10(bars)
     real(dp), allocatable :: temp(:) ! (ntemp) kelvin
@@ -98,6 +93,12 @@ module clima_types
     
   end type
   
+  ! We will interpolate an atmosphere to an array of
+  ! these types.
+  type :: Kcoefficients
+    real(dp), allocatable :: k(:,:) ! (nz, ngauss)
+  end type
+  
   !!!!!!!!!!!!!!!
   !!! Species !!!
   !!!!!!!!!!!!!!!
@@ -138,6 +139,11 @@ module clima_types
     
   end type
   
+  ! integer :: k_method 
+  enum, bind(c)
+    enumerator :: K_RandomOverlap, k_RandomOverlapResortRebin
+  end enum
+  
   type :: ClimaVars
     
     integer :: nz
@@ -149,12 +155,19 @@ module clima_types
     ! not read in
     real(dp), allocatable :: density(:) ! (nz) molecules/cm3
     real(dp), allocatable :: densities(:,:) ! (nz,ng) molecules/cm3
+    real(dp), allocatable :: cols(:,:) ! (nz,ng) molecules/cm2 at each atmospheric layer
     
     real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2 in each bin
     
     ! should be read in 
     real(dp) :: u0
     real(dp) :: surface_albedo
+    integer :: k_method ! approach to combining k-distributions
+    ! if k_method == k_RandomOverlapResortRebin
+    ! then these are the weights we are re-binning to.
+    integer :: nbin 
+    real(dp), allocatable :: wbin(:) ! (nbin)
+    real(dp), allocatable :: wbin_e(:) ! (nbin+1)
     
   
   end type
