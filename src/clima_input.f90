@@ -15,15 +15,12 @@ contains
   function create_ClimaVars(atm_file, star_file, dat, err) result(v)
     use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
     use clima_const, only: n_sol, sol_wavl, pi
-    use clima_eqns, only: bins_to_weights
     character(*), intent(in) :: atm_file
     character(*), intent(in) :: star_file
     type(ClimaData), intent(in) :: dat
     character(:), allocatable, intent(out) :: err
     
     type(ClimaVars) :: v
-    
-    integer :: i
     
     call read_atmosphere_txt(atm_file, dat, v, err)
     if (allocated(err)) return
@@ -35,16 +32,6 @@ contains
     ! all bellow should be read in 
     v%u0 = cos(50.0_dp*pi/180.0_dp)
     v%surface_albedo = 0.25_dp
-    v%k_method = k_RandomOverlapResortRebin
-    v%nbin = 8
-    allocate(v%wbin_e(v%nbin+1))
-    allocate(v%wbin(v%nbin))
-    v%wbin_e = [0.        , 0.16523105, 0.47499999, 0.78476894, 0.94999999, &
-                0.95869636, 0.97499999, 0.99130362, 1.0]
-    ! do i = 1,v%nbin+1
-    !   v%wbin_e(i) = (i-1)*(1.0_dp/((v%nbin+1)-1))
-    ! enddo
-    call bins_to_weights(v%wbin_e,v%wbin)
     
   end function
   
@@ -239,12 +226,18 @@ contains
   function create_ClimaData(spfile, datadir, s, err) result(dat)
     use clima_const, only: sol_wavl, ir_wavl
     use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
+    use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
+    use clima_types, only: Ksettings
+    use clima_eqns, only: bins_to_weights
     character(*), intent(in) :: spfile
     character(*), intent(in) :: datadir
     type(ClimaSettings), intent(in) :: s
     character(:), allocatable, intent(out) :: err
     
-    type(ClimaData) :: dat
+    type(ClimaData), target :: dat
+    
+    type(Ksettings), pointer :: kset
+    integer :: i
     
     ! Reads species yaml file
     call read_speciesfile(spfile, s, dat, err)
@@ -261,9 +254,25 @@ contains
     dat%ir = create_OpticalProperties(datadir, IROpticalProperties,&
                                       ir_wavl, dat%species_names, s%ir, err)
     if (allocated(err)) return
+  
+    ! method for mixing k-distributions.
+    kset => dat%kset
+    if (s%k_method == "RandomOverlapResortRebin") then
+      kset%k_method = k_RandomOverlapResortRebin
+      kset%nbin = s%nbins
+      allocate(kset%wbin_e(kset%nbin+1))
+      allocate(kset%wbin(kset%nbin))
+      ! should do fancy polynomials
+      do i = 1,kset%nbin+1
+        kset%wbin_e(i) = (i-1)*(1.0_dp/((kset%nbin+1.0_dp)-1.0_dp))
+      enddo
+      ! kset%wbin_e = [0.        , 0.16523105, 0.47499999, 0.78476894, 0.94999999, &
+      !             0.95869636, 0.97499999, 0.99130362, 1.0]
+      call bins_to_weights(kset%wbin_e, kset%wbin)
+    elseif (s%k_method == "RandomOverlap") then
+      kset%k_method = k_RandomOverlap
+    endif
     
-    
-    ! other stuff
   end function
   
   subroutine read_speciesfile(filename, s, dat, err)
@@ -556,6 +565,13 @@ contains
         op%k(i) = create_Ktable(filename, ind1, optype, wavl, err)
         if (allocated(err)) return
       enddo
+      
+      ! find maximum number of gauss points
+      op%ngauss_max = 0
+      do i = 1,op%nk
+        op%ngauss_max = max(op%ngauss_max,op%k(i)%ngauss)
+      enddo
+      
     else
       op%nk = 0
     endif
@@ -1092,13 +1108,34 @@ contains
     type(ClimaSettings), intent(out) :: s
     character(:), allocatable, intent(out) :: err
     
-    type(type_dictionary), pointer :: opacities, tmp_dict
+    type(type_dictionary), pointer :: op_prop, opacities, tmp_dict
     type (type_error), allocatable :: io_err
+    
+    
+    !!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!! optical properties !!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!
+    op_prop => root%get_dictionary("optical-properties", required=.true., error=io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+      
+    ! optical property settings
+    s%k_method = trim(op_prop%get_string("k-method", error=io_err))
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    
+    if (s%k_method == "RandomOverlapResortRebin") then
+      s%nbins = op_prop%get_integer("number-of-bins", error=io_err)
+      if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    elseif (s%k_method == "RandomOverlap") then
+      ! do nothing
+    else
+      err = 'k-method "'//s%k_method//'" in "'//filename//'" is not an option.'
+      return
+    endif
     
     !!!!!!!!!!!!!!!!!
     !!! opacities !!!
     !!!!!!!!!!!!!!!!!
-    opacities => root%get_dictionary("opacities", required=.true., error=io_err)
+    opacities => op_prop%get_dictionary("opacities", required=.true., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
       
     tmp_dict => opacities%get_dictionary("faruv", required=.false., error=io_err)

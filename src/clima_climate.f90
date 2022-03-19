@@ -79,14 +79,14 @@ contains
     allocate(fdn_a(v%nz+1,d%ir%nw))
     
     ! Solar radiative transfer
-    call radiate(d%ir, v, w%rx_ir, w%rz, fup_a, fdn_a, fup_ir, fdn_ir)
+    call radiate(d%ir, d%kset, v, w%rx_ir, w%rz, fup_a, fdn_a, fup_ir, fdn_ir)
     ! call radiate(d%sol, v, fup_sol, fdn_sol)
     
-
+    
   end subroutine
   
-  subroutine radiate(op, v, rw, rz, fup_a, fdn_a, fup_n, fdn_n)
-    use clima_types, only: RadiateXSWrk, RadiateZWrk
+  subroutine radiate(op, kset, v, rw, rz, fup_a, fdn_a, fup_n, fdn_n)
+    use clima_types, only: RadiateXSWrk, RadiateZWrk, Ksettings
     use clima_types, only: OpticalProperties, Kcoefficients
     use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
@@ -94,6 +94,7 @@ contains
     
     use futils, only: Timer
     type(OpticalProperties), intent(inout) :: op
+    type(Ksettings), intent(in) :: kset
     type(ClimaVars), intent(in) :: v
     type(RadiateXSWrk), intent(inout) :: rw
     type(RadiateZWrk), intent(inout) :: rz
@@ -205,120 +206,24 @@ contains
       rz%fup1 = 0.0_dp
       rz%fdn1 = 0.0_dp
       
-      if (v%k_method == k_RandomOverlap) then
-        ! Random Overlap method. Very slow.
-        ! k_loops uses recursion to make an arbitrary
-        ! number of nested loops.
-        call k_loops(v, op, rw%ks, rz, iks, 1)
-      elseif (v%k_method == k_RandomOverlapResortRebin) then
-        ! Random Overlap with Resorting and Rebinning.
+      if (op%nk /= 0) then
         
-        block
-          use futils, only: rebin, argsort
-          use clima_eqns, only: weights_to_bins
-          use clima_twostream, only: two_stream_solar, two_stream_ir
-          real(dp), allocatable :: tau_k(:,:) ! (nz,nbin)
-          real(dp), allocatable :: tau_xy(:,:) ! (nz,nbin*ngauss_max)
-          real(dp), allocatable :: wxy(:)
-          real(dp), allocatable :: wxy1(:)
-          real(dp), allocatable :: wxy_e(:)
-          integer, allocatable :: inds(:)
-          
-          integer :: j1, j2, ngauss_max, ngauss, ngauss_mix
-          real(dp) :: surf_rad
-          
-          
-          allocate(tau_k(v%nz,v%nbin))
-          ! find biggest ngauss
-          ngauss_max = 0
-          do i = 1,op%nk
-            ngauss_max = max(ngauss_max,op%k(i)%ngauss)
-          enddo
-          ! allocate enough space in these arrays for mixing
-          ! all k-coeffs
-          allocate(tau_xy(v%nz,v%nbin*ngauss_max))
-          allocate(wxy(v%nbin*ngauss_max))
-          allocate(wxy1(v%nbin*ngauss_max))
-          allocate(wxy_e(v%nbin*ngauss_max+1))
-          allocate(inds(v%nbin*ngauss_max))
-          
-          ! rebin k-coeffs of first species to new grid
-          do i = 1,v%nz
-            call rebin(op%k(1)%weight_e, rw%ks(1)%k(i,:), v%wbin_e, tau_k(i,:))
-          enddo
-          ! combine k-coefficients with species concentrations (molecules/cm2)
-          j1 = op%k(1)%sp_ind
-          do i = 1,v%nbin
-            tau_k(:,i) = tau_k(:,i)*v%cols(:,j1)
-          enddo
-          
-          ! Mix rest of k-coeff species with the first species
-          do jj = 2,op%nk
-            
-            j2 = op%k(jj)%sp_ind
-            ngauss = op%k(jj)%ngauss
-            ngauss_mix = v%nbin*ngauss
-            
-            do i = 1,v%nbin
-              do j = 1,ngauss
-                tau_xy(:,j + (i-1)*ngauss) = tau_k(:,i) &
-                                                      + rw%ks(jj)%k(:,j)*v%cols(:,j2)
-                wxy(j + (i-1)*ngauss) = v%wbin(i)*op%k(jj)%weights(j) 
-              enddo
-            enddo
-            
-            ! Here we only use the relevant space in 
-            ! each work array.
-            do i = 1,v%nz
-              ! sort tau_xy and the weights
-              inds(1:ngauss_mix) = argsort(tau_xy(i,1:ngauss_mix))
-              tau_xy(i,1:ngauss_mix) = tau_xy(i,inds(1:ngauss_mix))
-              wxy1(1:ngauss_mix) = wxy(inds(1:ngauss_mix))
-              ! rebin to smaller grid
-              call weights_to_bins(wxy1(1:ngauss_mix), wxy_e(1:ngauss_mix+1))
-              call rebin(wxy_e(1:ngauss_mix+1), tau_xy(i,1:ngauss_mix), v%wbin_e, tau_k(i,:))
-            enddo
-            
-          enddo
-          
-          ! loop over mixed k-coeffs
-          do i = 1,v%nbin
-
-            ! tau_k(:,i) is optical depth of ith mixed k-coeff.
-            ! tau_k(1,i) is ground level. Need to reorder so that
-            ! first element in array is top of the atmosphere.
-            do k = 1,v%nz
-              n = v%nz+1-k
-              rz%taua_1(n) = tau_k(k,i)
-            enddo
-            
-            ! sum all optical depths
-            ! total = gas scattering + continumm/gray opacities + k-coeff
-            rz%tau = rz%tausg + rz%taua + rz%taua_1
-            do j = 1,v%nz
-              rz%w0(j) = min(0.99999_dp,rz%tausg(j)/rz%tau(j))
-            enddo
-            
-            if (op%op_type == FarUVOpticalProperties .or. &
-                op%op_type == SolarOpticalProperties) then
-              call two_stream_solar(v%nz, rz%tau, rz%w0, rz%gt, v%u0, v%surface_albedo, &
-                                    rz%amean, surf_rad, rz%fup, rz%fdn)
-            elseif (op%op_type == IROpticalProperties) then
-              call two_stream_ir(v%nz, rz%tau, rz%w0, rz%gt, v%surface_albedo, rz%bplanck, &
-                                 rz%fup, rz%fdn)
-            endif
-            
-            ! weight upward and downward fluxes by
-            ! k-coeff weights (v%wbin(i))
-            rz%fup1 = rz%fup1 + rz%fup*v%wbin(i)
-            rz%fdn1 = rz%fdn1 + rz%fdn*v%wbin(i)
-            
-          enddo
-                
-          
-        end block
+        ! Deal with k-distributions
+        if (kset%k_method == k_RandomOverlap) then
+          ! Random Overlap method. Slow for >2 k species.
+          ! k_loops uses recursion to make an arbitrary
+          ! number of nested loops.
+          call k_loops(v, op, rw%ks, rz, iks, 1)
+        elseif (kset%k_method == k_RandomOverlapResortRebin) then
+          ! Random Overlap with Resorting and Rebinning.
+          call k_rror(v, op, kset, rw, rz)
+        endif
         
-      endif
+      else
+        ! there are no k-distributions
+        print*,"there are no k-distributions"
+        stop 1
+      endif ! endif k-dist
       
       fup_a(:,l) =  max(rz%fup1,0.0_dp)
       fdn_a(:,l) =  max(rz%fdn1,0.0_dp)
@@ -368,6 +273,113 @@ contains
     
   end subroutine
   
+  subroutine k_rror(v, op, kset, rw, rz)
+    use futils, only: rebin, argsort
+    use clima_types, only: OpticalProperties, Ksettings
+    use clima_types, only: ClimaVars, RadiateZWrk, RadiateXSWrk
+    use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
+    use clima_eqns, only: weights_to_bins
+    use clima_twostream, only: two_stream_solar, two_stream_ir
+    
+    type(ClimaVars), intent(in) :: v
+    type(OpticalProperties), intent(in) :: op
+    type(Ksettings), intent(in) :: kset
+    type(RadiateXSWrk), target, intent(in) :: rw
+    type(RadiateZWrk), intent(inout) :: rz
+    
+    real(dp), pointer :: tau_k(:,:) ! (nz,nbin)
+    real(dp), pointer :: tau_xy(:,:) ! (nz,nbin*ngauss_max)
+    real(dp), pointer :: wxy(:) ! (nbin*ngauss_max)
+    real(dp), pointer :: wxy1(:) ! (nbin*ngauss_max)
+    real(dp), pointer :: wxy_e(:) ! (nbin*ngauss_max+1)
+    integer, pointer :: inds(:) ! (nbin*ngauss_max)
+      
+    integer :: i, j, k, n, jj
+    integer :: j1, j2, ngauss, ngauss_mix
+    real(dp) :: surf_rad
+      
+    ! pointers to work arrays
+    tau_k => rw%tau_k
+    tau_xy => rw%tau_xy
+    wxy => rw%wxy
+    wxy1 => rw%wxy1
+    wxy_e => rw%wxy_e
+    inds => rw%inds
+      
+      ! rebin k-coeffs of first species to new grid
+    do i = 1,v%nz
+      call rebin(op%k(1)%weight_e, rw%ks(1)%k(i,:), kset%wbin_e, tau_k(i,:))
+    enddo
+    ! combine k-coefficients with species concentrations (molecules/cm2)
+    j1 = op%k(1)%sp_ind
+    do i = 1,kset%nbin
+      tau_k(:,i) = tau_k(:,i)*v%cols(:,j1)
+    enddo
+    
+    ! Mix rest of k-coeff species with the first species
+    do jj = 2,op%nk
+      
+      j2 = op%k(jj)%sp_ind
+      ngauss = op%k(jj)%ngauss
+      ngauss_mix = kset%nbin*ngauss
+      
+      do i = 1,kset%nbin
+        do j = 1,ngauss
+          tau_xy(:,j + (i-1)*ngauss) = tau_k(:,i) &
+                                                + rw%ks(jj)%k(:,j)*v%cols(:,j2)
+          wxy(j + (i-1)*ngauss) = kset%wbin(i)*op%k(jj)%weights(j) 
+        enddo
+      enddo
+      
+      ! Here we only use the relevant space in 
+      ! each work array.
+      do i = 1,v%nz
+        ! sort tau_xy and the weights
+        inds(1:ngauss_mix) = argsort(tau_xy(i,1:ngauss_mix))
+        tau_xy(i,1:ngauss_mix) = tau_xy(i,inds(1:ngauss_mix))
+        wxy1(1:ngauss_mix) = wxy(inds(1:ngauss_mix))
+        ! rebin to smaller grid
+        call weights_to_bins(wxy1(1:ngauss_mix), wxy_e(1:ngauss_mix+1))
+        call rebin(wxy_e(1:ngauss_mix+1), tau_xy(i,1:ngauss_mix), kset%wbin_e, tau_k(i,:))
+      enddo
+      
+    enddo
+    
+    ! loop over mixed k-coeffs
+    do i = 1,kset%nbin
+
+      ! tau_k(:,i) is optical depth of ith mixed k-coeff.
+      ! tau_k(1,i) is ground level. Need to reorder so that
+      ! first element in array is top of the atmosphere.
+      do k = 1,v%nz
+        n = v%nz+1-k
+        rz%taua_1(n) = tau_k(k,i)
+      enddo
+      
+      ! sum all optical depths
+      ! total = gas scattering + continumm/gray opacities + k-coeff
+      rz%tau = rz%tausg + rz%taua + rz%taua_1
+      do j = 1,v%nz
+        rz%w0(j) = min(0.99999_dp,rz%tausg(j)/rz%tau(j))
+      enddo
+      
+      if (op%op_type == FarUVOpticalProperties .or. &
+          op%op_type == SolarOpticalProperties) then
+        call two_stream_solar(v%nz, rz%tau, rz%w0, rz%gt, v%u0, v%surface_albedo, &
+                              rz%amean, surf_rad, rz%fup, rz%fdn)
+      elseif (op%op_type == IROpticalProperties) then
+        call two_stream_ir(v%nz, rz%tau, rz%w0, rz%gt, v%surface_albedo, rz%bplanck, &
+                           rz%fup, rz%fdn)
+      endif
+      
+      ! weight upward and downward fluxes by
+      ! k-coeff weights (kset%wbin(i))
+      rz%fup1 = rz%fup1 + rz%fup*kset%wbin(i)
+      rz%fdn1 = rz%fdn1 + rz%fdn*kset%wbin(i)
+      
+    enddo
+    
+  end subroutine
   
   recursive subroutine k_loops(v, op, ks, rz, iks, ik)
     use clima_types, only: OpticalProperties, Kcoefficients
@@ -462,7 +474,7 @@ contains
         res(j) = 10.0_dp**val
       enddo
     elseif (xs%dim == 2) then
-      print*,'NOOOOO'
+      print*,'interpolate_Xsection'
       stop 1
     endif
     

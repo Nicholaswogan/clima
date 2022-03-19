@@ -19,6 +19,8 @@ module clima_types
   end type
   
   type :: ClimaSettings
+    character(:), allocatable :: k_method
+    integer :: nbins
     type(SettingsOpacity) :: uv
     type(SettingsOpacity) :: sol
     type(SettingsOpacity) :: ir
@@ -76,6 +78,7 @@ module clima_types
     real(dp), allocatable :: freq(:)
     
     ! K-distributions (e.g. H2O)
+    integer :: ngauss_max = -1
     integer :: nk
     type(Ktable), allocatable :: k(:)
     ! T-dependent CIA coefficients (e.g. H2-H2)
@@ -120,6 +123,16 @@ module clima_types
     
   end type
   
+  type :: Ksettings
+    ! approach to combining k-distributions
+    integer :: k_method 
+    ! if k_method == k_RandomOverlapResortRebin
+    ! then these are the weights we are re-binning to.
+    integer :: nbin = -1
+    real(dp), allocatable :: wbin(:) ! (nbin)
+    real(dp), allocatable :: wbin_e(:) ! (nbin+1)
+  end type
+  
   type :: ClimaData
     
     character(:), allocatable :: data_dir
@@ -136,6 +149,7 @@ module clima_types
     type(OpticalProperties) :: uv
     type(OpticalProperties) :: sol
     type(OpticalProperties) :: ir
+    type(Ksettings) :: kset
     
   end type
   
@@ -162,13 +176,6 @@ module clima_types
     ! should be read in 
     real(dp) :: u0
     real(dp) :: surface_albedo
-    integer :: k_method ! approach to combining k-distributions
-    ! if k_method == k_RandomOverlapResortRebin
-    ! then these are the weights we are re-binning to.
-    integer :: nbin 
-    real(dp), allocatable :: wbin(:) ! (nbin)
-    real(dp), allocatable :: wbin_e(:) ! (nbin+1)
-    
   
   end type
     
@@ -177,7 +184,16 @@ module clima_types
     type(Kcoefficients), allocatable :: ks(:)
     real(dp), allocatable :: cia(:,:)
     real(dp), allocatable :: axs(:,:)
-    real(dp), allocatable :: pxs(:,:)  
+    real(dp), allocatable :: pxs(:,:)
+    
+    ! work arrays that are needed only if
+    ! k_method == k_RandomOverlapResortRebin
+    real(dp), allocatable :: tau_k(:,:) ! (nz,nbin)
+    real(dp), allocatable :: tau_xy(:,:) ! (nz,nbin*ngauss_max)
+    real(dp), allocatable :: wxy(:) ! (nbin*ngauss_max)
+    real(dp), allocatable :: wxy1(:) ! (nbin*ngauss_max)
+    real(dp), allocatable :: wxy_e(:) ! (nbin*ngauss_max+1)
+    integer, allocatable :: inds(:) ! (nbin*ngauss_max)
   end type
   
   type :: RadiateZWrk
@@ -214,15 +230,16 @@ contains
     
     type(ClimaWrk) :: w
     
-    w%rx_uv = create_RadiateXSWrk(d%uv, nz)
-    w%rx_sol = create_RadiateXSWrk(d%sol, nz)
-    w%rx_ir = create_RadiateXSWrk(d%ir, nz)
+    w%rx_uv = create_RadiateXSWrk(d%uv, d%kset, nz)
+    w%rx_sol = create_RadiateXSWrk(d%sol, d%kset, nz)
+    w%rx_ir = create_RadiateXSWrk(d%ir, d%kset, nz)
     w%rz = create_RadiateZWrk(nz)
         
   end function
   
-  function create_RadiateXSWrk(op, nz) result(rw)
+  function create_RadiateXSWrk(op, kset, nz) result(rw)
     type(OpticalProperties), intent(in) :: op
+    type(Ksettings), intent(in) :: kset
     integer, intent(in) :: nz
     
     type(RadiateXSWrk) :: rw
@@ -236,7 +253,22 @@ contains
     allocate(rw%cia(nz,op%ncia))
     allocate(rw%axs(nz,op%naxs))
     allocate(rw%pxs(nz,op%npxs))
-  
+    
+    ! if there are k-distributions
+    ! then we need to allocate some work arrays
+    if (op%nk /= 0) then
+      if (kset%k_method == K_RandomOverlap) then
+        ! no need to allocate anything
+      elseif (kset%k_method == K_RandomOverlapResortRebin) then
+        allocate(rw%tau_k(nz,kset%nbin))
+        allocate(rw%tau_xy(nz,kset%nbin*op%ngauss_max))
+        allocate(rw%wxy(kset%nbin*op%ngauss_max))
+        allocate(rw%wxy1(kset%nbin*op%ngauss_max))
+        allocate(rw%wxy_e(kset%nbin*op%ngauss_max))
+        allocate(rw%inds(kset%nbin*op%ngauss_max))
+      endif
+    endif
+    
   end function  
   
   function create_RadiateZWrk(nz) result(rz)

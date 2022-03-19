@@ -1,18 +1,23 @@
+
+
   
-opacities:
-  faruv:
-    CIA: [CO2-CO2]
-    rayleigh: [N2, H2O, CO2]
-  solar:
-    k-distributions: [H2O, CO2]
-    CIA: [CO2-CO2]
-    rayleigh: [N2, H2O, CO2]
-  ir:
-    k-distributions: [H2O,CO2]
-    CIA: [CO2-CO2]
-    rayleigh: [N2, H2O, CO2]
-    # absorption-xs: [O2]
-    # photolysis-xs: [O3]
+optical-properties:
+  k-method: RandomOverlapResortRebin
+  number-of-bins: 8
+  opacities:
+    faruv:
+      CIA: [CO2-CO2]
+      rayleigh: [N2, H2O, CO2]
+    solar:
+      k-distributions: [H2O, CO2]
+      CIA: [CO2-CO2]
+      rayleigh: [N2, H2O, CO2]
+    ir:
+      k-distributions: [H2O, CO2]
+      CIA: [CO2-CO2]
+      rayleigh: [N2, H2O, CO2]
+      # absorption-xs: [O2]
+      # photolysis-xs: [O3]
 
   
 
