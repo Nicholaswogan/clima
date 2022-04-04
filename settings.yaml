@@ -2,8 +2,7 @@
 
   
 optical-properties:
-  k-method: RandomOverlapResortRebin
-  number-of-bins: 8
+  k-method: RandomOverlap
   opacities:
     faruv:
       CIA: [CO2-CO2]

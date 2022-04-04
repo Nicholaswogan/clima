@@ -263,11 +263,15 @@ contains
       allocate(kset%wbin_e(kset%nbin+1))
       allocate(kset%wbin(kset%nbin))
       ! should do fancy polynomials
-      do i = 1,kset%nbin+1
-        kset%wbin_e(i) = (i-1)*(1.0_dp/((kset%nbin+1.0_dp)-1.0_dp))
-      enddo
-      ! kset%wbin_e = [0.        , 0.16523105, 0.47499999, 0.78476894, 0.94999999, &
-      !             0.95869636, 0.97499999, 0.99130362, 1.0]
+      ! do i = 1,kset%nbin+1
+      !   kset%wbin_e(i) = (i-1)*(1.0_dp/((kset%nbin+1.0_dp)-1.0_dp))
+      ! enddo
+      if (kset%nbin /= 8) then
+        err = "Must have 8 bins"
+        return
+      endif
+      kset%wbin_e = [0.        , 0.16523105, 0.47499999, 0.78476894, 0.94999999, &
+                     0.95869636, 0.97499999, 0.99130362, 1.0]
       call bins_to_weights(kset%wbin_e, kset%wbin)
     elseif (s%k_method == "RandomOverlap") then
       kset%k_method = k_RandomOverlap

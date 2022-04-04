@@ -104,6 +104,7 @@ contains
     real(dp), parameter :: max_w0 = 0.99999_dp
     
     integer :: i, j, k, l, n, jj
+    real(dp) :: avg_freq
     
     ! array of indexes for recursive
     ! correlated-k
@@ -193,10 +194,11 @@ contains
       ! plank function, only if in the IR
       ! bplanck has units [W sr^−1 m^−2 Hz^-1]
       if (op%op_type == IROpticalProperties) then
-        rz%bplanck(v%nz+1) = planck_fcn(op%freq(l), v%T(1)) ! ground level
+        avg_freq = 0.5_dp*(op%freq(l) + op%freq(l+1))
+        rz%bplanck(v%nz+1) = planck_fcn(avg_freq, v%T(1)) ! ground level
         do j = 1,v%nz
           n = v%nz+1-j
-          rz%bplanck(n) = planck_fcn(op%freq(l), v%T(j))
+          rz%bplanck(n) = planck_fcn(avg_freq, v%T(j))
         enddo
       endif
       
@@ -225,8 +227,8 @@ contains
         stop 1
       endif ! endif k-dist
       
-      fup_a(:,l) =  max(rz%fup1,0.0_dp)
-      fdn_a(:,l) =  max(rz%fdn1,0.0_dp)
+      fup_a(:,l) =  rz%fup1
+      fdn_a(:,l) =  rz%fdn1
       
     enddo
     !$omp enddo
@@ -252,6 +254,11 @@ contains
       
     elseif (op%op_type == IROpticalProperties) then
       
+      block
+        real(dp) :: aa
+        
+        aa = 0.0_dp
+      
       do l = 1,op%nw
         dfreq = op%freq(l)-op%freq(l+1)
         do i = 1,v%nz
@@ -259,7 +266,15 @@ contains
           fup_n(i) = fup_n(i) + (0.5_dp*(fup_a(n,l)+fup_a(n+1,l)))*dfreq*1.0e3_dp
           fdn_n(i) = fdn_n(i) + (0.5_dp*(fdn_a(n,l)+fdn_a(n+1,l)))*dfreq*1.0e3_dp
         enddo
+        aa = aa + fup_a(1,l)*dfreq*1.0e3_dp
+        
+        ! print*,dfreq
       enddo
+      ! stop
+      
+      print*,aa/1.0e3_dp
+      
+    end block
       
     endif
     
@@ -267,7 +282,7 @@ contains
     
     ! open(unit=1,file='../fup_rorr8.dat',form='formatted',status='replace')
     ! do i = 1,op%nw
-    !   write(1,*) op%freq(i),op%wavl(i)*1.0e-3_dp,fup_a(1,i)
+    !   write(1,*) op%freq(i),op%wavl(i)*1.0e-3_dp,fup_a(1,i), fup_n(i), fdn_n(i)
     ! enddo
     ! close(1)  
     
