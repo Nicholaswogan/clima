@@ -30,13 +30,4 @@ species:
     data:
     - [26.09, 8.22, -1.98, 0.16, 0.04, -7.99, 221.02]
   note: From the NIST database
-- name: O3
-  composition: {O: 3}
-  thermo:
-    model: Shomate
-    temperature-ranges: [0.0, 1200.0, 6000.0]
-    data:
-    - [21.66157, 79.86001, -66.02603, 19.58363, -0.079251, 132.9407, 243.6406]
-    - [57.81409, 0.730941, -0.039253, 0.00261, -3.560367, 115.7717, 294.5607]
-  note: From the NIST database
 

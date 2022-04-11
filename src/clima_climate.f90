@@ -70,17 +70,13 @@ contains
     real(dp), allocatable :: fup_a(:,:)
     real(dp), allocatable :: fdn_a(:,:)
     
-    real(dp), allocatable :: ftot(:)
-    
-    
-    allocate(fup_sol(v%nz),fdn_sol(v%nz),fup_ir(v%nz),fdn_ir(v%nz),ftot(v%nz))
+    allocate(fup_sol(v%nz),fdn_sol(v%nz),fup_ir(v%nz),fdn_ir(v%nz))
     
     allocate(fup_a(v%nz+1,d%ir%nw))
     allocate(fdn_a(v%nz+1,d%ir%nw))
     
     ! Solar radiative transfer
     call radiate(d%ir, d%kset, v, w%rx_ir, w%rz, fup_a, fdn_a, fup_ir, fdn_ir)
-    ! call radiate(d%sol, v, fup_sol, fdn_sol)
     
     
   end subroutine
@@ -90,7 +86,7 @@ contains
     use clima_types, only: OpticalProperties, Kcoefficients
     use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
-    use clima_eqns, only: planck_fcn
+    use clima_eqns, only: planck_fcn, ten2power
     
     use futils, only: Timer
     type(OpticalProperties), intent(inout) :: op
@@ -131,7 +127,7 @@ contains
         do k = 1,op%k(i)%ngauss
           do j = 1,v%nz
             call op%k(i)%log10k(k,l)%evaluate(log10(v%P(j)), v%T(j), rw%ks(i)%k(j,k))
-            rw%ks(i)%k(j,k) = 10.0_dp**rw%ks(i)%k(j,k)
+            rw%ks(i)%k(j,k) = ten2power(rw%ks(i)%k(j,k))
           enddo
         enddo
       enddo
@@ -158,7 +154,7 @@ contains
         j = op%ray(i)%sp_ind(1)
         do k = 1,v%nz
           n = v%nz+1-k
-          rz%tausg(n) = rz%tausg(n) + op%ray(i)%xs_0d(l)*v%densities(k,j)*v%dz(k)
+          rz%tausg(n) = rz%tausg(n) + op%ray(i)%xs_0d(l)*v%cols(k,j)
         enddo
       enddo
       
@@ -178,7 +174,7 @@ contains
         j = op%cia(i)%sp_ind(1)
         do k = 1,v%nz
           n = v%nz+1-k
-          rz%taua(n) = rz%taua(n) + rw%axs(k,i)*v%densities(k,j)*v%dz(k)
+          rz%taua(n) = rz%taua(n) + rw%axs(k,i)*v%cols(k,j)
         enddo
       enddo
       
@@ -187,7 +183,7 @@ contains
         j = op%cia(i)%sp_ind(1)
         do k = 1,v%nz
           n = v%nz+1-k
-          rz%taua(n) = rz%taua(n) + rw%pxs(k,i)*v%densities(k,j)*v%dz(k)
+          rz%taua(n) = rz%taua(n) + rw%pxs(k,i)*v%cols(k,j)
         enddo
       enddo
       
@@ -254,11 +250,6 @@ contains
       
     elseif (op%op_type == IROpticalProperties) then
       
-      block
-        real(dp) :: aa
-        
-        aa = 0.0_dp
-      
       do l = 1,op%nw
         dfreq = op%freq(l)-op%freq(l+1)
         do i = 1,v%nz
@@ -266,15 +257,7 @@ contains
           fup_n(i) = fup_n(i) + (0.5_dp*(fup_a(n,l)+fup_a(n+1,l)))*dfreq*1.0e3_dp
           fdn_n(i) = fdn_n(i) + (0.5_dp*(fdn_a(n,l)+fdn_a(n+1,l)))*dfreq*1.0e3_dp
         enddo
-        aa = aa + fup_a(1,l)*dfreq*1.0e3_dp
-        
-        ! print*,dfreq
       enddo
-      ! stop
-      
-      print*,aa/1.0e3_dp
-      
-    end block
       
     endif
     
@@ -289,7 +272,9 @@ contains
   end subroutine
   
   subroutine k_rror(v, op, kset, rw, rz)
-    use futils, only: rebin, argsort
+    use futils, only: rebin
+    use stdlib_sorting, only: sort_index
+    
     use clima_types, only: OpticalProperties, Ksettings
     use clima_types, only: ClimaVars, RadiateZWrk, RadiateXSWrk
     use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
@@ -307,7 +292,9 @@ contains
     real(dp), pointer :: wxy(:) ! (nbin*ngauss_max)
     real(dp), pointer :: wxy1(:) ! (nbin*ngauss_max)
     real(dp), pointer :: wxy_e(:) ! (nbin*ngauss_max+1)
-    integer, pointer :: inds(:) ! (nbin*ngauss_max)
+    integer(8), pointer :: inds(:) ! (nbin*ngauss_max)
+    integer(8), pointer :: inds_iwork(:)
+    real(dp), pointer :: inds_rwork(:)
       
     integer :: i, j, k, n, jj
     integer :: j1, j2, ngauss, ngauss_mix
@@ -320,7 +307,9 @@ contains
     wxy1 => rw%wxy1
     wxy_e => rw%wxy_e
     inds => rw%inds
-      
+    inds_iwork => rw%inds_iwork
+    inds_rwork => rw%inds_rwork
+    
       ! rebin k-coeffs of first species to new grid
     do i = 1,v%nz
       call rebin(op%k(1)%weight_e, rw%ks(1)%k(i,:), kset%wbin_e, tau_k(i,:))
@@ -341,7 +330,7 @@ contains
       do i = 1,kset%nbin
         do j = 1,ngauss
           tau_xy(:,j + (i-1)*ngauss) = tau_k(:,i) &
-                                                + rw%ks(jj)%k(:,j)*v%cols(:,j2)
+                                       + rw%ks(jj)%k(:,j)*v%cols(:,j2)
           wxy(j + (i-1)*ngauss) = kset%wbin(i)*op%k(jj)%weights(j) 
         enddo
       enddo
@@ -350,8 +339,8 @@ contains
       ! each work array.
       do i = 1,v%nz
         ! sort tau_xy and the weights
-        inds(1:ngauss_mix) = argsort(tau_xy(i,1:ngauss_mix))
-        tau_xy(i,1:ngauss_mix) = tau_xy(i,inds(1:ngauss_mix))
+        call sort_index(tau_xy(i,1:ngauss_mix), inds(1:ngauss_mix), &
+                        work=inds_rwork, iwork=inds_iwork)
         wxy1(1:ngauss_mix) = wxy(inds(1:ngauss_mix))
         ! rebin to smaller grid
         call weights_to_bins(wxy1(1:ngauss_mix), wxy_e(1:ngauss_mix+1))
@@ -431,7 +420,7 @@ contains
           n = v%nz+1-k
           do j = 1,op%nk
             rz%taua_1(n) = rz%taua_1(n) + &
-                           ks(j)%k(k,iks(j))*v%densities(k,op%k(j)%sp_ind)*v%dz(k)
+                           ks(j)%k(k,iks(j))*v%cols(k,op%k(j)%sp_ind)
           enddo
         enddo
         
@@ -470,6 +459,7 @@ contains
   
   subroutine interpolate_Xsection(xs, l, P, T, res)
     use clima_types, only: Xsection
+    use clima_eqns, only: ten2power
     
     type(Xsection), intent(inout) :: xs
     integer, intent(in) :: l
@@ -486,7 +476,7 @@ contains
     elseif (xs%dim == 1) then
       do j = 1,size(P)
         call xs%log10_xs_1d(l)%evaluate(T(j), val)
-        res(j) = 10.0_dp**val
+        res(j) = ten2power(val)
       enddo
     elseif (xs%dim == 2) then
       print*,'interpolate_Xsection'
@@ -494,6 +484,5 @@ contains
     endif
     
   end subroutine
-  
   
 end module

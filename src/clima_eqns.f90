@@ -49,5 +49,12 @@ contains
         ((1.0_dp)/(exp((plank*nu)/(k_boltz*T)) - 1.0_dp)) 
     
   end function
+  
+  pure function ten2power(y) result(res)
+    real(dp), intent(in) :: y
+    real(dp) :: res  
+    real(dp), parameter :: c = log(10.0_dp)
+    res = exp(y*c)
+  end function
 
 end module
