@@ -164,7 +164,7 @@ Subroutine D_mrgrnk (XDONT, IRNGT)
 !   than the min of B. This line may be activated when the
 !   initial set is already close to sorted.
 !
-!          IF (XDONT(IRNGT(JINDA)) <= XDONT(IRNGT(IINDB))) CYCLE
+         IF (XDONT(IRNGT(JINDA)) <= XDONT(IRNGT(IINDB))) CYCLE
 !
 !  One steps in the C subset, that we build in the final rank array
 !
@@ -364,7 +364,7 @@ Subroutine R_mrgrnk (XDONT, IRNGT)
 !   than the min of B. This line may be activated when the
 !   initial set is already close to sorted.
 !
-!          IF (XDONT(IRNGT(JINDA)) <= XDONT(IRNGT(IINDB))) CYCLE
+         IF (XDONT(IRNGT(JINDA)) <= XDONT(IRNGT(IINDB))) CYCLE
 !
 !  One steps in the C subset, that we build in the final rank array
 !
