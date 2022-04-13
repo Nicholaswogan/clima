@@ -44,3 +44,5 @@ CPMAddPackage(
   EXCLUDE_FROM_ALL ON
 )
 
+# mrgrnk is from ORDERPACK 2.0: http://www.fortran-2000.com/rank/#1.1
+add_library(mrgrnk mrgrnk_mod.f90)

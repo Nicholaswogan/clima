@@ -8,7 +8,7 @@ if ("${CMAKE_Fortran_COMPILER_ID}" MATCHES "GNU")
   set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -Wunused")
   
   if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -finline-functions -ftree-vectorize -funroll-loops")
+    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -finline-functions -ftree-vectorize -funroll-loops -march=native")
   endif()
 endif()
 

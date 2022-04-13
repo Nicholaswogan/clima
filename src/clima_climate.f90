@@ -75,9 +75,7 @@ contains
     allocate(fup_a(v%nz+1,d%ir%nw))
     allocate(fdn_a(v%nz+1,d%ir%nw))
     
-    ! Solar radiative transfer
     call radiate(d%ir, d%kset, v, w%rx_ir, w%rz, fup_a, fdn_a, fup_ir, fdn_ir)
-    
     
   end subroutine
   
@@ -273,7 +271,7 @@ contains
   
   subroutine k_rror(v, op, kset, rw, rz)
     use futils, only: rebin
-    use stdlib_sorting, only: sort_index
+    use mrgrnk_mod, only: mrgrnk
     
     use clima_types, only: OpticalProperties, Ksettings
     use clima_types, only: ClimaVars, RadiateZWrk, RadiateXSWrk
@@ -292,9 +290,7 @@ contains
     real(dp), pointer :: wxy(:) ! (nbin*ngauss_max)
     real(dp), pointer :: wxy1(:) ! (nbin*ngauss_max)
     real(dp), pointer :: wxy_e(:) ! (nbin*ngauss_max+1)
-    integer(8), pointer :: inds(:) ! (nbin*ngauss_max)
-    integer(8), pointer :: inds_iwork(:)
-    real(dp), pointer :: inds_rwork(:)
+    integer, pointer :: inds(:) ! (nbin*ngauss_max)
       
     integer :: i, j, k, n, jj
     integer :: j1, j2, ngauss, ngauss_mix
@@ -307,8 +303,6 @@ contains
     wxy1 => rw%wxy1
     wxy_e => rw%wxy_e
     inds => rw%inds
-    inds_iwork => rw%inds_iwork
-    inds_rwork => rw%inds_rwork
     
       ! rebin k-coeffs of first species to new grid
     do i = 1,v%nz
@@ -339,8 +333,9 @@ contains
       ! each work array.
       do i = 1,v%nz
         ! sort tau_xy and the weights
-        call sort_index(tau_xy(i,1:ngauss_mix), inds(1:ngauss_mix), &
-                        work=inds_rwork, iwork=inds_iwork)
+        wxy1(1:ngauss_mix) = tau_xy(i,1:ngauss_mix)
+        call mrgrnk(wxy1(1:ngauss_mix), inds(1:ngauss_mix))
+        tau_xy(i,1:ngauss_mix) = tau_xy(i,inds(1:ngauss_mix))
         wxy1(1:ngauss_mix) = wxy(inds(1:ngauss_mix))
         ! rebin to smaller grid
         call weights_to_bins(wxy1(1:ngauss_mix), wxy_e(1:ngauss_mix+1))

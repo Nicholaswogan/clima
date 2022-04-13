@@ -193,9 +193,7 @@ module clima_types
     real(dp), allocatable :: wxy(:) ! (nbin*ngauss_max)
     real(dp), allocatable :: wxy1(:) ! (nbin*ngauss_max)
     real(dp), allocatable :: wxy_e(:) ! (nbin*ngauss_max+1)
-    integer(8), allocatable :: inds(:) ! (nbin*ngauss_max)
-    real(dp), allocatable :: inds_rwork(:) ! (nbin*ngauss_max/2 + 2)
-    integer(8), allocatable :: inds_iwork(:) ! (nbin*ngauss_max/2 + 2)
+    integer, allocatable :: inds(:) ! (nbin*ngauss_max)
   end type
   
   type :: RadiateZWrk
@@ -266,10 +264,8 @@ contains
         allocate(rw%tau_xy(nz,kset%nbin*op%ngauss_max))
         allocate(rw%wxy(kset%nbin*op%ngauss_max))
         allocate(rw%wxy1(kset%nbin*op%ngauss_max))
-        allocate(rw%wxy_e(kset%nbin*op%ngauss_max))
+        allocate(rw%wxy_e(kset%nbin*op%ngauss_max+1))
         allocate(rw%inds(kset%nbin*op%ngauss_max))
-        allocate(rw%inds_iwork(kset%nbin*op%ngauss_max/2+2))
-        allocate(rw%inds_rwork(kset%nbin*op%ngauss_max/2+2))
       endif
     endif
     
