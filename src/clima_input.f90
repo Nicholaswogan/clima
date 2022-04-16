@@ -14,7 +14,7 @@ contains
   
   function create_ClimaVars(atm_file, star_file, dat, err) result(v)
     use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
-    use clima_const, only: n_sol, sol_wavl, pi
+    use clima_const, only: pi
     character(*), intent(in) :: atm_file
     character(*), intent(in) :: star_file
     type(ClimaData), intent(in) :: dat
@@ -25,8 +25,8 @@ contains
     call read_atmosphere_txt(atm_file, dat, v, err)
     if (allocated(err)) return
     
-    allocate(v%photons_sol(n_sol))
-    call read_stellar_flux(star_file, n_sol, sol_wavl, v%photons_sol, err)
+    allocate(v%photons_sol(dat%sol%nw))
+    call read_stellar_flux(star_file, dat%sol%nw, dat%sol%wavl, v%photons_sol, err)
     if (allocated(err)) return
     
     ! all bellow should be read in 
@@ -224,7 +224,6 @@ contains
   end subroutine
   
   function create_ClimaData(spfile, datadir, s, err) result(dat)
-    use clima_const, only: sol_wavl, ir_wavl
     use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
     use clima_types, only: Ksettings
@@ -244,16 +243,12 @@ contains
     call read_speciesfile(spfile, s, dat, err)
     if (allocated(err)) return
     
-    dat%uv = create_OpticalProperties(datadir, FarUVOpticalProperties,&
-                                      sol_wavl, dat%species_names, s%uv, err)
+    dat%sol = create_OpticalProperties(datadir, SolarOpticalProperties, &
+                                      dat%species_names, s%sol, err)
     if (allocated(err)) return
     
-    dat%sol = create_OpticalProperties(datadir, SolarOpticalProperties,&
-                                      sol_wavl, dat%species_names, s%sol, err)
-    if (allocated(err)) return
-    
-    dat%ir = create_OpticalProperties(datadir, IROpticalProperties,&
-                                      ir_wavl, dat%species_names, s%ir, err)
+    dat%ir = create_OpticalProperties(datadir, IROpticalProperties, &
+                                      dat%species_names, s%ir, err)
     if (allocated(err)) return
   
     ! method for mixing k-distributions.
@@ -519,13 +514,12 @@ contains
                             
   end subroutine
   
-  function create_OpticalProperties(datadir, optype, wavl, species_names, sop, err) result(op)
+  function create_OpticalProperties(datadir, optype, species_names, sop, err) result(op)
     use fortran_yaml_c, only : parse, error_length
     use clima_const, only: c_light
     use clima_types, only: OpticalProperties, SettingsOpacity
     character(*), intent(in) :: datadir
     integer, intent(in) :: optype
-    real(dp), intent(in) :: wavl(:)
     character(*), intent(in) :: species_names(:)
     type(SettingsOpacity), intent(in) :: sop
     character(:), allocatable, intent(out) :: err
@@ -539,11 +533,14 @@ contains
     class(type_dictionary), pointer :: root_dict
     
     op%op_type = optype
-    op%nw = size(wavl) - 1
-    allocate(op%wavl(size(wavl)))
-    allocate(op%freq(size(wavl)))
-    op%wavl = wavl
-    op%freq = c_light/(wavl*1.0e-9_dp)
+    ! get the bins
+    filename = datadir//"/kdistributions/bins.h5"
+    call read_wavl(filename, op%op_type, op%wavl, err)
+    if (allocated(err)) return 
+    
+    op%nw = size(op%wavl) - 1
+    allocate(op%freq(size(op%wavl)))
+    op%freq = c_light/(op%wavl*1.0e-9_dp)
     
     !!!!!!!!!!!!!!!!!!!!!!!
     !!! k-distributions !!!
@@ -560,7 +557,7 @@ contains
                 '"k-distributions" is not in the list of species.'
           return
         endif
-        op%k(i) = create_Ktable(filename, ind1, optype, wavl, err)
+        op%k(i) = create_Ktable(filename, ind1, optype, op%wavl, err)
         if (allocated(err)) return
       enddo
       
@@ -602,7 +599,7 @@ contains
         endif
         
         filename = datadir//"/CIA/"//trim(sop%cia(i))//".h5"
-        op%cia(i) = create_CIAXsection(filename, [ind1, ind2], wavl, err)
+        op%cia(i) = create_CIAXsection(filename, [ind1, ind2], op%wavl, err)
         if (allocated(err)) return
         
       enddo
@@ -640,7 +637,7 @@ contains
           exit
         endif
         op%ray(i) = create_RayleighXsection(filename, root_dict, &
-                    trim(sop%rayleigh(i)), ind1, wavl, err)
+                    trim(sop%rayleigh(i)), ind1, op%wavl, err)
         if (allocated(err)) exit
       enddo
       call root%finalize()
@@ -671,6 +668,48 @@ contains
     endif
     
   end function
+  
+  subroutine read_wavl(filename, optype, wavl, err)
+    use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
+    use h5fortran
+    
+    character(*), intent(in) :: filename
+    integer, intent(in) :: optype
+    real(dp), allocatable :: wavl(:)
+    character(:), allocatable :: err
+    
+    type(hdf5_file) :: h
+    integer(HSIZE_T), allocatable :: dims(:)
+    character(:), allocatable :: optype_str
+    
+    if (optype == FarUVOpticalProperties) then
+      optype_str = "uv_wavl"
+    elseif (optype == SolarOpticalProperties) then
+      optype_str = "sol_wavl"
+    elseif (optype == IROpticalProperties) then
+      optype_str = "ir_wavl"
+    endif
+    
+    if (.not. is_hdf5(filename)) then
+      err = 'Failed to read "'//filename//'".'
+      return
+    endif
+    
+    call h%open(filename,'r')
+    
+    call check_h5_dataset(h, optype_str, 1, H5T_FLOAT_F, filename//"/"//optype_str, err)
+    if (allocated(err)) then
+      call h%close()
+      return
+    endif
+    call h%shape(optype_str, dims)
+    allocate(wavl(dims(1)))
+    call h%read(optype_str, wavl)
+    wavl = wavl*1.0e3_dp ! convert to nm
+
+    call h%close()
+    
+  end subroutine
   
   function create_RayleighXsection(filename, dict, sp, sp_ind, wavl, err) result(xs)
     use clima_types, only: Xsection, RayleighXsection
@@ -928,16 +967,8 @@ contains
     integer(HSIZE_T), allocatable :: dims(:)
     real(dp), allocatable :: wavl_f(:)
     real(dp), allocatable :: log10k(:,:,:,:)
-    character(:), allocatable :: optype_str, read_err
-    integer :: i, j, iflag
-    
-    if (optype == FarUVOpticalProperties) then
-      optype_str = "faruv"
-    elseif (optype == SolarOpticalProperties) then
-      optype_str = "solar"
-    elseif (optype == IROpticalProperties) then
-      optype_str = "ir"
-    endif
+    character(:), allocatable :: read_err
+    integer :: i, j, iflag, ind1, ind2
 
     if (.not. is_hdf5(filename)) then
       err = 'Failed to read "'//filename//'".'
@@ -946,17 +977,9 @@ contains
     
     call h%open(filename,'r')
     
-    if (.not. h%exists(optype_str)) then
-      call h%close()
-      err = 'subgroup "'//optype_str//'" not in '//filename
-      return
-    endif
-    call h%open_group(optype_str)
-    
     ! weights
-    call check_h5_dataset(h, "weights", 1, H5T_FLOAT_F, filename//"/"//optype_str, err)
+    call check_h5_dataset(h, "weights", 1, H5T_FLOAT_F, filename, err)
     if (allocated(err)) then
-      call h%close_group()
       call h%close()
       return
     endif
@@ -970,9 +993,8 @@ contains
     call weights_to_bins(k%weights, k%weight_e)
     
     ! Pressure
-    call check_h5_dataset(h, "log10P", 1, H5T_FLOAT_F, filename//"/"//optype_str, err)
+    call check_h5_dataset(h, "log10P", 1, H5T_FLOAT_F, filename, err)
     if (allocated(err)) then
-      call h%close_group()
       call h%close()
       return
     endif
@@ -982,9 +1004,8 @@ contains
     call h%read("log10P", k%log10P)
     
     ! Temperature
-    call check_h5_dataset(h, "T", 1, H5T_FLOAT_F, filename//"/"//optype_str, err)
+    call check_h5_dataset(h, "T", 1, H5T_FLOAT_F, filename, err)
     if (allocated(err)) then
-      call h%close_group()
       call h%close()
       return
     endif
@@ -995,27 +1016,34 @@ contains
     
     ! check to make sure that the wavelengths match 
     ! our used wavlengths
-    call check_h5_dataset(h, "wavelengths", 1, H5T_FLOAT_F, filename//"/"//optype_str, err)
+    call check_h5_dataset(h, "wavelengths", 1, H5T_FLOAT_F, filename, err)
     if (allocated(err)) then
-      call h%close_group()
       call h%close()
       return
     endif
     call h%shape("wavelengths", dims)
-    k%nwav = dims(1) - 1
     allocate(wavl_f(dims(1)))
     call h%read("wavelengths", wavl_f)
-    if (.not. all(is_close(wavl, wavl_f*1.0e3_dp, tol=1.0e-7_dp))) then
-      call h%close_group()
+    wavl_f = wavl_f*1.0e3_dp
+    ind1 = minloc(abs(wavl(1)-wavl_f), 1)
+    ind2 = minloc(abs(wavl(size(wavl))-wavl_f), 1)
+    k%nwav = size(wavl) - 1
+    
+    if (size(wavl_f) < size(wavl)) then
       call h%close()
-      err = filename//"/"//optype_str//": wavelengths does not match input wavelength bins."
+      err = filename//": there not enough wavlength bins."
       return
     endif
-    
+
+    if (.not. all(is_close(wavl, wavl_f(ind1:ind2), tol=1.0e-7_dp))) then
+      call h%close()
+      err = filename//": wavelengths does not match input wavelength bins."
+      return
+    endif
+
     ! coefficients
-    call check_h5_dataset(h, "log10k", 4, H5T_FLOAT_F, filename//"/"//optype_str, err)
+    call check_h5_dataset(h, "log10k", 4, H5T_FLOAT_F, filename, err)
     if (allocated(err)) then
-      call h%close_group()
       call h%close()
       return
     endif
@@ -1023,14 +1051,13 @@ contains
     allocate(log10k(dims(1),dims(2),dims(3),dims(4)))
     call h%read("log10k", log10k)
 
-    call h%close_group()
     call h%close()
     
     ! initalize interpolators
     allocate(k%log10k(k%ngauss,k%nwav))
     do i = 1,k%nwav
       do j = 1,k%ngauss
-        call k%log10k(j,i)%initialize(k%log10P, k%temp, log10k(j,:,:,i), iflag)
+        call k%log10k(j,i)%initialize(k%log10P, k%temp, log10k(j,:,:,ind1-1+i), iflag)
         if (iflag /= 0) then
           if (allocated(read_err)) deallocate(read_err)
           allocate(character(3)::read_err)

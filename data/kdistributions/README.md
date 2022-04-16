@@ -1,4 +1,4 @@
 # kdistributions
 
-k-distributions are stored here in HDF5 format. Each file has two subgroups. One for IR and one for solar wavelengths.
+All k-tables are taken from the [petitRADTRANS](https://doi.org/10.1051/0004-6361/201935470) database.
 

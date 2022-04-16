@@ -146,7 +146,6 @@ module clima_types
     type(Species), allocatable :: sp(:) ! (ng)
     
     !!! Optical properties !!!
-    type(OpticalProperties) :: uv
     type(OpticalProperties) :: sol
     type(OpticalProperties) :: ir
     type(Ksettings) :: kset
@@ -212,7 +211,6 @@ module clima_types
   end type
   
   type :: ClimaWrk
-    type(RadiateXSWrk) :: rx_uv
     type(RadiateXSWrk) :: rx_sol
     type(RadiateXSWrk) :: rx_ir
     type(RadiateZWrk) :: rz
@@ -230,7 +228,6 @@ contains
     
     type(ClimaWrk) :: w
     
-    w%rx_uv = create_RadiateXSWrk(d%uv, d%kset, nz)
     w%rx_sol = create_RadiateXSWrk(d%sol, d%kset, nz)
     w%rx_ir = create_RadiateXSWrk(d%ir, d%kset, nz)
     w%rz = create_RadiateZWrk(nz)

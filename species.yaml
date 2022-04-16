@@ -13,7 +13,7 @@ species:
     data:
     - [30.092, 6.832514, 6.793435, -2.53448, 0.082139, -250.881, 223.3967]
     - [41.96426, 8.622053, -1.49978, 0.098119, -11.15764, -272.1797, 219.7809]
-  saturation-parameters: {A: 14.8, B: -5420.0, C: -0.00795}
+  note: From the NIST database
 - name: CO2
   composition: {C: 1, O: 2}
   thermo:
@@ -22,6 +22,7 @@ species:
     data:
     - [24.99735, 55.18696, -33.69137, 7.948387, -0.136638, -403.6075, 228.2431]
     - [58.16639, 2.720074, -0.492289, 0.038844, -6.447293, -425.9186, 263.6125]
+  note: From the NIST database
 - name: N2
   composition: {N: 2}
   thermo:
@@ -29,5 +30,39 @@ species:
     temperature-ranges: [0.0, 6000.0]
     data:
     - [26.09, 8.22, -1.98, 0.16, 0.04, -7.99, 221.02]
+  note: From the NIST database
+- name: O3
+  composition: {O: 3}
+  thermo:
+    model: Shomate
+    temperature-ranges: [0.0, 1200.0, 6000.0]
+    data:
+    - [21.66157, 79.86001, -66.02603, 19.58363, -0.079251, 132.9407, 243.6406]
+    - [57.81409, 0.730941, -0.039253, 0.00261, -3.560367, 115.7717, 294.5607]
+  note: From the NIST database
+- name: O2
+  composition: {O: 2}
+  thermo:
+    model: Shomate
+    temperature-ranges: [0.0, 6000.0]
+    data:
+    - [29.659, 6.137261, -1.186521, 0.09578, -0.219663, -9.861391, 237.948]
+  note: From the NIST database
+- name: CO
+  composition: {C: 1, O: 1}
+  thermo:
+    model: Shomate
+    temperature-ranges: [0.0, 1300.0, 6000.0]
+    data:
+    - [25.56759, 6.09613, 4.054656, -2.671301, 0.131021, -118.0089, 227.3665]
+    - [35.1507, 1.300095, -0.205921, 0.01355, -3.28278, -127.8375, 231.712]
+- name: CH4
+  composition: {C: 1, H: 4}
+  thermo:
+    model: Shomate
+    temperature-ranges: [0.0, 1300.0, 6000.0]
+    data:
+    - [-0.703029, 108.4773, -42.52157, 5.862788, 0.678565, -76.84376, 158.7163]
+    - [85.81217, 11.26467, -2.114146, 0.13819, -26.42221, -153.5327, 224.4143]
   note: From the NIST database
 
