@@ -67,12 +67,25 @@ default is fixed mixing ratio
 
 Condensing gas + Temperature evolves through time.
 
-
 Next the goal is to compute the heating rates. Given T, P, mixing ratio profile
 
+Question: What are the independent and dependent variables? Input masses of H2O and CO2?
 
+I think for now I will just consider only **fixed mixing ratios, with a background?**
 
+P/(n*k) = T
 
+We fix P at surface. We compute P above surface (according to T). We also compute T.
+
+Only T evolves with time. This will work well for coupling to photochemistry.
+
+The problem with this is that it isn't useful for all cases. Sometimes surface pressure is not an "input". Sometimes, we aim to compute surface pressure as H2O accumulates in the atmosphere. Post-impact atmospheres are a case in point.
+
+Changing mixing ratio profiles in the climate model is challenging when coupling with photochemistry. Because chemistry will no longer influence the H2O profile in the upper atmosphere.
+
+The solution is the track number densities in the photochemical model. This will permit the atmosphere to grow and shrink.
+
+Let's start with fixed mixing ratios I think. It is easy, and still has big applications. An iterative approach can still be used to guesstimate the surface P. Basically, you can try to set surface P, which gives water at saturation, and the proper dry column abundances.
 
 
 

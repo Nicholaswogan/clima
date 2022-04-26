@@ -56,5 +56,36 @@ contains
     real(dp), parameter :: c = log(10.0_dp)
     res = exp(y*c)
   end function
+  
+  ! coppied from Photochem
+  pure subroutine vertical_grid(bottom, top, nz, z, dz)
+    real(dp), intent(in) :: bottom, top
+    integer, intent(in) :: nz
+    real(dp), intent(out) :: z(nz), dz(nz)
+  
+    integer :: i
+  
+    dz = (top - bottom)/nz
+    z(1) = dz(1)/2.0_dp
+    do i = 2,nz
+      z(i) = z(i-1) + dz(i)
+    enddo
+  end subroutine
+  
+  pure subroutine gravity(radius, mass, nz, z, grav)
+    use clima_const, only: G_grav
+    real(dp), intent(in) :: radius, mass ! radius in cm, mass in grams
+    integer, intent(in) :: nz
+    real(dp), intent(in) :: z(nz) ! cm
+    real(dp), intent(out) :: grav(nz) ! cm/s2
+
+    integer :: i
+    
+    do i = 1, nz              
+      grav(i) = G_grav * (mass/1.e3_dp) / ((radius + z(i))/1.e2_dp)**2.0_dp
+      grav(i) = grav(i)*1.e2_dp ! convert to cgs
+    enddo 
+    
+  end subroutine
 
 end module

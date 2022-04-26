@@ -38,26 +38,13 @@ contains
     if (allocated(err)) return
     c%d = create_ClimaData(species_f, data_dir, s, err)
     if (allocated(err)) return
-    c%v = create_ClimaVars(atmosphere_f, star_f, c%d, err)
+    c%v = create_ClimaVars(atmosphere_f, star_f, s, c%d, err)
     if (allocated(err)) return
-    
-    ! after file read-in
-    allocate(c%v%density(c%v%nz))
-    allocate(c%v%densities(c%v%nz,c%d%ng))
-    allocate(c%v%cols(c%v%nz,c%d%ng))
-    c%v%density = 1.0e6_dp*c%v%P/(k_boltz*c%v%T)
-    do i = 1,c%d%ng
-      c%v%densities(:,i) = c%v%mix(:,i)*c%v%density
-      c%v%cols(:,i) = c%v%densities(:,i)*c%v%dz(:)
-    enddo
-    
-    ! work
     c%w = ClimaWrk(c%d, c%v%nz)
     
   end function
   
   subroutine radiative_transfer(d, v, w)
-    use futils, only: Timer
     type(ClimaData), intent(inout) :: d
     type(ClimaVars), intent(in) :: v
     type(ClimaWrk), intent(inout) :: w
@@ -70,31 +57,18 @@ contains
     
     real(dp), allocatable :: fup_a(:,:)
     real(dp), allocatable :: fdn_a(:,:)
-    type(Timer) :: tm
-    integer :: i, j, niters
+    
     
     allocate(fup_sol(v%nz),fdn_sol(v%nz),fup_ir(v%nz),fdn_ir(v%nz))
-    
     allocate(fup_a(v%nz+1,d%ir%nw))
     allocate(fdn_a(v%nz+1,d%ir%nw))
     
-    niters = 1
-    call tm%start()
-    do j = 1,niters
-      call radiate(d%ir, d%kset, v, w%rx_ir, w%rz, fup_a, fdn_a, fup_ir, fdn_ir)
-      ! open(unit=1,file='../fup_clima_RO.dat',form='formatted',status='replace')
-      ! do i = 1,d%ir%nw
-      !   write(1,*) -(d%ir%freq(i)+d%ir%freq(i+1))*0.5_dp*1.0e-3_dp, fup_a(1,i)
-      ! enddo
-      ! close(1)  
-      ! stop
-    
-    enddo
-    call tm%finish('',niters=niters)
+    call radiate(d%ir, d%kset, v, w%rin, w%rx_ir, w%rz, fup_a, fdn_a, fup_ir, fdn_ir)
+
   end subroutine
   
-  subroutine radiate(op, kset, v, rw, rz, fup_a, fdn_a, fup_n, fdn_n)
-    use clima_types, only: RadiateXSWrk, RadiateZWrk, Ksettings
+  subroutine radiate(op, kset, v, rin, rw, rz, fup_a, fdn_a, fup_n, fdn_n)
+    use clima_types, only: RadiateXSWrk, RadiateZWrk, Ksettings, RadiateInputs
     use clima_types, only: OpticalProperties, Kcoefficients
     use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
@@ -103,6 +77,7 @@ contains
     type(OpticalProperties), intent(inout) :: op
     type(Ksettings), intent(in) :: kset
     type(ClimaVars), intent(in) :: v
+    type(RadiateInputs), intent(in) :: rin
     type(RadiateXSWrk), intent(inout) :: rw
     type(RadiateZWrk), intent(inout) :: rz
     real(dp), intent(out) :: fup_a(:,:), fdn_a(:,:) ! (nz+1,nw)
@@ -132,7 +107,7 @@ contains
       do i = 1,op%nk
         do k = 1,op%k(i)%ngauss
           do j = 1,v%nz
-            call op%k(i)%log10k(k,l)%evaluate(log10(v%P(j)), v%T(j), rw%ks(i)%k(j,k))
+            call op%k(i)%log10k(k,l)%evaluate(log10(rin%P(j)), rin%T(j), rw%ks(i)%k(j,k))
             rw%ks(i)%k(j,k) = ten2power(rw%ks(i)%k(j,k))
           enddo
         enddo
@@ -140,17 +115,17 @@ contains
     
       ! CIA
       do i = 1,op%ncia
-        call interpolate_Xsection(op%cia(i), l, v%P, v%T, rw%cia(:,i))
+        call interpolate_Xsection(op%cia(i), l, rin%P, rin%T, rw%cia(:,i))
       enddo
       
       ! Absorption xs
       do i = 1,op%naxs
-        call interpolate_Xsection(op%axs(i), l, v%P, v%T, rw%axs(:,i))
+        call interpolate_Xsection(op%axs(i), l, rin%P, rin%T, rw%axs(:,i))
       enddo
       
       ! Photolysis xs
       do i = 1,op%npxs
-        call interpolate_Xsection(op%pxs(i), l, v%P, v%T, rw%pxs(:,i))
+        call interpolate_Xsection(op%pxs(i), l, rin%P, rin%T, rw%pxs(:,i))
       enddo
     
       ! compute tau
@@ -160,7 +135,7 @@ contains
         j = op%ray(i)%sp_ind(1)
         do k = 1,v%nz
           n = v%nz+1-k
-          rz%tausg(n) = rz%tausg(n) + op%ray(i)%xs_0d(l)*v%cols(k,j)
+          rz%tausg(n) = rz%tausg(n) + op%ray(i)%xs_0d(l)*rin%cols(k,j)
         enddo
       enddo
       
@@ -171,7 +146,7 @@ contains
         jj = op%cia(i)%sp_ind(2)
         do k = 1,v%nz
           n = v%nz+1-k
-          rz%taua(n) = rz%taua(n) + rw%cia(k,i)*v%densities(k,j)*v%densities(k,jj)*v%dz(k)
+          rz%taua(n) = rz%taua(n) + rw%cia(k,i)*rin%densities(k,j)*rin%densities(k,jj)*v%dz(k)
         enddo
       enddo
       
@@ -180,7 +155,7 @@ contains
         j = op%cia(i)%sp_ind(1)
         do k = 1,v%nz
           n = v%nz+1-k
-          rz%taua(n) = rz%taua(n) + rw%axs(k,i)*v%cols(k,j)
+          rz%taua(n) = rz%taua(n) + rw%axs(k,i)*rin%cols(k,j)
         enddo
       enddo
       
@@ -189,7 +164,7 @@ contains
         j = op%cia(i)%sp_ind(1)
         do k = 1,v%nz
           n = v%nz+1-k
-          rz%taua(n) = rz%taua(n) + rw%pxs(k,i)*v%cols(k,j)
+          rz%taua(n) = rz%taua(n) + rw%pxs(k,i)*rin%cols(k,j)
         enddo
       enddo
       
@@ -197,10 +172,10 @@ contains
       ! bplanck has units [W sr^−1 m^−2 Hz^-1]
       if (op%op_type == IROpticalProperties) then
         avg_freq = 0.5_dp*(op%freq(l) + op%freq(l+1))
-        rz%bplanck(v%nz+1) = planck_fcn(avg_freq, v%T(1)) ! ground level
+        rz%bplanck(v%nz+1) = planck_fcn(avg_freq, rin%T(1)) ! ground level
         do j = 1,v%nz
           n = v%nz+1-j
-          rz%bplanck(n) = planck_fcn(avg_freq, v%T(j))
+          rz%bplanck(n) = planck_fcn(avg_freq, rin%T(j))
         enddo
       endif
       
@@ -217,10 +192,10 @@ contains
           ! Random Overlap method. Slow for >2 k species.
           ! k_loops uses recursion to make an arbitrary
           ! number of nested loops.
-          call k_loops(v, op, rw%ks, rz, iks, 1)
+          call k_loops(v, op, rw%ks, rin, rz, iks, 1)
         elseif (kset%k_method == k_RandomOverlapResortRebin) then
           ! Random Overlap with Resorting and Rebinning.
-          call k_rorr(v, op, kset, rw, rz)
+          call k_rorr(v, op, kset, rin, rw, rz)
         endif
         
       else
@@ -269,12 +244,12 @@ contains
     
   end subroutine
   
-  subroutine k_rorr(v, op, kset, rw, rz)
+  subroutine k_rorr(v, op, kset, rin, rw, rz)
     use futils, only: rebin
     use mrgrnk_mod, only: mrgrnk
     
     use clima_types, only: OpticalProperties, Ksettings
-    use clima_types, only: ClimaVars, RadiateZWrk, RadiateXSWrk
+    use clima_types, only: ClimaVars, RadiateZWrk, RadiateXSWrk, RadiateInputs
     use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_eqns, only: weights_to_bins
     use clima_twostream, only: two_stream_solar, two_stream_ir
@@ -282,6 +257,7 @@ contains
     type(ClimaVars), intent(in) :: v
     type(OpticalProperties), intent(in) :: op
     type(Ksettings), intent(in) :: kset
+    type(RadiateInputs), target, intent(in) :: rin
     type(RadiateXSWrk), target, intent(in) :: rw
     type(RadiateZWrk), intent(inout) :: rz
     
@@ -311,7 +287,7 @@ contains
     ! combine k-coefficients with species concentrations (molecules/cm2)
     j1 = op%k(1)%sp_ind
     do i = 1,kset%nbin
-      tau_k(:,i) = tau_k(:,i)*v%cols(:,j1)
+      tau_k(:,i) = tau_k(:,i)*rin%cols(:,j1)
     enddo
     
     ! Mix rest of k-coeff species with the first species
@@ -324,7 +300,7 @@ contains
       do i = 1,kset%nbin
         do j = 1,ngauss
           tau_xy(:,j + (i-1)*ngauss) = tau_k(:,i) &
-                                       + rw%ks(jj)%k(:,j)*v%cols(:,j2)
+                                       + rw%ks(jj)%k(:,j)*rin%cols(:,j2)
           wxy(j + (i-1)*ngauss) = kset%wbin(i)*op%k(jj)%weights(j) 
         enddo
       enddo
@@ -380,16 +356,17 @@ contains
     
   end subroutine
   
-  recursive subroutine k_loops(v, op, ks, rz, iks, ik)
+  recursive subroutine k_loops(v, op, ks, rin, rz, iks, ik)
     use clima_types, only: OpticalProperties, Kcoefficients
     use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
-    use clima_types, only: ClimaVars, RadiateZWrk
+    use clima_types, only: ClimaVars, RadiateZWrk, RadiateInputs
     
     use clima_twostream, only: two_stream_solar, two_stream_ir
     
     type(ClimaVars), intent(in) :: v
     type(OpticalProperties), intent(in) :: op
     type(Kcoefficients), intent(in) :: ks(:)
+    type(RadiateInputs), intent(in) :: rin
     type(RadiateZWrk), intent(inout) :: rz
     
     integer, intent(inout) :: iks(:)
@@ -415,7 +392,7 @@ contains
           n = v%nz+1-k
           do j = 1,op%nk
             rz%taua_1(n) = rz%taua_1(n) + &
-                           ks(j)%k(k,iks(j))*v%cols(k,op%k(j)%sp_ind)
+                           ks(j)%k(k,iks(j))*rin%cols(k,op%k(j)%sp_ind)
           enddo
         enddo
         
@@ -444,7 +421,7 @@ contains
         
       else
         ! go into a deeper loop
-        call k_loops(v, op, ks, rz, iks, ik + 1)
+        call k_loops(v, op, ks, rin, rz, iks, ik + 1)
       
       endif
       

@@ -19,11 +19,36 @@ module clima_types
   end type
   
   type :: ClimaSettings
+    
+    ! atmosphere-grid
+    logical :: atmos_grid_is_present
+    real(dp) :: bottom
+    real(dp) :: top
+    integer :: nz
+    
+    ! planet
+    logical :: planet_is_present
+    character(:), allocatable :: back_gas_name
+    real(dp) :: P_surf
+    real(dp) :: planet_mass
+    real(dp) :: planet_radius
+    real(dp) :: surface_albedo
+    real(dp) :: diurnal_fac
+    real(dp) :: solar_zenith
+    
+    ! optical-properties
     character(:), allocatable :: k_method
     integer :: nbins
-    type(SettingsOpacity) :: uv
     type(SettingsOpacity) :: sol
     type(SettingsOpacity) :: ir
+    
+  end type
+  
+  type :: AtmosphereFile
+    integer :: nz
+    integer :: nlabels
+    character(s_str_len), allocatable :: labels(:)
+    real(dp), allocatable :: columns(:,:) ! (size(labels),nz)
   end type
 
   !!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -142,7 +167,7 @@ module clima_types
     real(dp), allocatable :: atoms_mass(:)
     
     integer :: ng
-    character(s_str_len), allocatable :: species_names(:) ! (ng) copy of species name
+    character(s_str_len), allocatable :: species_names(:) ! (ng) copy of species names
     type(Species), allocatable :: sp(:) ! (ng)
     
     !!! Optical properties !!!
@@ -150,6 +175,11 @@ module clima_types
     type(OpticalProperties) :: ir
     type(Ksettings) :: kset
     
+    ! planet
+    character(:), allocatable :: back_gas_name 
+    real(dp) :: planet_mass
+    real(dp) :: planet_radius
+
   end type
   
   ! integer :: k_method 
@@ -159,22 +189,34 @@ module clima_types
   
   type :: ClimaVars
     
-    integer :: nz
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!! set DURING file read-in !!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    
+    ! atmosphere-grid
+    integer :: nz ! number of vertical layers
+    
+    ! planet
+    real(dp) :: surface_pressure
+    real(dp) :: surface_albedo
+    real(dp) :: diurnal_fac
+    real(dp) :: solar_zenith
+    
+    real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2 in each bin  
+    
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    !!! set AFTER file read-in !!!
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    
     real(dp), allocatable :: z(:) ! (nz) cm
     real(dp), allocatable :: dz(:) ! (nz) cm
-    real(dp), allocatable :: T(:) ! (nz) K
-    real(dp), allocatable :: P(:) ! (nz) bars
+    real(dp), allocatable :: grav(:)
     real(dp), allocatable :: mix(:,:) ! (nz,ng) mixing ratios
-    ! not read in
-    real(dp), allocatable :: density(:) ! (nz) molecules/cm3
-    real(dp), allocatable :: densities(:,:) ! (nz,ng) molecules/cm3
-    real(dp), allocatable :: cols(:,:) ! (nz,ng) molecules/cm2 at each atmospheric layer
-    
-    real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2 in each bin
-    
-    ! should be read in 
+    real(dp), allocatable :: mubar(:) ! (nz) mean molecular weight
     real(dp) :: u0
-    real(dp) :: surface_albedo
+    
+    ! initial T
+    real(dp), allocatable :: T_init(:) ! (nz) K
   
   end type
     
@@ -210,7 +252,16 @@ module clima_types
     real(dp), allocatable :: bplanck(:)
   end type
   
+  type :: RadiateInputs
+    real(dp), allocatable :: T(:) ! (nz) K
+    real(dp), allocatable :: P(:) ! (nz) bars
+    real(dp), allocatable :: densities(:,:) ! (nz,ng) molecules/cm3
+    real(dp), allocatable :: cols(:,:) ! (nz,ng) molecules/cm2 at each atmospheric layer 
+    
+  end type
+  
   type :: ClimaWrk
+    type(RadiateInputs) :: rin
     type(RadiateXSWrk) :: rx_sol
     type(RadiateXSWrk) :: rx_ir
     type(RadiateZWrk) :: rz
@@ -227,6 +278,11 @@ contains
     integer, intent(in) :: nz
     
     type(ClimaWrk) :: w
+    
+    allocate(w%rin%T(nz))
+    allocate(w%rin%P(nz))
+    allocate(w%rin%densities(nz,d%ng))
+    allocate(w%rin%cols(nz,d%ng))
     
     w%rx_sol = create_RadiateXSWrk(d%sol, d%kset, nz)
     w%rx_ir = create_RadiateXSWrk(d%ir, d%kset, nz)

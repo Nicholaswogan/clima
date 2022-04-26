@@ -8,48 +8,80 @@ module clima_input
   private
   
   public :: create_ClimaSettings, create_ClimaVars, create_ClimaData
+  public :: create_AtmosphereFile
   
 
 contains
   
-  function create_ClimaVars(atm_file, star_file, dat, err) result(v)
-    use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
+  function create_ClimaVars(atm_file, star_file, s, dat, err) result(v)
+    use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin, AtmosphereFile
     use clima_const, only: pi
+    use clima_eqns, only: vertical_grid, gravity
     character(*), intent(in) :: atm_file
     character(*), intent(in) :: star_file
+    type(ClimaSettings), intent(in) :: s
     type(ClimaData), intent(in) :: dat
     character(:), allocatable, intent(out) :: err
     
+    type(AtmosphereFile) :: atm
+    integer :: i, j
+    
     type(ClimaVars) :: v
     
-    call read_atmosphere_txt(atm_file, dat, v, err)
+    ! read the atmosphere file
+    atm = create_AtmosphereFile(atm_file, err)
     if (allocated(err)) return
     
     allocate(v%photons_sol(dat%sol%nw))
     call read_stellar_flux(star_file, dat%sol%nw, dat%sol%wavl, v%photons_sol, err)
     if (allocated(err)) return
     
-    ! all bellow should be read in 
-    v%u0 = cos(50.0_dp*pi/180.0_dp)
-    v%surface_albedo = 0.25_dp
+    !!! AFTER FILE READ IN !!!
+    ! settings
+    v%nz = s%nz
+    v%surface_pressure = s%P_surf
+    v%surface_albedo = s%surface_albedo
+    v%diurnal_fac = s%diurnal_fac
+    v%solar_zenith = s%solar_zenith
+    ! allocate memory
+    allocate(v%z(v%nz))
+    allocate(v%dz(v%nz))
+    allocate(v%grav(v%nz))
+    allocate(v%mix(v%nz,dat%ng))
+    allocate(v%mubar(v%nz))
+    allocate(v%T_init(v%nz))
+    ! set up vertical grid
+    call vertical_grid(s%bottom, s%top, &
+                       v%nz, v%z, v%dz)
+    call gravity(dat%planet_radius, dat%planet_mass, &
+                 v%nz, v%z, v%grav)      
+    call unpack_atmospherefile(atm_file, atm, dat, v, err)
+    if (allocated(err)) return
     
+    ! solar zenith
+    v%u0 = cos(v%solar_zenith*pi/180.0_dp)
+    
+    ! compute mean molecular weight everywhere
+    do i = 1,v%nz
+      v%mubar(i) = 0
+      do j = 1,dat%ng
+        v%mubar(i) = v%mubar(i) + v%mix(i,j)*dat%sp(j)%mass
+      enddo
+    enddo
+
   end function
   
-  subroutine read_atmosphere_txt(atm_file, dat, v, err)
-    
-    use futils, only: is_close
-    
+  function create_AtmosphereFile(atm_file, err) result(atm)
+    use clima_types, only: AtmosphereFile
     character(*), intent(in) :: atm_file
-    type(ClimaData), intent(in) :: dat
-    type(ClimaVars), intent(inout) :: v
     character(:), allocatable, intent(out) :: err
+    
+    type(AtmosphereFile) :: atm
     
     character(len=10000) :: line
     character(len=s_str_len) :: arr1(1000)
     character(len=s_str_len) :: arr11(1000)
-    character(len=s_str_len),allocatable, dimension(:) :: labels
-    real(dp), allocatable :: temp(:,:)
-    integer :: io, n, nn, i, ii, ind, ind1
+    integer :: io, n, nn, i, ii
     
     open(4, file=trim(atm_file),status='old',iostat=io)
     if (io /= 0) then
@@ -58,18 +90,12 @@ contains
     endif
     read(4,'(A)') line
     
-    v%nz = -1
+    atm%nz = -1
     io = 0
     do while (io == 0)
       read(4,*,iostat=io)
-      v%nz = v%nz + 1
+      atm%nz = atm%nz + 1
     enddo
-    
-    allocate(v%z(v%nz))
-    allocate(v%dz(v%nz))
-    allocate(v%T(v%nz))
-    allocate(v%P(v%nz))
-    allocate(v%mix(v%nz,dat%ng))
     
     rewind(4)
     read(4,'(A)') line
@@ -91,17 +117,18 @@ contains
       return
     endif
     
-    allocate(labels(n))
-    allocate(temp(n,v%nz))
+    atm%nlabels = n
+    allocate(atm%labels(n))
+    allocate(atm%columns(n,atm%nz))
     rewind(4)
     
     ! read labels
     read(4,'(A)') line
-    read(line,*) (labels(i),i=1,n)
+    read(line,*) (atm%labels(i),i=1,n)
     
     ! First read in all the data into big array
-    do i = 1,v%nz
-      read(4,*,iostat=io) (temp(ii,i),ii=1,n)
+    do i = 1,atm%nz
+      read(4,*,iostat=io) (atm%columns(ii,i),ii=1,n)
       if (io /= 0) then
         err = 'Problem reading in initial atmosphere in "'//trim(atm_file)//'"'
         return
@@ -109,10 +136,38 @@ contains
     enddo
     close(4)
     
+    
+  end function
+  
+  subroutine unpack_atmospherefile(atm_file, atm, dat, v, err)
+  
+    use futils, only: is_close, interp
+    use clima_types, only: AtmosphereFile
+  
+    character(*), intent(in) :: atm_file
+    type(AtmosphereFile), intent(in) :: atm
+    type(ClimaData), intent(in) :: dat
+    type(ClimaVars), intent(inout) :: v
+    character(:), allocatable, intent(out) :: err
+  
+    integer :: i, ind, ind1, ierr
+  
+    ind1 = findloc(atm%labels,"alt", 1)
+    if (ind1 == 0) then
+      err = '"alt" was not found in input file "'//trim(atm_file)//'"'
+      return
+    endif
+    
     do i=1,dat%ng
-      ind = findloc(labels,dat%species_names(i), 1)
+      ind = findloc(atm%labels,dat%species_names(i), 1)
       if (ind /= 0) then
-        v%mix(:,i) = temp(ind,:)
+
+        call interp(v%nz, atm%nz, v%z, atm%columns(ind1,:)*1.0e5_dp, log10(atm%columns(ind,:)), v%mix(:,i), ierr)
+        if (ierr /= 0) then
+          err = 'Error interpolating "'//trim(atm_file)//'"'
+          return
+        endif
+        
       else
         err = 'Species "'//trim(dat%species_names(i))//'" was not found in "'// &
               trim(atm_file)//'"'
@@ -120,36 +175,24 @@ contains
       endif
     enddo
     
+    v%mix = 10.0_dp**v%mix
+    
     ! check mix sums to 1
     do i = 1,v%nz
       if (.not. is_close(sum(v%mix(i,:)), 1.0_dp)) then
         err = 'mixing ratios do not sum to close to 1 in "'//trim(atm_file)//'"'
       endif
     enddo
-    
-    ind = findloc(labels,'alt-low',1)
-    ind1 = findloc(labels,'alt-high',1)
-    if (ind /= 0 .and. ind1 /= 0) then
-      v%dz = (temp(ind1,:) - temp(ind,:))*1.0e5_dp
-      v%z = (temp(ind1,:) + temp(ind,:))*0.5_dp*1.0e5_dp
-    else
-      err = '"alt-low" or "alt-high" was not found in input file "'//trim(atm_file)//'"'
-      return
-    endif
-    
-    ind = findloc(labels,'temp',1)
+
+    ind = findloc(atm%labels,'temp',1)
     if (ind /= 0) then
-      v%T = temp(ind,:)
+      call interp(v%nz, atm%nz, v%z, atm%columns(ind1,:)*1.0e5_dp, atm%columns(ind,:), v%T_init(:), ierr)
+      if (ierr /= 0) then
+        err = 'Error interpolating "'//trim(atm_file)//'"'
+        return
+      endif
     else
       err = '"temp" was not found in input file "'//trim(atm_file)//'"'
-      return
-    endif
-    
-    ind = findloc(labels,'press',1)
-    if (ind /= 0) then
-      v%P = temp(ind,:)
-    else
-      err = '"press" was not found in input file "'//trim(atm_file)//'"'
       return
     endif
     
@@ -264,6 +307,16 @@ contains
       call weights_to_bins(kset%wbin, kset%wbin_e)
     elseif (s%k_method == "RandomOverlap") then
       kset%k_method = k_RandomOverlap
+    endif
+    
+    ! planet
+    if (s%planet_is_present) then
+      dat%back_gas_name = s%back_gas_name
+      dat%planet_mass = s%planet_mass
+      dat%planet_radius = s%planet_radius
+    else
+      err = '"planet" is required in the settings file.'
+      return
     endif
     
   end function
@@ -530,7 +583,7 @@ contains
     integer :: i, j, ind1, ind2
     character(error_length) :: error
     class(type_node), pointer :: root
-    class(type_dictionary), pointer :: root_dict
+    type(type_dictionary), pointer :: root_dict
     
     op%op_type = optype
     ! get the bins
@@ -1100,6 +1153,8 @@ contains
     
   end subroutine
   
+  
+  
   function create_ClimaSettings(filename, err) result(s)
     use fortran_yaml_c, only : parse, error_length
     character(*), intent(in) :: filename
@@ -1133,9 +1188,32 @@ contains
     type(ClimaSettings), intent(out) :: s
     character(:), allocatable, intent(out) :: err
     
-    type(type_dictionary), pointer :: op_prop, opacities, tmp_dict
+    type(type_dictionary), pointer :: op_prop, planet, grid
     type (type_error), allocatable :: io_err
     
+    !!!!!!!!!!!!!!!!!!!!!!!
+    !!! atmosphere-grid !!!
+    !!!!!!!!!!!!!!!!!!!!!!!
+    grid => root%get_dictionary('atmosphere-grid',.false.,error = io_err)
+    if (associated(grid)) then
+      s%atmos_grid_is_present = .true.
+      call unpack_settingsgrid(grid, filename, s, err)
+      if (allocated(err)) return
+    else
+      s%atmos_grid_is_present = .false.
+    endif
+    
+    !!!!!!!!!!!!!!
+    !!! planet !!!
+    !!!!!!!!!!!!!!
+    planet => root%get_dictionary("planet", required=.false., error=io_err)
+    if (associated(planet)) then
+      s%planet_is_present = .true.
+      call unpack_settingsplanet(planet, filename, s, err)
+      if (allocated(err)) return
+    else
+      s%planet_is_present = .false.
+    endif
     
     !!!!!!!!!!!!!!!!!!!!!!!!!!
     !!! optical properties !!!
@@ -1143,6 +1221,88 @@ contains
     op_prop => root%get_dictionary("optical-properties", required=.true., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
       
+    call unpack_settingsopticalproperties(op_prop, filename, s, err)
+    if (allocated(err)) return
+
+  end subroutine
+  
+  subroutine unpack_settingsgrid(grid, filename, s, err)
+    type(type_dictionary), pointer :: grid
+    character(*), intent(in) :: filename
+    type(ClimaSettings), intent(inout) :: s
+    character(:), allocatable, intent(out) :: err
+    
+    type (type_error), allocatable :: io_err
+    
+    s%bottom = grid%get_real('bottom',error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    s%top = grid%get_real('top',error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    s%nz = grid%get_integer('number-of-layers',error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    
+  end subroutine
+    
+  subroutine unpack_settingsplanet(planet, filename, s, err)
+    type(type_dictionary), pointer :: planet
+    character(*), intent(in) :: filename
+    type(ClimaSettings), intent(inout) :: s
+    character(:), allocatable, intent(out) :: err
+    
+    type (type_error), allocatable :: io_err
+    
+    s%back_gas_name = trim(planet%get_string("background-gas", error=io_err))
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+      
+    s%P_surf = planet%get_real('surface-pressure',error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (s%P_surf <= 0.0_dp) then
+      err = 'IOError: Planet surface pressure must be greater than zero.'
+      return
+    endif
+    s%planet_mass = planet%get_real('planet-mass',error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (s%planet_mass <= 0.0_dp) then
+      err = 'IOError: Planet mass must be greater than zero.'
+      return
+    endif
+    s%planet_radius = planet%get_real('planet-radius',error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (s%planet_radius <= 0.0_dp) then
+      err = 'IOError: Planet radius must be greater than zero.'
+      return
+    endif
+    s%surface_albedo = planet%get_real('surface-albedo',error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (s%surface_albedo < 0.0_dp) then
+      err = 'IOError: Surface albedo must be greater than zero.'
+      return
+    endif
+    s%diurnal_fac = planet%get_real('diurnal-averaging-factor',error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (s%diurnal_fac < 0.0_dp .or. s%diurnal_fac > 1.0_dp) then
+      err = 'IOError: diurnal-averaging-factor must be between 0 and 1.'
+      return
+    endif
+    
+    s%solar_zenith = planet%get_real('solar-zenith-angle',error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (s%solar_zenith < 0.0_dp .or. s%solar_zenith > 90.0_dp) then
+      err = 'IOError: solar zenith must be between 0 and 90.'
+      return
+    endif
+    
+  end subroutine
+  
+  subroutine unpack_settingsopticalproperties(op_prop, filename, s, err)
+    type(type_dictionary), pointer :: op_prop
+    character(*), intent(in) :: filename
+    type(ClimaSettings), intent(inout) :: s
+    character(:), allocatable, intent(out) :: err
+    
+    type(type_dictionary), pointer :: opacities, tmp_dict
+    type (type_error), allocatable :: io_err
+    
     ! optical property settings
     s%k_method = trim(op_prop%get_string("k-method", error=io_err))
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
@@ -1162,13 +1322,6 @@ contains
     !!!!!!!!!!!!!!!!!
     opacities => op_prop%get_dictionary("opacities", required=.true., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-      
-    tmp_dict => opacities%get_dictionary("faruv", required=.false., error=io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (associated(tmp_dict)) then
-      call unpack_settingsopacity(tmp_dict, filename, s%uv, err)
-      if (allocated(err)) return
-    endif
     
     tmp_dict => opacities%get_dictionary("solar", required=.false., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
@@ -1183,7 +1336,7 @@ contains
       call unpack_settingsopacity(tmp_dict, filename, s%ir, err)
       if (allocated(err)) return
     endif
-
+    
   end subroutine
   
   subroutine unpack_settingsopacity(opacities, filename, op, err)

@@ -17,7 +17,5 @@ program test_clima
     stop 1
   endif
   
-  call radiative_transfer(c%d, c%v, c%w)
-  
 
 end program
