@@ -57,6 +57,7 @@ contains
   end function
   
   subroutine radiative_transfer(d, v, w)
+    use futils, only: Timer
     type(ClimaData), intent(inout) :: d
     type(ClimaVars), intent(in) :: v
     type(ClimaWrk), intent(inout) :: w
@@ -69,14 +70,27 @@ contains
     
     real(dp), allocatable :: fup_a(:,:)
     real(dp), allocatable :: fdn_a(:,:)
+    type(Timer) :: tm
+    integer :: i, j, niters
     
     allocate(fup_sol(v%nz),fdn_sol(v%nz),fup_ir(v%nz),fdn_ir(v%nz))
     
     allocate(fup_a(v%nz+1,d%ir%nw))
     allocate(fdn_a(v%nz+1,d%ir%nw))
     
-    call radiate(d%ir, d%kset, v, w%rx_ir, w%rz, fup_a, fdn_a, fup_ir, fdn_ir)
+    niters = 1
+    call tm%start()
+    do j = 1,niters
+      call radiate(d%ir, d%kset, v, w%rx_ir, w%rz, fup_a, fdn_a, fup_ir, fdn_ir)
+      ! open(unit=1,file='../fup_clima_RO.dat',form='formatted',status='replace')
+      ! do i = 1,d%ir%nw
+      !   write(1,*) -(d%ir%freq(i)+d%ir%freq(i+1))*0.5_dp*1.0e-3_dp, fup_a(1,i)
+      ! enddo
+      ! close(1)  
+      ! stop
     
+    enddo
+    call tm%finish('',niters=niters)
   end subroutine
   
   subroutine radiate(op, kset, v, rw, rz, fup_a, fdn_a, fup_n, fdn_n)
@@ -86,7 +100,6 @@ contains
     use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
     use clima_eqns, only: planck_fcn, ten2power
     
-    use futils, only: Timer
     type(OpticalProperties), intent(inout) :: op
     type(Ksettings), intent(in) :: kset
     type(ClimaVars), intent(in) :: v
@@ -106,12 +119,7 @@ contains
     
     ! other work
     real(dp) :: dfreq
-  
-  
-    type(Timer) :: tm
     
-    call tm%start()
-
     !$omp parallel private(i, j, k, l, n, jj, &
     !$omp& iks, &
     !$omp& rw, rz)
@@ -212,7 +220,7 @@ contains
           call k_loops(v, op, rw%ks, rz, iks, 1)
         elseif (kset%k_method == k_RandomOverlapResortRebin) then
           ! Random Overlap with Resorting and Rebinning.
-          call k_rror(v, op, kset, rw, rz)
+          call k_rorr(v, op, kset, rw, rz)
         endif
         
       else
@@ -259,17 +267,9 @@ contains
       
     endif
     
-    call tm%finish('')
-    
-    ! open(unit=1,file='../fup_rorr8.dat',form='formatted',status='replace')
-    ! do i = 1,op%nw
-    !   write(1,*) op%freq(i),op%wavl(i)*1.0e-3_dp,fup_a(1,i), fup_n(i), fdn_n(i)
-    ! enddo
-    ! close(1)  
-    
   end subroutine
   
-  subroutine k_rror(v, op, kset, rw, rz)
+  subroutine k_rorr(v, op, kset, rw, rz)
     use futils, only: rebin
     use mrgrnk_mod, only: mrgrnk
     
@@ -304,7 +304,7 @@ contains
     wxy_e => rw%wxy_e
     inds => rw%inds
     
-      ! rebin k-coeffs of first species to new grid
+    ! rebin k-coeffs of first species to new grid
     do i = 1,v%nz
       call rebin(op%k(1)%weight_e, rw%ks(1)%k(i,:), kset%wbin_e, tau_k(i,:))
     enddo
