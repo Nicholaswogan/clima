@@ -80,16 +80,13 @@ module clima_types
   
   type :: Xsection
     integer :: xs_type ! see enum above.
-    integer :: dim ! 0, 1, or 2.
+    integer :: dim ! 0, 1
     integer, allocatable :: sp_ind(:) ! (1 or 2). species indexes
     integer, allocatable :: rxn ! photolysis reaction number (only for PhotolysisXsection)
-    integer, allocatable :: ntemp ! number of temperatures (only for xs_dim = 1 or 2)
-    integer, allocatable :: npress ! number of pressure (only for xs_dim = 2)
+    integer, allocatable :: ntemp ! number of temperatures (only for xs_dim = 1)
     real(dp), allocatable :: temp(:) ! (ntemp) Kelvin
-    real(dp), allocatable :: log10P(:) ! (npress) log10(bars)
     real(dp), allocatable :: xs_0d(:) ! (nw) 
     type(linear_interp_1d), allocatable :: log10_xs_1d(:) ! (nw) 
-    type(linear_interp_2d), allocatable :: log10_xs_2d(:) ! (nw)
   end type
   
   enum, bind(c)
@@ -255,12 +252,23 @@ module clima_types
   type :: RadiateInputs
     real(dp), allocatable :: T(:) ! (nz) K
     real(dp), allocatable :: P(:) ! (nz) bars
+    real(dp), allocatable :: density(:)
     real(dp), allocatable :: densities(:,:) ! (nz,ng) molecules/cm3
     real(dp), allocatable :: cols(:,:) ! (nz,ng) molecules/cm2 at each atmospheric layer 
     
   end type
   
   type :: ClimaWrk
+    real(dp), allocatable :: fup_sol(:)
+    real(dp), allocatable :: fdn_sol(:)
+    real(dp), allocatable :: fup_a_sol(:,:) ! (nz+1,sol%nw)
+    real(dp), allocatable :: fdn_a_sol(:,:) ! (nz+1,sol%nw)
+    
+    real(dp), allocatable :: fup_ir(:)
+    real(dp), allocatable :: fdn_ir(:)
+    real(dp), allocatable :: fup_a_ir(:,:) ! (nz+1,ir%nw)
+    real(dp), allocatable :: fdn_a_ir(:,:) ! (nz+1,ir%nw)
+    
     type(RadiateInputs) :: rin
     type(RadiateXSWrk) :: rx_sol
     type(RadiateXSWrk) :: rx_ir
@@ -279,8 +287,16 @@ contains
     
     type(ClimaWrk) :: w
     
+    allocate(w%fup_sol(nz), w%fdn_sol(nz))
+    allocate(w%fup_a_sol(nz+1,d%sol%nw))
+    allocate(w%fdn_a_sol(nz+1,d%sol%nw))
+    allocate(w%fup_ir(nz), w%fdn_ir(nz))
+    allocate(w%fup_a_ir(nz+1,d%ir%nw))
+    allocate(w%fdn_a_ir(nz+1,d%ir%nw))
+    
     allocate(w%rin%T(nz))
     allocate(w%rin%P(nz))
+    allocate(w%rin%density(nz))
     allocate(w%rin%densities(nz,d%ng))
     allocate(w%rin%cols(nz,d%ng))
     

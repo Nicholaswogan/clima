@@ -864,13 +864,13 @@ contains
     
     xs%dim = h%ndims('log10xs') - 1
     
-    if (.not. any(xs%dim == [0, 1, 2])) then
+    if (.not. any(xs%dim == [0, 1])) then
       call h%close()
       err = "Issue reading "//filename
       return
     endif
     
-    if (xs%dim == 0 .or. xs%dim == 1 .or. xs%dim == 2) then
+    if (xs%dim == 0 .or. xs%dim == 1) then
       call check_h5_dataset(h, "wavelengths", 1, H5T_FLOAT_F, filename, err)
       if (allocated(err)) then
         call h%close()
@@ -884,7 +884,7 @@ contains
       wav_f_save = wav_f
     endif
     
-    if (xs%dim == 1 .or. xs%dim == 2) then
+    if (xs%dim == 1) then
       call check_h5_dataset(h, "T", 1, H5T_FLOAT_F, filename, err)
       if (allocated(err)) then
         call h%close()
@@ -895,17 +895,6 @@ contains
       xs%ntemp = dims(1)
       allocate(xs%temp(xs%ntemp))
       call h%read("T", xs%temp)
-    endif
-    
-    if (xs%dim == 2) then
-      call check_h5_dataset(h, "log10P", 1, H5T_FLOAT_F, filename, err)
-      if (allocated(err)) then
-        call h%close()
-        return
-      endif
-      call h%shape("log10P", dims)
-      allocate(xs%log10P(dims(1)))
-      call h%read("log10P", xs%log10P)
     endif
     
     ! read in data and interpolate to grid
@@ -991,10 +980,6 @@ contains
         endif
       enddo
 
-    elseif (xs%dim == 2) then
-      err = "xs%dim == 2 not implemented"
-      call h%close()
-      return
     endif
 
     call h%close()

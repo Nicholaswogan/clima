@@ -1,71 +1,9 @@
-module clima_climate
+module clima_radtran
   use clima_const, only: dp
-  use clima_types, only: ClimaData, ClimaVars, ClimaWrk
+  use clima_types, only: ClimaVars
   implicit none
-  private
-  
-  public :: Climate, radiative_transfer
-  
-  type :: Climate
-    type(ClimaData) :: d
-    type(ClimaVars) :: v
-    type(ClimaWrk) :: w
-  end type
-  
-  interface Climate
-    module procedure :: create_Climate
-  end interface
   
 contains
-  
-  function create_Climate(data_dir, species_f, settings_f, star_f, atmosphere_f, err) result(c)
-    use clima_const, only: k_boltz
-    use clima_types, only: ClimaSettings
-    use clima_input, only: create_ClimaVars, create_ClimaData, create_ClimaSettings
-    character(*), intent(in) :: data_dir
-    character(*), intent(in) :: species_f
-    character(*), intent(in) :: settings_f
-    character(*), intent(in) :: star_f
-    character(*), intent(in) :: atmosphere_f
-    character(:), allocatable, intent(out) :: err
-    
-    type(Climate) :: c
-    
-    type(ClimaSettings) :: s
-    integer :: i
-    
-    s = create_ClimaSettings(settings_f, err)
-    if (allocated(err)) return
-    c%d = create_ClimaData(species_f, data_dir, s, err)
-    if (allocated(err)) return
-    c%v = create_ClimaVars(atmosphere_f, star_f, s, c%d, err)
-    if (allocated(err)) return
-    c%w = ClimaWrk(c%d, c%v%nz)
-    
-  end function
-  
-  subroutine radiative_transfer(d, v, w)
-    type(ClimaData), intent(inout) :: d
-    type(ClimaVars), intent(in) :: v
-    type(ClimaWrk), intent(inout) :: w
-    
-    real(dp), allocatable :: fup_sol(:)
-    real(dp), allocatable :: fdn_sol(:)
-    
-    real(dp), allocatable :: fup_ir(:)
-    real(dp), allocatable :: fdn_ir(:)
-    
-    real(dp), allocatable :: fup_a(:,:)
-    real(dp), allocatable :: fdn_a(:,:)
-    
-    
-    allocate(fup_sol(v%nz),fdn_sol(v%nz),fup_ir(v%nz),fdn_ir(v%nz))
-    allocate(fup_a(v%nz+1,d%ir%nw))
-    allocate(fdn_a(v%nz+1,d%ir%nw))
-    
-    call radiate(d%ir, d%kset, v, w%rin, w%rx_ir, w%rz, fup_a, fdn_a, fup_ir, fdn_ir)
-
-  end subroutine
   
   subroutine radiate(op, kset, v, rin, rw, rz, fup_a, fdn_a, fup_n, fdn_n)
     use clima_types, only: RadiateXSWrk, RadiateZWrk, Ksettings, RadiateInputs
@@ -178,6 +116,7 @@ contains
           rz%bplanck(n) = planck_fcn(avg_freq, rin%T(j))
         enddo
       endif
+      
       
       ! asymetry factor
       rz%gt = 0.0_dp
@@ -450,11 +389,11 @@ contains
         call xs%log10_xs_1d(l)%evaluate(T(j), val)
         res(j) = ten2power(val)
       enddo
-    elseif (xs%dim == 2) then
-      print*,'interpolate_Xsection'
-      stop 1
     endif
     
   end subroutine
   
+  
 end module
+  
+  

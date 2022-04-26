@@ -87,5 +87,32 @@ contains
     enddo 
     
   end subroutine
+  
+  pure subroutine press_and_den(nz, T, grav, Psurf, dz, &
+                                mubar, pressure, density)
+    use clima_const, only: k_boltz, N_avo
+  
+    integer, intent(in) :: nz
+    real(dp), intent(in) :: T(nz), grav(nz)
+    real(dp), intent(in) :: Psurf, dz(nz), mubar(nz)
+  
+    real(dp), intent(out) :: pressure(nz)
+    real(dp), intent(out) :: density(nz)
+  
+    real(dp) :: T_temp
+    integer :: i
+  
+    ! first layer
+    T_temp = T(1)
+    pressure(1) = Psurf * exp(-((mubar(1) * grav(1))/(N_avo * k_boltz * T_temp)) * 0.5e0_dp * dz(1))
+    density(1) = pressure(1)/(k_boltz * T(1))
+    ! other layers
+    do i = 2,nz
+      T_temp = (T(i) + T(i-1))/2.0_dp
+      pressure(i) = pressure(i-1) * exp(-((mubar(i) * grav(i))/(N_avo * k_boltz * T_temp))* dz(i))
+      density(i) = pressure(i)/(k_boltz * T(i))
+    enddo
+  
+  end subroutine
 
 end module
