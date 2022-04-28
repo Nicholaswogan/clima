@@ -3,6 +3,7 @@ add_subdirectory(dependencies)
 
 set(CLIMATE_SOURCES
   climate/clima_climate_rhs.f90
+  climate/clima_climate_integrate.f90
   climate/clima_climate.f90
 )
 
@@ -16,7 +17,7 @@ add_library(clima
   ${CLIMATE_SOURCES}
   clima.f90
 )
-target_link_libraries(clima fortran-yaml-c finterp h5fortran futils fortran_stdlib mrgrnk)
+target_link_libraries(clima fortran-yaml-c finterp h5fortran futils fortran_stdlib mrgrnk sundials_fcvode_mod sundials_cvode)
 
 # Add special compiler flags to Clima
 if ("${CMAKE_Fortran_COMPILER_ID}" MATCHES "GNU")

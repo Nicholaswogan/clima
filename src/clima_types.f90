@@ -1,5 +1,6 @@
 
 module clima_types
+  use iso_c_binding
   use clima_const, only: dp, s_str_len
   use linear_interpolation_module, only: linear_interp_1d, linear_interp_2d
   implicit none
@@ -127,6 +128,12 @@ module clima_types
   !!!!!!!!!!!!!!!
   !!! Species !!!
   !!!!!!!!!!!!!!!
+  
+  enum, bind(c)
+  enumerator :: &
+    ShomatePolynomial = 1, &
+    Nasa9Polynomial = 2
+  end enum
   
   type :: ThermodynamicData
     integer :: dtype
@@ -259,6 +266,10 @@ module clima_types
   end type
   
   type :: ClimaWrk
+    ! cvode stuff
+    integer(c_long) :: nsteps_previous = -10
+    type(c_ptr) :: cvode_mem = c_null_ptr
+    
     real(dp), allocatable :: fup_sol(:)
     real(dp), allocatable :: fdn_sol(:)
     real(dp), allocatable :: fup_a_sol(:,:) ! (nz+1,sol%nw)
@@ -268,6 +279,7 @@ module clima_types
     real(dp), allocatable :: fdn_ir(:)
     real(dp), allocatable :: fup_a_ir(:,:) ! (nz+1,ir%nw)
     real(dp), allocatable :: fdn_a_ir(:,:) ! (nz+1,ir%nw)
+    real(dp), allocatable :: f_total(:) ! (nz+1)
     
     type(RadiateInputs) :: rin
     type(RadiateXSWrk) :: rx_sol
@@ -287,12 +299,13 @@ contains
     
     type(ClimaWrk) :: w
     
-    allocate(w%fup_sol(nz), w%fdn_sol(nz))
+    allocate(w%fup_sol(nz+1), w%fdn_sol(nz+1))
     allocate(w%fup_a_sol(nz+1,d%sol%nw))
     allocate(w%fdn_a_sol(nz+1,d%sol%nw))
-    allocate(w%fup_ir(nz), w%fdn_ir(nz))
+    allocate(w%fup_ir(nz+1), w%fdn_ir(nz+1))
     allocate(w%fup_a_ir(nz+1,d%ir%nw))
     allocate(w%fdn_a_ir(nz+1,d%ir%nw))
+    allocate(w%f_total(nz+1))
     
     allocate(w%rin%T(nz))
     allocate(w%rin%P(nz))

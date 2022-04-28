@@ -14,8 +14,12 @@ module clima_const
   real(dp), parameter :: c_light = 299792458.0_dp ! Speed of light (m / s)
   real(dp), parameter :: N_avo = 6.02214076e23_dp ! avagadros number
   real(dp), parameter :: pi = 3.14159265358979323846e0_dp
+  real(dp), parameter :: von_karman_const = 0.41_dp ! from wikipedia
   
   ! useful
   real(dp), parameter :: log10tiny = log10(sqrt(tiny(1.0_dp)))
+  
+  ! other
+  real(dp), parameter :: max_w0 = 0.99999_dp
   
 end module

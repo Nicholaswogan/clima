@@ -13,6 +13,7 @@ module clima_climate
     
   contains
     procedure :: right_hand_side
+    procedure :: evolve
   end type
   
   interface Climate
@@ -21,11 +22,24 @@ module clima_climate
   
   interface 
     
-    module subroutine right_hand_side(self, T_in, dTdt)
+    module subroutine right_hand_side(self, T_in, dTdt, err)
       class(Climate), intent(inout), target :: self
       real(dp), intent(in) :: T_in(:)
       real(dp), intent(out) :: dTdt(:)
+      character(:), allocatable :: err
     end subroutine
+    
+    module function evolve(self, filename, tstart, T_start, t_eval, overwrite, err) result(success)
+      use, intrinsic :: iso_c_binding
+      class(Climate), target, intent(inout) :: self
+      character(len=*), intent(in) :: filename
+      real(c_double), intent(in) :: tstart
+      real(dp), intent(in) :: T_start(:)
+      real(c_double), intent(in) :: t_eval(:)
+      logical, optional, intent(in) :: overwrite
+      logical :: success
+      character(:), allocatable, intent(out) :: err
+    end function
   
   
   end interface

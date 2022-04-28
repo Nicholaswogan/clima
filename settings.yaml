@@ -1,8 +1,8 @@
 
 atmosphere-grid:
   bottom: 0.0 # cm
-  top: 1.0e7 # cm
-  number-of-layers: 200
+  top: 0.6e7 # cm
+  number-of-layers: 120
   
 planet:
   background-gas: N2
@@ -11,17 +11,17 @@ planet:
   planet-radius: 6.371e8
   surface-albedo: 0.25
   diurnal-averaging-factor: 0.5
-  solar-zenith-angle: 50.0
+  solar-zenith-angle: 60.0
   
 optical-properties:
   k-method: RandomOverlapResortRebin
   number-of-bins: 16
   opacities:
     solar:
-      k-distributions: [H2O, CO2, O3, CH4, O2]
+      k-distributions: [H2O, CO2]
       CIA: [CO2-CO2, N2-N2, O2-O2, N2-O2]
       rayleigh: [N2, H2O, CO2]
     ir:
-      k-distributions: [H2O, CO2, O3, CH4, CO, O2]
+      k-distributions: [H2O, CO2]
       CIA: [CO2-CO2, N2-N2, O2-O2, N2-O2]
       rayleigh: [H2O, CO2, O2]

@@ -5,6 +5,47 @@ module clima_radtran
   
 contains
   
+  ! v: nz, dz, u0, surface_albedo, photons_sol, diurnal_fac
+  ! rin: T, P, densities
+  
+  ! We should switch to this interface instead. It will make the radiative
+  ! Transfer more generalized.
+  
+  ! subroutine radiate_explicit(op, kset, &
+  !                    dz, surface_albedo, u0, diurnal_fac, photons_sol, &
+  !                    T, P, densities, &
+  !                    rw, rz, &
+  !                    fup_a, fdn_a, fup_n, fdn_n)
+  !   use clima_types, only: OpticalProperties
+  !   use clima_types, only: RadiateXSWrk, RadiateZWrk, Ksettings
+  ! 
+  !   type(OpticalProperties), intent(inout) :: op !! Optical properties
+  !   type(Ksettings), intent(in) :: kset !! Settings for how to deal with k-coefficients
+  ! 
+  !   real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
+  !   real(dp), intent(in) :: surface_albedo !! Surface albedo
+  !   real(dp), optional, intent(in) :: u0 !! Cosine of solar zenith angle
+  !   real(dp), optional, intent(in) :: diurnal_fac !! Diurnal averaging factor (0.5)
+  !   real(dp), optional, intent(in) :: photons_sol(:) !! (nw) Solar flux (mW/m2)
+  ! 
+  !   real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
+  !   real(dp), intent(in) :: P(:) !! (nz) Pressure (bar) 
+  !   real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
+  !                                          !! molecule in each layer (molcules/cm3)
+  ! 
+  !   type(RadiateXSWrk), intent(inout) :: rw !! work arrays
+  !   type(RadiateZWrk), intent(inout) :: rz !! work arrays
+  ! 
+  !   real(dp), intent(out) :: fup_a(:,:), fdn_a(:,:) !! (nz+1,nw)
+  !   real(dp), intent(out) :: fup_n(:), fdn_n(:) !! (nz+1)
+  ! 
+  !   integer :: nz
+  ! 
+  !   nz = size(dz)
+  ! 
+  ! end subroutine
+             
+    
   subroutine radiate(op, kset, v, rin, rw, rz, fup_a, fdn_a, fup_n, fdn_n)
     use clima_types, only: RadiateXSWrk, RadiateZWrk, Ksettings, RadiateInputs
     use clima_types, only: OpticalProperties, Kcoefficients
@@ -19,7 +60,7 @@ contains
     type(RadiateXSWrk), intent(inout) :: rw
     type(RadiateZWrk), intent(inout) :: rz
     real(dp), intent(out) :: fup_a(:,:), fdn_a(:,:) ! (nz+1,nw)
-    real(dp), intent(out) :: fup_n(:), fdn_n(:) ! (nz)
+    real(dp), intent(out) :: fup_n(:), fdn_n(:) ! (nz+1)
     
     real(dp), parameter :: max_w0 = 0.99999_dp
     
@@ -117,7 +158,6 @@ contains
         enddo
       endif
       
-      
       ! asymetry factor
       rz%gt = 0.0_dp
       
@@ -161,10 +201,10 @@ contains
         op%op_type == SolarOpticalProperties) then
         
       do l = 1,op%nw
-        do i = 1,v%nz
-          n = v%nz+1-i
-          fup_n(i) = fup_n(i) + (0.5_dp*(fup_a(n,l)+fup_a(n+1,l)))*v%photons_sol(l)
-          fdn_n(i) = fdn_n(i) + (0.5_dp*(fdn_a(n,l)+fdn_a(n+1,l)))*v%photons_sol(l)
+        do i = 1,v%nz+1
+          n = v%nz+2-i
+          fup_n(i) = fup_n(i) + fup_a(n,l)*v%photons_sol(l)*v%diurnal_fac
+          fdn_n(i) = fdn_n(i) + fdn_a(n,l)*v%photons_sol(l)*v%diurnal_fac
         enddo
       enddo
       
@@ -172,10 +212,10 @@ contains
       
       do l = 1,op%nw
         dfreq = op%freq(l)-op%freq(l+1)
-        do i = 1,v%nz
-          n = v%nz+1-i
-          fup_n(i) = fup_n(i) + (0.5_dp*(fup_a(n,l)+fup_a(n+1,l)))*dfreq*1.0e3_dp
-          fdn_n(i) = fdn_n(i) + (0.5_dp*(fdn_a(n,l)+fdn_a(n+1,l)))*dfreq*1.0e3_dp
+        do i = 1,v%nz+1
+          n = v%nz+2-i
+          fup_n(i) = fup_n(i) + fup_a(n,l)*dfreq*1.0e3_dp
+          fdn_n(i) = fdn_n(i) + fdn_a(n,l)*dfreq*1.0e3_dp
         enddo
       enddo
       

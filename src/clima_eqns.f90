@@ -57,6 +57,85 @@ contains
     res = exp(y*c)
   end function
   
+  pure function heat_capacity_shomate(coeffs, T) result(cp)
+    real(dp), intent(in) :: coeffs(7)
+    real(dp), intent(in) :: T
+    real(dp) :: cp !! J/(mol K)
+    
+    real(dp) :: TT
+    
+    TT = T/1000.0_dp
+    cp = coeffs(1) + coeffs(2)*TT + coeffs(3)*TT**2 + &
+         coeffs(4)*TT**3 + coeffs(5)/TT**2
+  end function
+  
+  pure subroutine heat_capacity_eval(thermo, T, found, cp)
+    use clima_types, only: ShomatePolynomial, Nasa9Polynomial
+    use clima_types, only: ThermodynamicData
+    
+    type(ThermodynamicData), intent(in) :: thermo
+    real(dp), intent(in) :: T
+    logical, intent(out) :: found
+    real(dp), intent(out) :: cp
+    
+    integer :: k
+    
+    found = .false.
+    do k = 1,thermo%ntemps
+      if (T >= thermo%temps(k) .and. &
+          T <  thermo%temps(k+1)) then
+          
+        found = .true.
+        if (thermo%dtype == ShomatePolynomial) then
+          cp = heat_capacity_shomate(thermo%data(1:7,k), T)
+        elseif (thermo%dtype == Nasa9Polynomial) then
+          ! gibbs_energy = gibbs_energy_nasa9(thermo%data(1:9,k), T)
+          found = .false.         
+        endif
+        
+        exit
+        
+      endif
+    enddo
+
+  end subroutine
+  
+  function eddy_for_heat(l, g, T, dTdz, adiabat) result(Kh)
+    real(dp), intent(in) :: l, g, T, dTdz, adiabat
+    
+    real(dp) :: Kh
+    
+    real(dp) :: eta, a1, a2
+    
+    eta = 0.3_dp*abs(adiabat)
+    
+    if (dTdz < -adiabat-eta) then
+      Kh = l**2.0_dp*sqrt(-(g/T)*(dTdz + adiabat))
+    elseif (-adiabat-eta < dTdz .and. dTdz < -adiabat) then
+      a1 = - adiabat - eta
+      a2 = - adiabat
+      Kh = (l**2.0_dp*sqrt(-(g/T)*(dTdz + adiabat)))* &
+            smoother(dTdz, a1, a2, -2.0_dp)
+    elseif (-adiabat < dTdz) then
+      Kh = 0.0_dp
+    endif
+
+  end function
+  
+  pure function smoother(x, a1, a2, beta) result(res)
+    real(dp), intent(in) :: x
+    real(dp), intent(in) :: a1
+    real(dp), intent(in) :: a2
+    real(dp), intent(in) :: beta
+    
+    real(dp) :: res
+    real(dp) :: y
+    
+    y = (1.0_dp/(a2-a1))*(x-a1)
+    res = 1.0_dp/(1.0_dp + (y/(1.0_dp-y))**(-beta))
+    
+  end function
+  
   ! coppied from Photochem
   pure subroutine vertical_grid(bottom, top, nz, z, dz)
     real(dp), intent(in) :: bottom, top
