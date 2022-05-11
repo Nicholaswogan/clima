@@ -43,9 +43,9 @@ contains
     use clima_const, only: c_light, k_boltz => k_boltz_si, plank
     real(dp), intent(in) :: nu ! (1/s) 
     real(dp), intent(in) :: T ! (K)
-    real(dp) :: B ! W sr^−1 m^−2 Hz^-1
+    real(dp) :: B ! mW sr^−1 m^−2 Hz^-1
     
-    B = ((2.0_dp*plank*nu**3.0_dp)/(c_light**2.0_dp)) * &
+    B = 1.0e3_dp*((2.0_dp*plank*nu**3.0_dp)/(c_light**2.0_dp)) * &
         ((1.0_dp)/(exp((plank*nu)/(k_boltz*T)) - 1.0_dp)) 
     
   end function

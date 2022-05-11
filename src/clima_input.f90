@@ -210,7 +210,7 @@ contains
     
     real(dp), allocatable :: file_wav(:), file_flux(:)
     real(dp) :: flux(nw)
-    real(dp) :: dum1, dum2
+    real(dp) :: dum1, dum2, wavl_av
     integer :: io, i, n, ierr
     real(dp), parameter :: rdelta = 1.0e-4_dp
     
@@ -258,10 +258,13 @@ contains
       err = "Problem interpolating "//trim(star_file)
       return
     endif
-    
-    ! compute mW/m2 in each bin
+
+    ! flux is mW/m2/nm
+    ! convert to mW/m2/Hz
+    ! I use the wavelength average in each bin.
     do i = 1,nw
-      photon_flux(i) = flux(i)*(wavl(i+1)-wavl(i))
+      wavl_av = 0.5_dp*(wavl(i) + wavl(i+1))
+      photon_flux(i) = flux(i)*(((wavl_av*1.0e-9_dp)*wavl_av)/c_light)
     enddo
 
   end subroutine

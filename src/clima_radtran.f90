@@ -12,10 +12,10 @@ contains
   ! Transfer more generalized.
   
   ! subroutine radiate_explicit(op, kset, &
-  !                    dz, surface_albedo, u0, diurnal_fac, photons_sol, &
-  !                    T, P, densities, &
-  !                    rw, rz, &
-  !                    fup_a, fdn_a, fup_n, fdn_n)
+  !                             dz, surface_albedo, u0, diurnal_fac, photons_sol, &
+  !                             T, P, densities, &
+  !                             rw, rz, &
+  !                             fup_a, fdn_a, fup_n, fdn_n)
   !   use clima_types, only: OpticalProperties
   !   use clima_types, only: RadiateXSWrk, RadiateZWrk, Ksettings
   ! 
@@ -24,9 +24,9 @@ contains
   ! 
   !   real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
   !   real(dp), intent(in) :: surface_albedo !! Surface albedo
-  !   real(dp), optional, intent(in) :: u0 !! Cosine of solar zenith angle
-  !   real(dp), optional, intent(in) :: diurnal_fac !! Diurnal averaging factor (0.5)
-  !   real(dp), optional, intent(in) :: photons_sol(:) !! (nw) Solar flux (mW/m2)
+  !   real(dp), intent(in) :: u0 !! Cosine of solar zenith angle
+  !   real(dp), intent(in) :: diurnal_fac !! Diurnal averaging factor (0.5)
+  !   real(dp), intent(in) :: photons_sol(:) !! (nw) Solar flux (mW/m2)
   ! 
   !   real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
   !   real(dp), intent(in) :: P(:) !! (nz) Pressure (bar) 
@@ -61,8 +61,6 @@ contains
     type(RadiateZWrk), intent(inout) :: rz
     real(dp), intent(out) :: fup_a(:,:), fdn_a(:,:) ! (nz+1,nw)
     real(dp), intent(out) :: fup_n(:), fdn_n(:) ! (nz+1)
-    
-    real(dp), parameter :: max_w0 = 0.99999_dp
     
     integer :: i, j, k, l, n, jj
     real(dp) :: avg_freq
@@ -148,7 +146,7 @@ contains
       enddo
       
       ! plank function, only if in the IR
-      ! bplanck has units [W sr^−1 m^−2 Hz^-1]
+      ! bplanck has units [mW sr^−1 m^−2 Hz^-1]
       if (op%op_type == IROpticalProperties) then
         avg_freq = 0.5_dp*(op%freq(l) + op%freq(l+1))
         rz%bplanck(v%nz+1) = planck_fcn(avg_freq, rin%T(1)) ! ground level
@@ -183,43 +181,40 @@ contains
         stop 1
       endif ! endif k-dist
       
-      fup_a(:,l) =  rz%fup1
-      fdn_a(:,l) =  rz%fdn1
+      ! save results. Here I reverse order so that
+      ! fup_a(1,l) is ground level.
+      do i = 1,v%nz+1
+        n = v%nz+2-i
+        fup_a(i,l) = rz%fup1(n)
+        fdn_a(i,l) = rz%fdn1(n)
+      enddo
       
     enddo
     !$omp enddo
     !$omp end parallel
     
-    ! Integrate fluxes over wavelength grid. Move values to grid-center,
-    ! by averaging over edge values.
-    fup_n = 0.0_dp
-    fdn_n = 0.0_dp
-
-    ! THIS IS THE RIGHT UNITS FOR fup_n, and fdn_n
-    ! mW/m2
+    ! In Solar case, units for fup_a and fdn_a are unit-less.
+    ! need to multiply by photons_sol (mW/m2/Hz). Then
+    ! fup_a and fdn_a are in units mW/m2/Hz.
     if (op%op_type == FarUVOpticalProperties .or. &
         op%op_type == SolarOpticalProperties) then
-        
       do l = 1,op%nw
-        do i = 1,v%nz+1
-          n = v%nz+2-i
-          fup_n(i) = fup_n(i) + fup_a(n,l)*v%photons_sol(l)*v%diurnal_fac
-          fdn_n(i) = fdn_n(i) + fdn_a(n,l)*v%photons_sol(l)*v%diurnal_fac
-        enddo
+        fup_a(:,l) = fup_a(:,l)*v%photons_sol(l)*v%diurnal_fac
+        fdn_a(:,l) = fdn_a(:,l)*v%photons_sol(l)*v%diurnal_fac
       enddo
-      
-    elseif (op%op_type == IROpticalProperties) then
-      
-      do l = 1,op%nw
-        dfreq = op%freq(l)-op%freq(l+1)
-        do i = 1,v%nz+1
-          n = v%nz+2-i
-          fup_n(i) = fup_n(i) + fup_a(n,l)*dfreq*1.0e3_dp
-          fdn_n(i) = fdn_n(i) + fdn_a(n,l)*dfreq*1.0e3_dp
-        enddo
-      enddo
-      
     endif
+    
+    ! Integrate fluxes over wavelength or frequency grid.
+    ! Units for fup_n and fdn_n are mW/m^2.
+    fup_n = 0.0_dp
+    fdn_n = 0.0_dp
+    do l = 1,op%nw
+      dfreq = op%freq(l)-op%freq(l+1)
+      do i = 1,v%nz+1
+        fup_n(i) = fup_n(i) + fup_a(i,l)*dfreq
+        fdn_n(i) = fdn_n(i) + fdn_a(i,l)*dfreq
+      enddo
+    enddo
     
   end subroutine
   
