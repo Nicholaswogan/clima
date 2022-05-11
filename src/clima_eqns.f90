@@ -107,7 +107,7 @@ contains
     
     real(dp) :: eta, a1, a2
     
-    eta = 0.3_dp*abs(adiabat)
+    eta = 0.1_dp*abs(adiabat)
     
     if (dTdz < -adiabat-eta) then
       Kh = l**2.0_dp*sqrt(-(g/T)*(dTdz + adiabat))

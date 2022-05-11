@@ -17,7 +17,7 @@ add_library(clima
   ${CLIMATE_SOURCES}
   clima.f90
 )
-target_link_libraries(clima fortran-yaml-c finterp h5fortran futils fortran_stdlib mrgrnk sundials_fcvode_mod sundials_cvode)
+target_link_libraries(clima fortran-yaml-c finterp h5fortran futils fortran_stdlib mrgrnk sundials_fcvode_mod sundials_cvode dop853)
 
 # Add special compiler flags to Clima
 if ("${CMAKE_Fortran_COMPILER_ID}" MATCHES "GNU")

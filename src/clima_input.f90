@@ -179,7 +179,7 @@ contains
     
     ! check mix sums to 1
     do i = 1,v%nz
-      if (.not. is_close(sum(v%mix(i,:)), 1.0_dp)) then
+      if (.not. is_close(sum(v%mix(i,:)), 1.0_dp, tol=1.0e-1_dp)) then
         err = 'mixing ratios do not sum to close to 1 in "'//trim(atm_file)//'"'
       endif
     enddo

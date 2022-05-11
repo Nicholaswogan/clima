@@ -2,7 +2,7 @@
 atmosphere-grid:
   bottom: 0.0 # cm
   top: 0.6e7 # cm
-  number-of-layers: 120
+  number-of-layers: 50
   
 planet:
   background-gas: N2

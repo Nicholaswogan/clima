@@ -26,13 +26,18 @@ program test_clima
   
   allocate(t_eval(100))
   
-  t_eval = 10.0_dp**linspace(0.0_dp,9.0_dp,400)
+  t_eval = 10.0_dp**linspace(1.0_dp,9.0_dp,100)
   
   
-  success = c%evolve("../test1.dat", 0.0_dp, c%v%T_init, t_eval, .true., err)
+  success = c%evolve_dop853("../test5.dat", 0.0_dp, c%v%T_init, t_eval, .true., err)
   if (allocated(err)) then
     print*,err
     stop 1
+  endif
+  
+  if (.not. success) then
+    
+    print*,'failed integration'
   endif
   
 

@@ -54,5 +54,18 @@ CPMAddPackage(
   EXCLUDE_FROM_ALL ON
 )
 
+CPMAddPackage(
+  NAME dop853
+  VERSION 1.2.0
+  GITHUB_REPOSITORY "jacobwilliams/dop853"
+  GIT_TAG "1.2.0"
+  DOWNLOAD_ONLY ON
+)
+
+add_library(dop853 
+  ${dop853_SOURCE_DIR}/src/dop853_constants.f90
+  ${dop853_SOURCE_DIR}/src/dop853_module.f90
+)
+
 # mrgrnk is from ORDERPACK 2.0: http://www.fortran-2000.com/rank/#1.1
 add_library(mrgrnk mrgrnk_mod.f90)
