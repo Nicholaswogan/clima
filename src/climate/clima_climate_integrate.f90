@@ -277,7 +277,10 @@ contains
     if (nsteps /= c%w%nsteps_previous) then
       print"(1x,'N =',i6,3x,'Time = ',es11.5,3x,'dt = ',es11.5,3x,'max(dy/dt) = ',es11.5)", &
             nsteps, tn, hcur, maxval(abs(du))
-    
+      print*,'FTIR ',c%w%fdn_ir(c%v%nz+1)-c%w%fup_ir(c%v%nz+1)
+      print*,'FTSO ',c%w%fdn_sol(c%v%nz+1)-c%w%fup_sol(c%v%nz+1)
+      print*,'SEFF',abs((c%w%fdn_ir(c%v%nz+1)-c%w%fup_ir(c%v%nz+1))/(c%w%fdn_sol(c%v%nz+1)-c%w%fup_sol(c%v%nz+1)))
+      
       c%w%nsteps_previous = nsteps
     endif
 
@@ -366,6 +369,7 @@ contains
         open(1, file = filename, status='old', form="unformatted",position="append")
         write(1) tn
         write(1) yvec
+        write(1) w%f_total
         close(1)
     
       endif

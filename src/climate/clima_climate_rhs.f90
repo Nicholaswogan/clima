@@ -52,17 +52,23 @@ contains
     rho = w%rin%density*(1.0_dp/N_avo)*v%mubar
     
     ! Solar radiative transfer
-    call radiate(d%sol, d%kset, v, w%rin, w%rx_sol, w%rz, &
+    call radiate(d%sol, d%kset, &
+                 v%surface_albedo, v%u0, v%diurnal_fac, v%photons_sol, &
+                 w%rin%P, w%rin%T, w%rin%densities, v%dz, &
+                 w%rx_sol, w%rz, &
                  w%fup_a_sol, w%fdn_a_sol, w%fup_sol, w%fdn_sol)
       
-    ! IR radiative transfer            
-    call radiate(d%ir, d%kset, v, w%rin, w%rx_ir, w%rz, &
+    ! IR radiative transfer
+    call radiate(d%ir, d%kset, &
+                 v%surface_albedo, v%u0, v%diurnal_fac, v%photons_sol, &
+                 w%rin%P, w%rin%T, w%rin%densities, v%dz, &
+                 w%rx_ir, w%rz, &
                  w%fup_a_ir, w%fdn_a_ir, w%fup_ir, w%fdn_ir)
                  
     ! Total flux at edges of layers (ergs/(cm2 s)).
     ! Index 1 is bottom. Index nz+1 is top edge of top layer.
     ! mW/m2
-    w%f_total = (w%fup_sol - w%fdn_sol) + (w%fup_ir - w%fdn_ir)
+    w%f_total = w%fdn_sol - w%fup_sol + w%fdn_ir - w%fup_ir
     ! convert to ergs/(cm2 s) (no conversion necessary)
     ! w%f_total = w%f_total*1.0_dp
     
@@ -105,13 +111,13 @@ contains
     do j = 2,v%nz-1
       
       dTdt(j) = &
-        (-1.0_dp/(rho(j)*cp(j)))*(w%f_total(j+1) - w%f_total(j))/v%dz(j) + &
+        (1.0_dp/(rho(j)*cp(j)))*(w%f_total(j+1) - w%f_total(j))/v%dz(j) + &
         (-1.0_dp/(rho(j)*cp(j)))*(Fc_e(j) - Fc_e(j-1))/v%dz(j) + &
         (1.0_dp/(rho(j)*cp(j)))*Latent_heat(j)
     enddo
     ! lower boundary
     j = 1
-    dTdt(j) = (-1.0_dp/(rho(j)*cp(j)))*(w%f_total(j+1) - w%f_total(j))/v%dz(j) + &
+    dTdt(j) = (1.0_dp/(rho(j)*cp(j)))*(w%f_total(j+1) - w%f_total(j))/v%dz(j) + &
               (-1.0_dp/(rho(j)*cp(j)))*(Fc_e(1)/v%dz(j) - 0.0_dp) + &
               (1.0_dp/(rho(j)*cp(j)))*Latent_heat(j)
         
@@ -122,7 +128,7 @@ contains
     
     ! upper boundary
     j = v%nz
-    dTdt(j) = (-1.0_dp/(rho(j)*cp(j)))*(w%f_total(j+1) - w%f_total(j))/v%dz(j) + &
+    dTdt(j) = (1.0_dp/(rho(j)*cp(j)))*(w%f_total(j+1) - w%f_total(j))/v%dz(j) + &
               (-1.0_dp/(rho(j)*cp(j)))*(0.0_dp - Fc_e(v%nz-1)/v%dz(j)) + &
               (1.0_dp/(rho(j)*cp(j)))*Latent_heat(j)
       

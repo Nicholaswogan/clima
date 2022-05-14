@@ -1,15 +1,15 @@
 
 atmosphere-grid:
   bottom: 0.0 # cm
-  top: 0.6e7 # cm
-  number-of-layers: 50
+  top: 0.7e7 # cm
+  number-of-layers: 100
   
 planet:
   background-gas: N2
   surface-pressure: 1.013
   planet-mass: 5.972e27
   planet-radius: 6.371e8
-  surface-albedo: 0.25
+  surface-albedo: 0.20
   diurnal-averaging-factor: 0.5
   solar-zenith-angle: 60.0
   
@@ -18,10 +18,10 @@ optical-properties:
   number-of-bins: 16
   opacities:
     solar:
-      k-distributions: [H2O, CO2]
+      k-distributions: [H2O, CO2, O2]
       CIA: [CO2-CO2, N2-N2, O2-O2, N2-O2]
       rayleigh: [N2, H2O, CO2]
     ir:
-      k-distributions: [H2O, CO2]
+      k-distributions: [H2O, CO2, O2]
       CIA: [CO2-CO2, N2-N2, O2-O2, N2-O2]
       rayleigh: [H2O, CO2, O2]

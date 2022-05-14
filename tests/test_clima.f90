@@ -26,10 +26,9 @@ program test_clima
   
   allocate(t_eval(100))
   
-  t_eval = 10.0_dp**linspace(1.0_dp,9.0_dp,100)
+  t_eval = 10.0_dp**linspace(1.0_dp,12.0_dp,100)
   
-  
-  success = c%evolve_dop853("../test5.dat", 0.0_dp, c%v%T_init, t_eval, .true., err)
+  success = c%evolve_dop853("../test8.dat", 0.0_dp, c%v%T_init, t_eval, .true., err)
   if (allocated(err)) then
     print*,err
     stop 1

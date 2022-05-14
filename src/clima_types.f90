@@ -119,11 +119,51 @@ module clima_types
     
   end type
   
+  type :: Ksettings
+    ! approach to combining k-distributions
+    integer :: k_method 
+    ! if k_method == k_RandomOverlapResortRebin
+    ! then these are the weights we are re-binning to.
+    integer :: nbin = -1
+    real(dp), allocatable :: wbin(:) ! (nbin)
+    real(dp), allocatable :: wbin_e(:) ! (nbin+1)
+  end type
+  
   ! We will interpolate an atmosphere to an array of
   ! these types.
   type :: Kcoefficients
     real(dp), allocatable :: k(:,:) ! (nz, ngauss)
   end type
+  
+  
+  ! type :: RadTran
+  ! 
+  !   ! initialize with
+  !   ! settings.yaml, sun.txt, and data dir
+  !   ! 
+  !   ! inputs are
+  !   ! surface_albedo, u0, T, densities, dz
+  !   ! ouptuts are
+  !   ! fluxes (fup, fdn)
+  ! 
+  !   ! species
+  !   integer :: ng
+  !   character(s_str_len), allocatable :: species_names(:) ! (ng) copy of species names
+  ! 
+  !   !!! Optical properties !!!
+  !   type(OpticalProperties) :: sol
+  !   type(OpticalProperties) :: ir
+  !   type(Ksettings) :: kset
+  ! 
+  !   real(dp) :: diurnal_fac = 0.5_dp
+  !   real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2/Hz in each bin  
+  ! 
+  !   ! work arrays
+  !   type(RadiateXSWrk) :: rx_sol
+  !   type(RadiateXSWrk) :: rx_ir
+  !   type(RadiateZWrk) :: rz
+  ! 
+  ! end type
   
   !!!!!!!!!!!!!!!
   !!! Species !!!
@@ -152,19 +192,7 @@ module clima_types
     
   end type
   
-  type :: Ksettings
-    ! approach to combining k-distributions
-    integer :: k_method 
-    ! if k_method == k_RandomOverlapResortRebin
-    ! then these are the weights we are re-binning to.
-    integer :: nbin = -1
-    real(dp), allocatable :: wbin(:) ! (nbin)
-    real(dp), allocatable :: wbin_e(:) ! (nbin+1)
-  end type
-  
   type :: ClimaData
-    
-    character(:), allocatable :: data_dir
     
     integer :: natoms
     character(s_str_len), allocatable :: atoms_names(:)
@@ -206,7 +234,7 @@ module clima_types
     real(dp) :: diurnal_fac
     real(dp) :: solar_zenith
     
-    real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2 in each bin  
+    real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2/Hz in each bin  
     
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     !!! set AFTER file read-in !!!
