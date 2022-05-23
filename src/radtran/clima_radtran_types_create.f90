@@ -6,6 +6,10 @@ module clima_radtran_types_create
   implicit none
   private
   
+  public :: create_OpticalProperties
+  public :: read_stellar_flux
+  public :: create_RadiateXSWrk, create_RadiateZWrk
+  
 contains
   
   subroutine read_stellar_flux(star_file, nw, wavl, photon_flux, err)
@@ -78,6 +82,64 @@ contains
     enddo
 
   end subroutine
+  
+  function create_RadiateXSWrk(op, nz) result(rw)
+    use clima_radtran_types, only: Ksettings, RadiateXSWrk, OpticalProperties
+    use clima_radtran_types, only: K_RandomOverlap, K_RandomOverlapResortRebin
+    
+    type(OpticalProperties), target, intent(in) :: op
+    integer, intent(in) :: nz
+    type(RadiateXSWrk) :: rw
+    
+    type(Ksettings), pointer :: kset
+    
+    integer :: i
+    
+    allocate(rw%ks(op%nk))
+    do i = 1,op%nk
+      allocate(rw%ks(i)%k(nz,op%k(i)%ngauss))
+    enddo
+    allocate(rw%cia(nz,op%ncia))
+    allocate(rw%axs(nz,op%naxs))
+    allocate(rw%pxs(nz,op%npxs))
+    
+    ! if there are k-distributions
+    ! then we need to allocate some work arrays
+    kset => op%kset
+    if (op%nk /= 0) then
+      if (kset%k_method == K_RandomOverlap) then
+        ! no need to allocate anything
+      elseif (kset%k_method == K_RandomOverlapResortRebin) then
+        allocate(rw%tau_k(nz,kset%nbin))
+        allocate(rw%tau_xy(nz,kset%nbin*op%ngauss_max))
+        allocate(rw%wxy(kset%nbin*op%ngauss_max))
+        allocate(rw%wxy1(kset%nbin*op%ngauss_max))
+        allocate(rw%wxy_e(kset%nbin*op%ngauss_max+1))
+        allocate(rw%inds(kset%nbin*op%ngauss_max))
+      endif
+    endif
+    
+  end function  
+  
+  function create_RadiateZWrk(nz) result(rz)
+    use clima_radtran_types, only: RadiateZWrk
+    integer, intent(in) :: nz
+    
+    type(RadiateZWrk) :: rz
+  
+    allocate(rz%tausg(nz))
+    allocate(rz%taua(nz))
+    allocate(rz%taua_1(nz))
+    allocate(rz%tau(nz))
+    allocate(rz%w0(nz))
+    allocate(rz%gt(nz))
+    allocate(rz%amean(nz+1))
+    allocate(rz%fup1(nz+1))
+    allocate(rz%fdn1(nz+1))
+    allocate(rz%fup(nz+1))
+    allocate(rz%fdn(nz+1))
+    allocate(rz%bplanck(nz+1))
+  end function
   
   function create_OpticalProperties(datadir, optype, species_names, sop, err) result(op)
     use fortran_yaml_c, only : parse, error_length

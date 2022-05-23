@@ -14,14 +14,18 @@ planet:
   solar-zenith-angle: 60.0
   
 optical-properties:
-  k-method: RandomOverlapResortRebin
-  number-of-bins: 16
-  opacities:
-    solar:
+  species: [H2O, CO2, O2, N2]
+  solar:
+    k-method: RandomOverlapResortRebin
+    number-of-bins: 16
+    opacities:
       k-distributions: [H2O, CO2, O2]
       CIA: [CO2-CO2, N2-N2, O2-O2, N2-O2]
       rayleigh: [N2, H2O, CO2]
-    ir:
+  ir:
+    k-method: RandomOverlapResortRebin
+    number-of-bins: 16
+    opacities:
       k-distributions: [H2O, CO2, O2]
       CIA: [CO2-CO2, N2-N2, O2-O2, N2-O2]
       rayleigh: [H2O, CO2, O2]

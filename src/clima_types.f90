@@ -11,6 +11,9 @@ module clima_types
   !!!!!!!!!!!!!!!!
   
   type :: SettingsOpacity
+    character(:), allocatable :: k_method
+    integer :: nbins
+    
     character(s_str_len), allocatable :: k_distributions(:)
     character(s_str_len), allocatable :: cia(:)
     character(s_str_len), allocatable :: rayleigh(:)
@@ -38,8 +41,7 @@ module clima_types
     real(dp) :: solar_zenith
     
     ! optical-properties
-    character(:), allocatable :: k_method
-    integer :: nbins
+    character(s_str_len), allocatable :: species(:)
     type(SettingsOpacity) :: sol
     type(SettingsOpacity) :: ir
     

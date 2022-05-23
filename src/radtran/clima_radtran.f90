@@ -37,21 +37,52 @@ module clima_radtran
     
   end type
   
+  interface ClimaRadtranIR
+    module procedure :: create_ClimaRadtranIR
+  end interface
+  
 contains
   
+  function create_ClimaRadtranIR(datadir, filename, nz, err) result(rad)
+    use clima_types, only: ClimaSettings
+    use clima_input, only: create_ClimaSettings
+    
+    character(*), intent(in) :: datadir
+    character(*), intent(in) :: filename
+    integer, intent(in) :: nz
+    character(:), allocatable, intent(out) :: err
+    
+    type(ClimaRadtranIR) :: rad
+    
+    type(ClimaSettings) :: s
+    
+    s = create_ClimaSettings(filename, err)
+    if (allocated(err)) return
+    
+    rad = create_ClimaRadtranIR_(datadir, s%species, s, nz, err)
+    if (allocated(err)) return
+    
+  end function
   
-  function create_ClimaRadtranIR(datadir, s, nz, err) result(rad)
-    use clima_const, only: c_light
+  function create_ClimaRadtranIR_(datadir, species_names, s, nz, err) result(rad)
+    use clima_radtran_types_create, only: create_OpticalProperties
     use clima_radtran_types, only: OpticalProperties
+    use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_types, only: ClimaSettings
     
     character(*), intent(in) :: datadir
+    character(s_str_len), intent(in) :: species_names(:)
     type(ClimaSettings), intent(in) :: s
     integer, intent(in) :: nz
     character(:), allocatable, intent(out) :: err
     
     type(ClimaRadtranIR) :: rad
     
+    rad%ng = size(species_names)
+    rad%species_names = species_names
+    
+    rad%ir = create_OpticalProperties(datadir, IROpticalProperties, species_names, s%ir, err)
+    if (allocated(err)) return
     
   end function
   
