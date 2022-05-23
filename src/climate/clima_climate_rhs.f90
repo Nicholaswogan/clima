@@ -192,15 +192,6 @@ contains
       
       dTdz = (T(i+1)-T(i))/delta_z
       
-      ! we should smooth out this discontinuity.
-      ! if (- dTdz > adiabat_av) then
-      !   Kh_e(i) = mixing_length_av**2.0_dp* &
-      !             (-(grav_av/T_av)*(dTdz + adiabat_av))**0.5_dp
-      ! else
-      !   Kh_e(i) = 0.0_dp
-      ! 
-      ! endif
-      
       Kh_e(i) = eddy_for_heat(mixing_length_av, grav_av, T_av, dTdz, adiabat_av)
       
       Fc_e(i) = - (rho_av*cp_av*Kh_e(i))*(dTdz + adiabat_av)

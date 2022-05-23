@@ -25,20 +25,6 @@ contains
     
   end subroutine
   
-  ! function planck_fcn(lambda_nm, T) result(B)
-  !   use clima_const, only: c_light, k_boltz_si, plank
-  !   real(dp), intent(in) :: lambda_nm ! (nm) 
-  !   real(dp), intent(in) :: T ! (K)
-  !   real(dp) :: B ! W sr^−1 m^−2 m^-1
-  ! 
-  !   real(dp) :: lambda
-  ! 
-  !   lambda = lambda_nm*1.0e-9_dp ! convert to meters
-  ! 
-  !   B = ((2.0_dp*plank*c_light**2.0_dp)/(lambda**5.0_dp)) * &
-  !       ((1.0_dp)/(exp((plank*c_light)/(lambda*k_boltz_si*T)) - 1.0_dp)) 
-  ! end function
-  
   function planck_fcn(nu, T) result(B)
     use clima_const, only: c_light, k_boltz => k_boltz_si, plank
     real(dp), intent(in) :: nu ! (1/s) 
@@ -69,36 +55,36 @@ contains
          coeffs(4)*TT**3 + coeffs(5)/TT**2
   end function
   
-  pure subroutine heat_capacity_eval(thermo, T, found, cp)
-    use clima_types, only: ShomatePolynomial, Nasa9Polynomial
-    use clima_types, only: ThermodynamicData
-    
-    type(ThermodynamicData), intent(in) :: thermo
-    real(dp), intent(in) :: T
-    logical, intent(out) :: found
-    real(dp), intent(out) :: cp
-    
-    integer :: k
-    
-    found = .false.
-    do k = 1,thermo%ntemps
-      if (T >= thermo%temps(k) .and. &
-          T <  thermo%temps(k+1)) then
-          
-        found = .true.
-        if (thermo%dtype == ShomatePolynomial) then
-          cp = heat_capacity_shomate(thermo%data(1:7,k), T)
-        elseif (thermo%dtype == Nasa9Polynomial) then
-          ! gibbs_energy = gibbs_energy_nasa9(thermo%data(1:9,k), T)
-          found = .false.         
-        endif
-        
-        exit
-        
-      endif
-    enddo
-
-  end subroutine
+  ! pure subroutine heat_capacity_eval(thermo, T, found, cp)
+  !   use clima_types, only: ShomatePolynomial, Nasa9Polynomial
+  !   use clima_types, only: ThermodynamicData
+  ! 
+  !   type(ThermodynamicData), intent(in) :: thermo
+  !   real(dp), intent(in) :: T
+  !   logical, intent(out) :: found
+  !   real(dp), intent(out) :: cp
+  ! 
+  !   integer :: k
+  ! 
+  !   found = .false.
+  !   do k = 1,thermo%ntemps
+  !     if (T >= thermo%temps(k) .and. &
+  !         T <  thermo%temps(k+1)) then
+  ! 
+  !       found = .true.
+  !       if (thermo%dtype == ShomatePolynomial) then
+  !         cp = heat_capacity_shomate(thermo%data(1:7,k), T)
+  !       elseif (thermo%dtype == Nasa9Polynomial) then
+  !         ! gibbs_energy = gibbs_energy_nasa9(thermo%data(1:9,k), T)
+  !         found = .false.         
+  !       endif
+  ! 
+  !       exit
+  ! 
+  !     endif
+  !   enddo
+  ! 
+  ! end subroutine
   
   function eddy_for_heat(l, g, T, dTdz, adiabat) result(Kh)
     real(dp), intent(in) :: l, g, T, dTdz, adiabat
@@ -193,5 +179,13 @@ contains
     enddo
   
   end subroutine
+  
+  pure function rayleigh_vardavas(A, B, Delta, lambda) result(sigray)
+    real(dp), intent(in) :: A, B, Delta, lambda
+    real(dp) :: sigray
+    sigray = 4.577e-21_dp*((6.0_dp+3.0_dp*Delta)/(6.0_dp-7.0_dp*Delta)) * &
+            (A*(1.0_dp+B/(lambda*1.0e-3_dp)**2.0_dp))**2.0_dp * &
+            (1.0_dp/(lambda*1.0e-3_dp)**4.0_dp)
+  end function
 
 end module

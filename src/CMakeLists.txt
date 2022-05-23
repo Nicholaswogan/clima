@@ -1,21 +1,28 @@
 
 add_subdirectory(dependencies)
 
-set(CLIMATE_SOURCES
-  climate/clima_climate_rhs.f90
-  climate/clima_climate_integrate.f90
-  climate/clima_climate.f90
+set(BASE_SOURCES
+  clima_const.f90
+  clima_eqns.f90
+  clima_types.f90
 )
 
+set(RADIATE_SOURCES
+  radtran/clima_radtran_types.f90
+  radtran/clima_radtran_types_create.f90
+  radtran/clima_radtran.f90
+)
+
+
+# set(CLIMATE_SOURCES
+#   climate/clima_climate_rhs.f90
+#   climate/clima_climate_integrate.f90
+#   climate/clima_climate.f90
+# )
+
 add_library(clima 
-  clima_const.f90
-  clima_types.f90
-  clima_eqns.f90
-  clima_input.f90
-  clima_twostream.f90
-  clima_radtran.f90
-  ${CLIMATE_SOURCES}
-  clima.f90
+  ${BASE_SOURCES}
+  ${RADIATE_SOURCES}
 )
 target_link_libraries(clima fortran-yaml-c finterp h5fortran futils fortran_stdlib mrgrnk sundials_fcvode_mod sundials_cvode dop853)
 
