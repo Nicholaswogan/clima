@@ -70,9 +70,9 @@ module clima_radtran_types
     real(dp), allocatable :: freq(:)
     
     ! K-distributions (e.g. H2O)
-    type(Ksettings) :: kset
     integer :: ngauss_max = -1
     integer :: nk
+    type(Ksettings) :: kset
     type(Ktable), allocatable :: k(:)
     ! T-dependent CIA coefficients (e.g. H2-H2)
     integer :: ncia
@@ -88,6 +88,21 @@ module clima_radtran_types
     type(Xsection), allocatable :: pxs(:)
     
   end type
+  
+  interface
+    module function create_OpticalProperties(datadir, optype, species_names, sop, err) result(op)
+      use clima_types, only: SettingsOpacity
+      character(*), intent(in) :: datadir
+      integer, intent(in) :: optype
+      character(*), intent(in) :: species_names(:)
+      type(SettingsOpacity), intent(in) :: sop
+      character(:), allocatable, intent(out) :: err
+      type(OpticalProperties) :: op
+    end function
+  end interface
+  interface OpticalProperties
+    module procedure :: create_OpticalProperties
+  end interface
   
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   !!! Work arrays for optical properties  !!!
@@ -112,6 +127,17 @@ module clima_radtran_types
     integer, allocatable :: inds(:) ! (nbin*ngauss_max)
   end type
   
+  interface
+    module function create_RadiateXSWrk(op, nz) result(rw)
+      type(OpticalProperties), target, intent(in) :: op
+      integer, intent(in) :: nz
+      type(RadiateXSWrk) :: rw
+    end function
+  end interface
+  interface RadiateXSWrk
+    module procedure :: create_RadiateXSWrk
+  end interface
+  
   type :: RadiateZWrk
     real(dp), allocatable :: tausg(:)
     real(dp), allocatable :: taua(:)
@@ -126,5 +152,26 @@ module clima_radtran_types
     real(dp), allocatable :: fdn(:)
     real(dp), allocatable :: bplanck(:)
   end type
+  
+  interface
+    module function create_RadiateZWrk(nz) result(rz)
+      integer, intent(in) :: nz
+      type(RadiateZWrk) :: rz
+    end function
+  end interface
+  interface RadiateZWrk
+    module procedure :: create_RadiateZWrk
+  end interface
+  
+  ! for reading the stellar flux
+  interface
+    module subroutine read_stellar_flux(star_file, nw, wavl, photon_flux, err)
+      character(len=*), intent(in) :: star_file
+      integer, intent(in) :: nw
+      real(dp), intent(in) :: wavl(nw+1)
+      real(dp), intent(out) :: photon_flux(nw)
+      character(:), allocatable, intent(out) :: err
+    end subroutine
+  end interface
   
 end module

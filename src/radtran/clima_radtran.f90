@@ -43,12 +43,11 @@ module clima_radtran
   
 contains
   
-  function create_ClimaRadtranIR(datadir, filename, nz, err) result(rad)
+  function create_ClimaRadtranIR(datadir, settings_f, nz, err) result(rad)
     use clima_types, only: ClimaSettings
-    use clima_input, only: create_ClimaSettings
     
     character(*), intent(in) :: datadir
-    character(*), intent(in) :: filename
+    character(*), intent(in) :: settings_f
     integer, intent(in) :: nz
     character(:), allocatable, intent(out) :: err
     
@@ -56,8 +55,13 @@ contains
     
     type(ClimaSettings) :: s
     
-    s = create_ClimaSettings(filename, err)
+    s = ClimaSettings(settings_f, err)
     if (allocated(err)) return
+    
+    if (.not. allocated(s%species)) then
+      err = '"'//settings_f//'/optical-properties/species" does not exist'
+      return
+    endif
     
     rad = create_ClimaRadtranIR_(datadir, s%species, s, nz, err)
     if (allocated(err)) return
@@ -65,8 +69,6 @@ contains
   end function
   
   function create_ClimaRadtranIR_(datadir, species_names, s, nz, err) result(rad)
-    use clima_radtran_types_create, only: create_OpticalProperties
-    use clima_radtran_types, only: OpticalProperties
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_types, only: ClimaSettings
     
@@ -78,13 +80,26 @@ contains
     
     type(ClimaRadtranIR) :: rad
     
+    if (nz < 1) then
+      err = '"nz" can not be less than 1.'
+      return
+    endif
+    
     rad%ng = size(species_names)
     rad%species_names = species_names
     
-    rad%ir = create_OpticalProperties(datadir, IROpticalProperties, species_names, s%ir, err)
+    if (.not. allocated(s%ir)) then
+      err = '"'//s%filename//'/optical-properties/ir" does not exist.'
+      return
+    endif
+    rad%ir = OpticalProperties(datadir, IROpticalProperties, species_names, s%ir, err)
     if (allocated(err)) return
     
+    rad%rx_ir = RadiateXSWrk(rad%ir, nz)
+    rad%rz_ir = RadiateZWrk(nz)
+
   end function
+
   
 end module
   

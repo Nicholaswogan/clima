@@ -1,6 +1,5 @@
 
 program test_clima
-  use clima_input, only: create_ClimaSettings
   use clima_radtran, only: ClimaRadtranIR
   implicit none
 
@@ -12,6 +11,5 @@ program test_clima
     print*,err
     stop 1
   endif
-  
   
 end program

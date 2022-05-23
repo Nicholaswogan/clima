@@ -1,20 +1,12 @@
 
-module clima_input
-  use clima_const, only: dp, s_str_len
-  use clima_types, only: ClimaSettings
+submodule(clima_types) clima_types_create
   use yaml_types, only : type_node, type_dictionary, type_list, type_error, &
                          type_list_item, type_scalar, type_key_value_pair
   implicit none
-  private
   
-  public :: create_ClimaSettings
-  public :: create_AtmosphereFile
-  
-
 contains
   
   function create_AtmosphereFile(atm_file, err) result(atm)
-    use clima_types, only: AtmosphereFile
     character(*), intent(in) :: atm_file
     character(:), allocatable, intent(out) :: err
     
@@ -152,7 +144,7 @@ contains
 
   end subroutine
   
-  function create_ClimaSettings(filename, err) result(s)
+  module function create_ClimaSettings(filename, err) result(s)
     use fortran_yaml_c, only : parse, error_length
     character(*), intent(in) :: filename
     character(:), allocatable, intent(out) :: err
@@ -187,6 +179,8 @@ contains
     
     type(type_dictionary), pointer :: op_prop, planet, grid
     type (type_error), allocatable :: io_err
+    
+    s%filename = filename
     
     !!!!!!!!!!!!!!!!!!!!!!!
     !!! atmosphere-grid !!!
@@ -335,10 +329,9 @@ contains
   end subroutine
   
   subroutine unpack_settingsopacity(op_dict, filename, op, err)
-    use clima_types, only: SettingsOpacity
     type(type_dictionary), intent(in) :: op_dict
     character(*), intent(in) :: filename
-    type(SettingsOpacity), intent(out) :: op
+    type(SettingsOpacity), allocatable, intent(out) :: op
     character(:), allocatable, intent(out) :: err
     
     type(type_list), pointer :: tmp
@@ -347,6 +340,9 @@ contains
     type (type_error), allocatable :: io_err
     integer :: ind
     logical :: success
+    
+    if (allocated(op)) deallocate(op)
+    allocate(op)
     
     opacities => op_dict%get_dictionary("opacities", required=.true., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
@@ -486,5 +482,5 @@ contains
     
   end subroutine
   
-end module
+end submodule
 

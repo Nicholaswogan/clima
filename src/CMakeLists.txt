@@ -5,7 +5,7 @@ set(BASE_SOURCES
   clima_const.f90
   clima_eqns.f90
   clima_types.f90
-  clima_input.f90
+  clima_types_create.f90
 )
 
 set(RADIATE_SOURCES

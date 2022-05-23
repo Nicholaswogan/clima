@@ -1,18 +1,12 @@
 
-module clima_radtran_types_create
-  use clima_const, only: dp, s_str_len
+submodule(clima_radtran_types) clima_radtran_types_create
   use yaml_types, only : type_node, type_dictionary, type_list, type_error, &
                          type_list_item, type_scalar, type_key_value_pair
   implicit none
-  private
-  
-  public :: create_OpticalProperties
-  public :: read_stellar_flux
-  public :: create_RadiateXSWrk, create_RadiateZWrk
-  
+
 contains
   
-  subroutine read_stellar_flux(star_file, nw, wavl, photon_flux, err)
+  module subroutine read_stellar_flux(star_file, nw, wavl, photon_flux, err)
     use futils, only: inter2, addpnt
     use clima_const, only: c_light, plank
     
@@ -83,10 +77,8 @@ contains
 
   end subroutine
   
-  function create_RadiateXSWrk(op, nz) result(rw)
-    use clima_radtran_types, only: Ksettings, RadiateXSWrk, OpticalProperties
-    use clima_radtran_types, only: K_RandomOverlap, K_RandomOverlapResortRebin
-    
+  module function create_RadiateXSWrk(op, nz) result(rw)
+
     type(OpticalProperties), target, intent(in) :: op
     integer, intent(in) :: nz
     type(RadiateXSWrk) :: rw
@@ -121,8 +113,7 @@ contains
     
   end function  
   
-  function create_RadiateZWrk(nz) result(rz)
-    use clima_radtran_types, only: RadiateZWrk
+  module function create_RadiateZWrk(nz) result(rz)
     integer, intent(in) :: nz
     
     type(RadiateZWrk) :: rz
@@ -141,10 +132,35 @@ contains
     allocate(rz%bplanck(nz+1))
   end function
   
-  function create_OpticalProperties(datadir, optype, species_names, sop, err) result(op)
+  function create_Ksettings(sop) result(kset)
+    use clima_types, only: SettingsOpacity
+    use clima_eqns, only: weights_to_bins
+    use stdlib_quadrature, only: gauss_legendre
+    
+    type(SettingsOpacity), intent(in) :: sop
+    type(Ksettings) :: kset
+    
+    real(dp), allocatable :: tmp(:) ! dummy variable.
+    
+    ! method for mixing k-distributions.
+    if (sop%k_method == "RandomOverlapResortRebin") then
+      kset%k_method = k_RandomOverlapResortRebin
+      kset%nbin = sop%nbins
+      allocate(kset%wbin_e(kset%nbin+1))
+      allocate(kset%wbin(kset%nbin))
+      allocate(tmp(kset%nbin))
+      call gauss_legendre(tmp, kset%wbin)
+      kset%wbin = kset%wbin/2.0_dp
+      call weights_to_bins(kset%wbin, kset%wbin_e)
+    elseif (sop%k_method == "RandomOverlap") then
+      kset%k_method = k_RandomOverlap
+    endif
+    
+  end function
+  
+  module function create_OpticalProperties(datadir, optype, species_names, sop, err) result(op)
     use fortran_yaml_c, only : parse, error_length
     use clima_const, only: c_light
-    use clima_radtran_types, only: OpticalProperties
     use clima_types, only: SettingsOpacity
     character(*), intent(in) :: datadir
     integer, intent(in) :: optype
@@ -174,6 +190,10 @@ contains
     !!! k-distributions !!!
     !!!!!!!!!!!!!!!!!!!!!!!
     if (allocated(sop%k_distributions)) then
+      
+      ! k distributions settings
+      op%kset = create_Ksettings(sop)
+      
       op%nk = size(sop%k_distributions)
       allocate(op%k(op%nk))
       
@@ -298,7 +318,6 @@ contains
   end function
   
   subroutine read_wavl(filename, optype, wavl, err)
-    use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use h5fortran
     
     character(*), intent(in) :: filename
@@ -340,7 +359,6 @@ contains
   end subroutine
   
   function create_RayleighXsection(filename, dict, sp, sp_ind, wavl, err) result(xs)
-    use clima_radtran_types, only: Xsection, RayleighXsection
     use clima_eqns, only: rayleigh_vardavas
     character(*), intent(in) :: filename
     type(type_dictionary), intent(in) :: dict
@@ -383,7 +401,6 @@ contains
   end function
   
   function create_CIAXsection(filename, sp_inds, wavl, err) result(xs)
-    use clima_radtran_types, only: Xsection, CIAXsection
     character(*), intent(in) :: filename
     integer, intent(in) :: sp_inds(:)
     real(dp), intent(in) :: wavl(:)
@@ -400,7 +417,6 @@ contains
 
   subroutine read_h5_Xsection(filename, wavl, xs, err)
     use clima_const, only: log10tiny
-    use clima_radtran_types, only: Xsection
     use futils, only: addpnt, inter2
     use h5fortran
     character(*), intent(in) :: filename
@@ -555,8 +571,6 @@ contains
   end subroutine
   
   function create_Ktable(filename, sp_ind, optype, wavl, err) result(k)
-    use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties, &
-                           Ktable
     use h5fortran
     use futils, only: is_close
     use clima_eqns, only: weights_to_bins
@@ -706,5 +720,5 @@ contains
     
   end subroutine
   
-end module
+end submodule
 

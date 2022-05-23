@@ -22,7 +22,8 @@ module clima_types
     character(s_str_len), allocatable :: photolysis_xs(:)
   end type
   
-  type :: ClimaSettings
+  type :: ClimaSettings  
+    character(:), allocatable :: filename
     
     ! atmosphere-grid
     logical :: atmos_grid_is_present
@@ -42,10 +43,22 @@ module clima_types
     
     ! optical-properties
     character(s_str_len), allocatable :: species(:)
-    type(SettingsOpacity) :: sol
-    type(SettingsOpacity) :: ir
+    type(SettingsOpacity), allocatable :: sol
+    type(SettingsOpacity), allocatable :: ir
     
   end type
+  
+  interface
+    module function create_ClimaSettings(filename, err) result(s)
+      use fortran_yaml_c, only : parse, error_length
+      character(*), intent(in) :: filename
+      character(:), allocatable, intent(out) :: err
+      type(ClimaSettings) :: s
+    end function
+  end interface
+  interface ClimaSettings
+    module procedure :: create_ClimaSettings
+  end interface
   
   type :: AtmosphereFile
     integer :: nz
