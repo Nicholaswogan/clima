@@ -11,6 +11,8 @@ set(BASE_SOURCES
 set(RADIATE_SOURCES
   radtran/clima_radtran_types.f90
   radtran/clima_radtran_types_create.f90
+  radtran/clima_radtran_twostream.f90
+  radtran/clima_radtran_radiate.f90
   radtran/clima_radtran.f90
 )
 
@@ -29,7 +31,7 @@ target_link_libraries(clima fortran-yaml-c finterp h5fortran futils fortran_stdl
 
 # Add special compiler flags to Clima
 if ("${CMAKE_Fortran_COMPILER_ID}" MATCHES "GNU")
-  target_compile_options(clima PRIVATE -Wunused)
+  target_compile_options(clima PRIVATE -Wunused -fimplicit-none)
   if (CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(clima PRIVATE -finline-functions -ftree-vectorize -funroll-loops -march=native)
   endif()

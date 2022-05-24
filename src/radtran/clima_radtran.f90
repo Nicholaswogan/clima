@@ -11,16 +11,36 @@ module clima_radtran
   ! ouptuts are
   ! fluxes (fup, fdn)
   
+  type :: ClimaRadtranWrk
+    
+    ! work arrays
+    type(RadiateXSWrk) :: rx_ir
+    type(RadiateZWrk) :: rz_ir
+    
+    !! (nz+1,nw) mW/m2/Hz in each wavelength bin
+    !! at the edges of the vertical grid
+    real(dp), allocatable :: fup_a(:,:)
+    real(dp), allocatable :: fdn_a(:,:)
+    !! (nz+1) mW/m2 at the edges of the vertical grid 
+    !! (integral of fup_a and fdn_a over wavelength grid)
+    real(dp), allocatable :: fup_n(:)
+    real(dp), allocatable :: fdn_n(:) 
+    
+  end type
+  
   type :: ClimaRadtranIR
   
     integer :: ng
     character(s_str_len), allocatable :: species_names(:) ! (ng) copy of species names
   
+    ! number of layers
+    integer :: nz
+  
     !!! Optical properties !!!
     type(OpticalProperties) :: ir
     
-    type(RadiateXSWrk) :: rx_ir
-    type(RadiateZWrk) :: rz_ir
+    type(ClimaRadtranWrk) :: wrk_ir
+    
   
   end type
   
@@ -32,8 +52,7 @@ module clima_radtran
     real(dp) :: diurnal_fac = 0.5_dp
     real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2/Hz in each bin  
     
-    type(RadiateXSWrk) :: rx_sol
-    type(RadiateZWrk) :: rz_sol
+    type(ClimaRadtranWrk) :: wrk_sol
     
   end type
   
@@ -87,6 +106,7 @@ contains
     
     rad%ng = size(species_names)
     rad%species_names = species_names
+    rad%nz = nz
     
     if (.not. allocated(s%ir)) then
       err = '"'//s%filename//'/optical-properties/ir" does not exist.'
@@ -95,10 +115,84 @@ contains
     rad%ir = OpticalProperties(datadir, IROpticalProperties, species_names, s%ir, err)
     if (allocated(err)) return
     
-    rad%rx_ir = RadiateXSWrk(rad%ir, nz)
-    rad%rz_ir = RadiateZWrk(nz)
+    ! work arrays
+    rad%wrk_ir%rx_ir = RadiateXSWrk(rad%ir, nz)
+    rad%wrk_ir%rz_ir = RadiateZWrk(nz)
+    allocate(rad%wrk_ir%fup_a(nz+1, rad%ir%nw))
+    allocate(rad%wrk_ir%fdn_a(nz+1, rad%ir%nw))
+    allocate(rad%wrk_ir%fup_n(nz+1))
+    allocate(rad%wrk_ir%fdn_n(nz+1))
 
   end function
+  
+  subroutine ClimaRadtranIR_radiate(self, T, P, densities, dz, err)
+    use clima_radtran_radiate, only: radiate
+    class(ClimaRadtranIR), target, intent(inout) :: self
+    real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
+    real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
+    real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
+                                           !! molecule in each layer (molcules/cm3)
+    real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
+    character(:), allocatable, intent(out) :: err
+    
+    type(ClimaRadtranWrk), pointer :: wrk 
+    
+    wrk => self%wrk_ir                                           
+    call check_dimensions(self, T, P, densities, dz, err)
+    if (allocated(err)) return
+                                         
+    call radiate(self%ir, &
+                 0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
+                 P, T, densities, dz, &
+                 wrk%rx_ir, wrk%rz_ir, &
+                 wrk%fup_a, wrk%fdn_a, wrk%fup_n, wrk%fdn_n)
+    
+  end subroutine
+  
+  function ClimaRadtranIR_OLR(self, T, P, densities, dz, err) result(res)
+    class(ClimaRadtranIR), target, intent(inout) :: self
+    real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
+    real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
+    real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
+                                           !! molecule in each layer (molcules/cm3)
+    real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
+    character(:), allocatable, intent(out) :: err
+    
+    real(dp) :: res
+    
+    call ClimaRadtranIR_radiate(self, T, P, densities, dz, err)
+    if (allocated(err)) return
+    res = self%wrk_ir%fup_n(self%nz+1)
+    
+  end function
+  
+  subroutine check_dimensions(self, T, P, densities, dz, err)
+    class(ClimaRadtranIR), intent(inout) :: self
+    real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
+    real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
+    real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
+                                           !! molecule in each layer (molcules/cm3)
+    real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
+    character(:), allocatable, intent(out) :: err
+    
+    if (size(T) /= self%nz) then
+      err = '"T" has the wrong input dimension.'
+      return
+    endif
+    if (size(P) /= self%nz) then
+      err = '"P" has the wrong input dimension.'
+      return
+    endif
+    if (size(densities,1) /= self%nz .or. size(densities,2) /= self%ng) then
+      err = '"densities" has the wrong input dimension.'
+      return
+    endif
+    if (size(dz) /= self%nz) then
+      err = '"dz" has the wrong input dimension.'
+      return
+    endif
+    
+  end subroutine
 
   
 end module

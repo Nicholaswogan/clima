@@ -1,6 +1,5 @@
-module clima_radtran
+module clima_radtran_radiate
   use clima_const, only: dp
-  use clima_types, only: ClimaVars
   implicit none
   
 contains
@@ -9,27 +8,26 @@ contains
   !! Does Solar or IR radiative transfer, depending on value of 
   !! `op%op_type`. `u0`, `diurnal_fac` and `photons_sol` are all
   !! only used during Solar radiative transfer.
-  subroutine radiate(op, kset, &
+  subroutine radiate(op, &
                      surface_albedo, u0, diurnal_fac, photons_sol, &
                      P, T, densities, dz, &
                      rw, rz, &
                      fup_a, fdn_a, fup_n, fdn_n)
-    use clima_types, only: RadiateXSWrk, RadiateZWrk, Ksettings, RadiateInputs
-    use clima_types, only: OpticalProperties, Kcoefficients
-    use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
-    use clima_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
+    use clima_radtran_types, only: RadiateXSWrk, RadiateZWrk, Ksettings
+    use clima_radtran_types, only: OpticalProperties, Kcoefficients
+    use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
+    use clima_radtran_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
     use clima_eqns, only: planck_fcn, ten2power
     use clima_const, only: k_boltz
   
-    type(OpticalProperties), intent(inout) :: op !! Optical properties
-    type(Ksettings), intent(in) :: kset !! Settings for how to deal with k-coefficients
+    type(OpticalProperties), target, intent(inout) :: op !! Optical properties
   
     real(dp), intent(in) :: surface_albedo !! Surface albedo
     real(dp), intent(in) :: u0 !! Cosine of solar zenith angle (Needed only for solar)
     real(dp), intent(in) :: diurnal_fac !! Diurnal averaging factor (0.5) (Needed only for solar)
     real(dp), intent(in) :: photons_sol(:) !! (nw) Average solar flux in each bin (mW/m2/Hz) (Needed only for solar)
   
-    real(dp), intent(in) :: P(:)
+    real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
                                            !! molecule in each layer (molcules/cm3)
@@ -43,6 +41,7 @@ contains
     real(dp), intent(out) :: fup_n(:), fdn_n(:) !! (nz+1) mW/m2 at the edges of the vertical grid 
                                                 !! (integral of fup_a and fdn_a over wavelength grid)
   
+    type(Ksettings), pointer :: kset
     integer :: nz, ng
     integer :: i, j, k, l, n, jj
     real(dp) :: avg_freq
@@ -55,6 +54,7 @@ contains
     real(dp) :: dfreq
     real(dp), allocatable :: cols(:,:)
     
+    kset => op%kset
     nz = size(dz)
     ng = size(densities, 2)
     allocate(cols(nz,ng))
@@ -212,11 +212,11 @@ contains
     use futils, only: rebin
     use mrgrnk_mod, only: mrgrnk
     
-    use clima_types, only: OpticalProperties, Ksettings
-    use clima_types, only: ClimaVars, RadiateZWrk, RadiateXSWrk, RadiateInputs
-    use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
+    use clima_radtran_types, only: OpticalProperties, Ksettings
+    use clima_radtran_types, only: RadiateZWrk, RadiateXSWrk
+    use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_eqns, only: weights_to_bins
-    use clima_twostream, only: two_stream_solar, two_stream_ir
+    use clima_radtran_twostream, only: two_stream_solar, two_stream_ir
     
     type(OpticalProperties), intent(in) :: op
     type(Ksettings), intent(in) :: kset
@@ -324,11 +324,11 @@ contains
   end subroutine
   
   recursive subroutine k_loops(op, u0, surface_albedo, cols, ks, rz, iks, ik)
-    use clima_types, only: OpticalProperties, Kcoefficients
-    use clima_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
-    use clima_types, only: ClimaVars, RadiateZWrk, RadiateInputs
+    use clima_radtran_types, only: OpticalProperties, Kcoefficients
+    use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
+    use clima_radtran_types, only: RadiateZWrk
     
-    use clima_twostream, only: two_stream_solar, two_stream_ir
+    use clima_radtran_twostream, only: two_stream_solar, two_stream_ir
     
     type(OpticalProperties), intent(in) :: op
     real(dp), intent(in) :: u0
@@ -400,7 +400,7 @@ contains
   end subroutine
   
   subroutine interpolate_Xsection(xs, l, P, T, res)
-    use clima_types, only: Xsection
+    use clima_radtran_types, only: Xsection
     use clima_eqns, only: ten2power
     
     type(Xsection), intent(inout) :: xs

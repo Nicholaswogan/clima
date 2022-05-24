@@ -1,5 +1,5 @@
 
-module clima_twostream
+module clima_radtran_twostream
   use clima_const, only: dp
   implicit none
   private
