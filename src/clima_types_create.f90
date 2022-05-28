@@ -536,7 +536,7 @@ contains
   end subroutine
   
   pure function check_for_duplicates(str_list) result(ind)
-    character(len=s_str_len), intent(in) :: str_list(:)
+    character(*), intent(in) :: str_list(:)
     integer :: ind
     integer :: i, j
     ind = 0
@@ -553,7 +553,7 @@ contains
   subroutine unpack_string_list(filename, list, str_list, err)
     character(*), intent(in) :: filename
     type(type_list), intent(in) :: list
-    character(len=s_str_len), allocatable, intent(out) :: str_list(:)
+    character(*), allocatable, intent(out) :: str_list(:)
     character(:), allocatable, intent(out) :: err
     
     integer :: i

@@ -1,7 +1,7 @@
 
 module clima_radtran_types
   use iso_c_binding
-  use clima_const, only: dp, s_str_len
+  use clima_const, only: dp
   use linear_interpolation_module, only: linear_interp_1d, linear_interp_2d
   implicit none
   public

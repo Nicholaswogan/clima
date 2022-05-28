@@ -67,5 +67,17 @@ add_library(dop853
   ${dop853_SOURCE_DIR}/src/dop853_module.f90
 )
 
+CPMAddPackage(
+  NAME minpack
+  VERSION 2.0.0
+  GITHUB_REPOSITORY "fortran-lang/minpack"
+  GIT_TAG "v2.0.0-rc.1"
+  DOWNLOAD_ONLY ON
+)
+
+add_library(minpack
+  ${minpack_SOURCE_DIR}/src/minpack.f90
+)
+
 # mrgrnk is from ORDERPACK 2.0: http://www.fortran-2000.com/rank/#1.1
 add_library(mrgrnk mrgrnk_mod.f90)

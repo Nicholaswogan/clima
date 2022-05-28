@@ -16,6 +16,11 @@ set(RADIATE_SOURCES
   radtran/clima_radtran.f90
 )
 
+set(ADIABAT_SOURCES
+  adiabat/clima_adiabat_kasting.f90
+  adiabat/clima_adiabat.f90
+)
+
 
 # set(CLIMATE_SOURCES
 #   climate/clima_climate_rhs.f90
@@ -26,8 +31,9 @@ set(RADIATE_SOURCES
 add_library(clima 
   ${BASE_SOURCES}
   ${RADIATE_SOURCES}
+  ${ADIABAT_SOURCES}
 )
-target_link_libraries(clima fortran-yaml-c finterp h5fortran futils fortran_stdlib mrgrnk dop853)
+target_link_libraries(clima fortran-yaml-c finterp h5fortran futils fortran_stdlib mrgrnk dop853 minpack)
 
 # Add special compiler flags to Clima
 if ("${CMAKE_Fortran_COMPILER_ID}" MATCHES "GNU")

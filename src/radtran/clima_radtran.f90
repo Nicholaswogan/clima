@@ -28,7 +28,7 @@ module clima_radtran
     
   end type
   
-  type :: ClimaRadtranIR
+  type :: RadtranIR
   
     integer :: ng
     character(s_str_len), allocatable :: species_names(:) ! (ng) copy of species names
@@ -44,7 +44,7 @@ module clima_radtran
   
   end type
   
-  type, extends(ClimaRadtranIR) :: ClimaRadtran
+  type, extends(RadtranIR) :: Radtran
 
     !!! Optical properties !!!
     type(OpticalProperties) :: sol
@@ -56,13 +56,13 @@ module clima_radtran
     
   end type
   
-  interface ClimaRadtranIR
-    module procedure :: create_ClimaRadtranIR
+  interface RadtranIR
+    module procedure :: create_RadtranIR
   end interface
   
 contains
   
-  function create_ClimaRadtranIR(datadir, settings_f, nz, err) result(rad)
+  function create_RadtranIR(datadir, settings_f, nz, err) result(rad)
     use clima_types, only: ClimaSettings
     
     character(*), intent(in) :: datadir
@@ -70,7 +70,7 @@ contains
     integer, intent(in) :: nz
     character(:), allocatable, intent(out) :: err
     
-    type(ClimaRadtranIR) :: rad
+    type(RadtranIR) :: rad
     
     type(ClimaSettings) :: s
     
@@ -82,22 +82,22 @@ contains
       return
     endif
     
-    rad = create_ClimaRadtranIR_(datadir, s%species, s, nz, err)
+    rad = create_RadtranIR_(datadir, s%species, s, nz, err)
     if (allocated(err)) return
     
   end function
   
-  function create_ClimaRadtranIR_(datadir, species_names, s, nz, err) result(rad)
+  function create_RadtranIR_(datadir, species_names, s, nz, err) result(rad)
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_types, only: ClimaSettings
     
     character(*), intent(in) :: datadir
-    character(s_str_len), intent(in) :: species_names(:)
+    character(*), intent(in) :: species_names(:)
     type(ClimaSettings), intent(in) :: s
     integer, intent(in) :: nz
     character(:), allocatable, intent(out) :: err
     
-    type(ClimaRadtranIR) :: rad
+    type(RadtranIR) :: rad
     
     if (nz < 1) then
       err = '"nz" can not be less than 1.'
@@ -125,9 +125,9 @@ contains
 
   end function
   
-  subroutine ClimaRadtranIR_radiate(self, T, P, densities, dz, err)
+  subroutine RadtranIR_radiate(self, T, P, densities, dz, err)
     use clima_radtran_radiate, only: radiate
-    class(ClimaRadtranIR), target, intent(inout) :: self
+    class(RadtranIR), target, intent(inout) :: self
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
@@ -149,8 +149,8 @@ contains
     
   end subroutine
   
-  function ClimaRadtranIR_OLR(self, T, P, densities, dz, err) result(res)
-    class(ClimaRadtranIR), target, intent(inout) :: self
+  function RadtranIR_OLR(self, T, P, densities, dz, err) result(res)
+    class(RadtranIR), target, intent(inout) :: self
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
@@ -160,14 +160,14 @@ contains
     
     real(dp) :: res
     
-    call ClimaRadtranIR_radiate(self, T, P, densities, dz, err)
+    call RadtranIR_radiate(self, T, P, densities, dz, err)
     if (allocated(err)) return
     res = self%wrk_ir%fup_n(self%nz+1)
     
   end function
   
   subroutine check_dimensions(self, T, P, densities, dz, err)
-    class(ClimaRadtranIR), intent(inout) :: self
+    class(RadtranIR), intent(inout) :: self
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 

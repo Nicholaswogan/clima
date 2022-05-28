@@ -1,12 +1,12 @@
 
 program test_clima
-  use clima_radtran, only: ClimaRadtranIR, dp, ClimaRadtranIR_OLR
+  use clima_radtran, only: RadtranIR, dp, RadtranIR_OLR
   use clima_types, only: AtmosphereFile, unpack_atmospherefile
   use clima_eqns, only: vertical_grid
   use clima_const, only: k_boltz
   implicit none
 
-  type(ClimaRadtranIR) :: rad
+  type(RadtranIR) :: rad
   type(AtmosphereFile) :: atm
   character(:), allocatable :: err
   
@@ -16,7 +16,7 @@ program test_clima
   
   nz = 200
   
-  rad = ClimaRadtranIR("../data","../settings.yaml",nz, err)
+  rad = RadtranIR("../data","../settings.yaml",nz, err)
   if (allocated(err)) then
     print*,err
     stop 1
@@ -43,7 +43,7 @@ program test_clima
     densities(:,i) = mix(:,i)*density
   enddo
   
-  OLR = ClimaRadtranIR_OLR(rad, T, P, densities, dz, err)
+  OLR = RadtranIR_OLR(rad, T, P, densities, dz, err)
   if (allocated(err)) then
     print*,err
     stop 1
