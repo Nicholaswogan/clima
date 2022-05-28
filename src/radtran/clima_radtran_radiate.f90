@@ -163,6 +163,10 @@ contains
         elseif (kset%k_method == k_RandomOverlapResortRebin) then
           ! Random Overlap with Resorting and Rebinning.
           call k_rorr(op, kset, u0, surface_albedo, cols, rw, rz)
+        elseif (kset%k_method == 999) then
+          ! No scattering (Only for IR)
+          call k_no_scatter(op, cols, rw, rz)
+          
         endif
         
       else
@@ -396,6 +400,29 @@ contains
       endif
       
     enddo
+    
+  end subroutine
+  
+  subroutine k_no_scatter(op, cols, rw, rz)
+    use clima_radtran_types, only: OpticalProperties
+    use clima_radtran_types, only: RadiateZWrk, RadiateXSWrk
+    use clima_radtran_twostream, only: two_stream_ir
+    
+    type(OpticalProperties), intent(in) :: op
+    real(dp), intent(in) :: cols(:,:)
+    type(RadiateXSWrk), target, intent(in) :: rw
+    type(RadiateZWrk), intent(inout) :: rz
+    
+    integer :: jj
+    
+    ! mean transmision method
+    do jj = 1,op%nk
+      
+      
+    enddo
+    
+    
+    
     
   end subroutine
   

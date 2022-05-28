@@ -44,15 +44,15 @@ CPMAddPackage(
   EXCLUDE_FROM_ALL ON
 )
 
-CPMAddPackage(
-  NAME cvode 
-  VERSION 5.7.0
-  OPTIONS 
-    "BUILD_SHARED_LIBS OFF" 
-    "BUILD_FORTRAN_MODULE_INTERFACE ON"
-  URL "https://github.com/LLNL/sundials/releases/download/v5.7.0/cvode-5.7.0.tar.gz"
-  EXCLUDE_FROM_ALL ON
-)
+# CPMAddPackage(
+#   NAME cvode 
+#   VERSION 5.7.0
+#   OPTIONS 
+#     "BUILD_SHARED_LIBS OFF" 
+#     "BUILD_FORTRAN_MODULE_INTERFACE ON"
+#   URL "https://github.com/LLNL/sundials/releases/download/v5.7.0/cvode-5.7.0.tar.gz"
+#   EXCLUDE_FROM_ALL ON
+# )
 
 CPMAddPackage(
   NAME dop853

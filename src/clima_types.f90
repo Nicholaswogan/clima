@@ -1,8 +1,6 @@
 
 module clima_types
-  use iso_c_binding
   use clima_const, only: dp, s_str_len
-  use linear_interpolation_module, only: linear_interp_1d, linear_interp_2d
   implicit none
   public
   
@@ -60,11 +58,37 @@ module clima_types
     module procedure :: create_ClimaSettings
   end interface
   
+  
   type :: AtmosphereFile
+    character(:), allocatable :: filename
     integer :: nz
     integer :: nlabels
     character(s_str_len), allocatable :: labels(:)
     real(dp), allocatable :: columns(:,:) ! (size(labels),nz)
   end type
+  
+  interface
+    module function create_AtmosphereFile(atm_file, err) result(atm)
+      character(*), intent(in) :: atm_file
+      character(:), allocatable, intent(out) :: err
+      type(AtmosphereFile) :: atm
+    end function
+  end interface
+  interface AtmosphereFile
+    module procedure create_AtmosphereFile
+  end interface
+  
+  ! other
+  interface
+    module subroutine unpack_atmospherefile(atm, species_names, z, mix, T, P, err)
+      type(AtmosphereFile), intent(in) :: atm
+      character(*), intent(in) :: species_names(:)
+      real(dp), intent(in) :: z(:)
+      real(dp), intent(out) :: mix(:,:)
+      real(dp), intent(out) :: T(:)
+      real(dp), intent(out) :: P(:)
+      character(:), allocatable, intent(out) :: err
+    end subroutine
+  end interface
 
 end module

@@ -1,7 +1,7 @@
 
 atmosphere-grid:
   bottom: 0.0 # cm
-  top: 0.7e7 # cm
+  top: 1.0e7 # cm
   number-of-layers: 100
   
 planet:
@@ -14,18 +14,11 @@ planet:
   solar-zenith-angle: 60.0
   
 optical-properties:
-  species: [H2O, CO2, O2, N2]
-  solar:
-    k-method: RandomOverlapResortRebin
-    number-of-bins: 16
-    opacities:
-      k-distributions: [H2O, CO2, O2]
-      CIA: [CO2-CO2, N2-N2, O2-O2, N2-O2]
-      rayleigh: [N2, H2O, CO2]
+  species: [H2O, CO2, O2, N2, O3, CH4]
   ir:
     k-method: RandomOverlapResortRebin
-    number-of-bins: 16
+    number-of-bins: 32
     opacities:
-      k-distributions: [H2O, CO2, O2]
-      CIA: [CO2-CO2, N2-N2, O2-O2, N2-O2]
-      rayleigh: [H2O, CO2, O2]
+      k-distributions: [H2O, CO2, O2, O3, CH4]
+      CIA: [CO2-CO2, N2-N2, O2-O2, N2-O2, H2O-H2O, H2O-N2, CH4-CH4]
+      rayleigh: [H2O, CO2, O2, N2]

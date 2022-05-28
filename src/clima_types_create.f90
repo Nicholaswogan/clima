@@ -6,7 +6,7 @@ submodule(clima_types) clima_types_create
   
 contains
   
-  function create_AtmosphereFile(atm_file, err) result(atm)
+  module function create_AtmosphereFile(atm_file, err) result(atm)
     character(*), intent(in) :: atm_file
     character(:), allocatable, intent(out) :: err
     
@@ -16,6 +16,8 @@ contains
     character(len=s_str_len) :: arr1(1000)
     character(len=s_str_len) :: arr11(1000)
     integer :: io, n, nn, i, ii
+    
+    atm%filename = atm_file
     
     open(4, file=trim(atm_file),status='old',iostat=io)
     if (io /= 0) then
@@ -70,8 +72,100 @@ contains
     enddo
     close(4)
     
-    
   end function
+  
+  module subroutine unpack_atmospherefile(atm, species_names, z, mix, T, P, err)
+  
+    use futils, only: is_close, interp
+    use clima_types, only: AtmosphereFile
+  
+    type(AtmosphereFile), intent(in) :: atm
+    character(*), intent(in) :: species_names(:)
+    real(dp), intent(in) :: z(:)
+    
+    real(dp), intent(out) :: mix(:,:)
+    real(dp), intent(out) :: T(:)
+    real(dp), intent(out) :: P(:)
+    character(:), allocatable, intent(out) :: err
+  
+    integer :: i, ind, ind1, ierr, ng, nz
+    
+    ng = size(species_names)
+    nz = size(z)
+    
+    if (size(mix,1) /= nz .or. size(mix,2) /= ng) then
+      err = '"mix" has the wrong dimensions in subroutine "unpack_atmospherefile"'
+      return
+    endif
+    
+    if (size(T) /= nz) then
+      err = '"T" has the wrong dimensions in subroutine "unpack_atmospherefile"'
+      return
+    endif
+    
+    if (size(P) /= nz) then
+      err = '"P" has the wrong dimensions in subroutine "unpack_atmospherefile"'
+      return
+    endif
+    
+    ind1 = findloc(atm%labels,"alt", 1)
+    if (ind1 == 0) then
+      err = '"alt" was not found in input file "'//trim(atm%filename)//'"'
+      return
+    endif
+    
+    do i=1,ng
+      ind = findloc(atm%labels,species_names(i), 1)
+      if (ind /= 0) then
+
+        call interp(nz, atm%nz, z, atm%columns(ind1,:)*1.0e5_dp, log10(atm%columns(ind,:)), mix(:,i), ierr)
+        if (ierr /= 0) then
+          err = 'Error interpolating "'//trim(atm%filename)//'"'
+          return
+        endif
+        
+      else
+        err = 'Species "'//trim(species_names(i))//'" was not found in "'// &
+              trim(atm%filename)//'"'
+        return
+      endif
+    enddo
+    
+    mix = 10.0_dp**mix
+    
+    ! check mix sums to 1
+    do i = 1,nz
+      if (.not. is_close(sum(mix(i,:)), 1.0_dp, tol=1.0e-2_dp)) then
+        err = 'mixing ratios do not sum to close to 1 in "'//trim(atm%filename)//'"'
+      endif
+    enddo
+
+    ind = findloc(atm%labels,'temp',1)
+    if (ind /= 0) then
+      call interp(nz, atm%nz, z, atm%columns(ind1,:)*1.0e5_dp, atm%columns(ind,:), T(:), ierr)
+      if (ierr /= 0) then
+        err = 'Error interpolating "'//trim(atm%filename)//'"'
+        return
+      endif
+    else
+      err = '"temp" was not found in input file "'//trim(atm%filename)//'"'
+      return
+    endif
+    
+    ind = findloc(atm%labels,'press',1)
+    if (ind /= 0) then
+      call interp(nz, atm%nz, z, atm%columns(ind1,:)*1.0e5_dp, log10(atm%columns(ind,:)), P(:), ierr)
+      if (ierr /= 0) then
+        err = 'Error interpolating "'//trim(atm%filename)//'"'
+        return
+      endif
+    else
+      err = '"press" was not found in input file "'//trim(atm%filename)//'"'
+      return
+    endif
+    P = 10.0**P
+    
+  end subroutine
   
   subroutine read_stellar_flux(star_file, nw, wavl, photon_flux, err)
     use futils, only: inter2, addpnt
