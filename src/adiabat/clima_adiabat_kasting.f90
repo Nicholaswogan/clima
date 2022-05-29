@@ -363,9 +363,8 @@ contains
     
     x(1) = log10(0.5_dp*(P_cur+P_old))
     call lmdif1(fcn, m, n, x, fvec, tol, info, iwa, wa, lwa)
-    if (info /= 2) then
+    if (info < 1 .or. info > 4) then
       d%err = 'lmdif1 root solve failed'
-      return
     endif
     allocate(d%P_trop)
     d%P_trop = 10.0_dp**x(1)
@@ -403,9 +402,8 @@ contains
     
     x(1) = log10(0.5_dp*(P_cur+P_old))
     call lmdif1(fcn, m, n, x, fvec, tol, info, iwa, wa, lwa)
-    if (info /= 2) then
+    if (info < 1 .or. info > 4) then
       d%err = 'lmdif1 root solve failed'
-      return
     endif
     allocate(d%P_bound)
     d%P_bound = 10.0_dp**x(1)

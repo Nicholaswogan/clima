@@ -63,7 +63,7 @@ contains
     enddo
     
     !$omp parallel private(i, j, k, l, n, jj, &
-    !$omp& iks, &
+    !$omp& iks, avg_freq, &
     !$omp& rw, rz)
     
     !$omp do
@@ -444,7 +444,13 @@ contains
       enddo
     elseif (xs%dim == 1) then
       do j = 1,size(P)
-        call xs%log10_xs_1d(l)%evaluate(T(j), val)
+        if (T(j) < minval(xs%temp)) then
+          call xs%log10_xs_1d(l)%evaluate(minval(xs%temp), val)
+        elseif (T(j) > maxval(xs%temp)) then
+          call xs%log10_xs_1d(l)%evaluate(maxval(xs%temp), val)
+        else
+          call xs%log10_xs_1d(l)%evaluate(T(j), val)
+        endif
         res(j) = ten2power(val)
       enddo
     endif

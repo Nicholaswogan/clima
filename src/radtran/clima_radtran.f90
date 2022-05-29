@@ -43,6 +43,7 @@ module clima_radtran
     
   contains
     procedure :: radiate => RadtranIR_radiate
+    procedure :: OLR => RadtranIR_OLR
   end type
   
   type, extends(RadtranIR) :: Radtran
