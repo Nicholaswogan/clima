@@ -1,27 +1,42 @@
-! submodule (clima_adiabat) clima_adiabat_kasting
 module clima_adiabat_kasting
   use clima_const, only: dp
   use dop853_module, only: dop853_class
   implicit none
-  ! private
+  private
   
-  type, extends(dop853_class) :: dop853_custom
+  public :: make_profile
+  
+  type :: KastingProfileData
+    ! intent(in)
+    real(dp), pointer :: T_surf
+    real(dp) :: P_surf
     real(dp) :: f_H2O_surf, f_CO2_dry, f_N2_dry
-    integer :: j
-    real(dp), pointer :: P_out(:), T_out(:)
-    real(dp), pointer :: f_H2O_out(:), f_CO2_out(:), f_N2_out(:)
-    real(dp), pointer :: T_strat
+    integer, pointer :: nz
+    real(dp), pointer :: planet_mass, planet_radius
+    real(dp), pointer :: P_top
+    real(dp), pointer :: T_trop
     
-    real(dp), allocatable :: P_strat
-    real(dp), allocatable :: P_bound, T_bound
+    ! intent(inout)
+    real(dp), pointer :: P(:)
+    
+    ! intent(out)
+    real(dp), pointer :: z(:)
+    real(dp), pointer :: T(:)
+    real(dp), pointer :: f_H2O(:), f_CO2(:), f_N2(:)
+    
+    ! work
     integer :: stopping_reason
+    real(dp), allocatable :: P_trop, z_trop
+    real(dp), allocatable :: P_bound, z_bound, T_bound
+    integer :: j
     
+    ! error
     character(:), allocatable :: err
   end type
   
   ! stopping_reason
   enum, bind(c)
-    enumerator :: ReachedPtop, ReachedStratosphere, ReachedMoistAdiabat
+    enumerator :: ReachedPtop, ReachedTropopause, ReachedMoistAdiabat
   end enum
   
   !! molar masses (g/mol)
@@ -32,27 +47,32 @@ module clima_adiabat_kasting
   real(dp), parameter :: L_H2O = 2264e7_dp
   !! critical point H2O
   real(dp), parameter :: T_crit_H2O = 647.0_dp !! K
-
+  
+  type, extends(dop853_class) :: dop853_custom
+    type(KastingProfileData), pointer :: d => NULL()
+  end type
+  
 contains
   
   subroutine make_profile(T_surf, P_H2O_surf, P_CO2_surf, P_N2_surf, nz, &
-                          P_top, T_strat, &
-                          P_out, T_out, f_H2O_out, f_CO2_out, f_N2_out, surface_liquid_H2O, &
+                          planet_mass, planet_radius, P_top, T_trop, &
+                          P, z, T, f_H2O, f_CO2, f_N2, surface_liquid_H2O, &
                           err)
     use stdlib_math, only: logspace
-    real(dp), intent(in) :: T_surf !! K
-    real(dp), intent(in) :: P_H2O_surf, P_CO2_surf, P_N2_surf !! dynes/cm2
-    integer, intent(in) :: nz
-    real(dp), intent(in) :: P_top, T_strat
+    real(dp), target, intent(in) :: T_surf !! K
+    real(dp), target, intent(in) :: P_H2O_surf, P_CO2_surf, P_N2_surf !! dynes/cm2
+    integer, target, intent(in) :: nz
+    real(dp), target, intent(in) :: planet_mass, planet_radius
+    real(dp), target, intent(in) :: P_top, T_trop
     
-    real(dp), intent(out) :: P_out(nz), T_out(nz)
-    real(dp), intent(out) :: f_H2O_out(nz), f_CO2_out(nz), f_N2_out(nz)
-    logical, intent(out) :: surface_liquid_H2O
+    real(dp), target, intent(out) :: P(nz), z(nz), T(nz)
+    real(dp), target, intent(out) :: f_H2O(nz), f_CO2(nz), f_N2(nz)
+    logical, target, intent(out) :: surface_liquid_H2O
     character(:), allocatable, intent(out) :: err
     
+    type(KastingProfileData) :: d
+    
     real(dp) :: P_H2O_sat_surf, P_H2O_start
-    real(dp) :: P_surf, P_surf_dry
-    real(dp) :: f_H2O_surf, f_CO2_dry, f_N2_dry
     
     ! check inputs
     if (P_H2O_surf < 0.0_dp .or. P_CO2_surf < 0.0_dp .or. P_N2_surf < 0.0_dp) then
@@ -60,15 +80,14 @@ contains
       return
     endif
     if (nz < 5) then
-      err = 'make_profile: "nz" must be positive'
+      err = 'make_profile: "nz" must be bigger than 4'
       return
     endif
-    if (P_top < 0.0_dp .or. T_strat < 0.0_dp) then
+    if (P_top < 0.0_dp .or. T_trop < 0.0_dp) then
       err = "make_profile: P_top and T_strat must be positive"
       return
     endif
     
-    ! Check if H2O liquid can exist on the surface
     if (T_surf > T_crit_H2O) then
       ! Above critical point of water.
       ! All H2O must be in the atmosphere.
@@ -88,231 +107,194 @@ contains
       endif
     endif
     
-    P_surf = P_H2O_start + P_CO2_surf + P_N2_surf
-    if (P_top > P_surf) then
+    d%P_surf = P_H2O_start + P_CO2_surf + P_N2_surf
+    if (P_top > d%P_surf) then
       err = 'make_profile: "P_top" is bigger than the surface pressure'
       return
     endif
-    ! mixing ratio of H2O at the surface
-    f_H2O_surf = P_H2O_start/P_surf
-    ! fraction of the dry atmosphere that is
-    ! CO2 and N2
-    P_surf_dry = P_CO2_surf + P_N2_surf
-    f_CO2_dry = P_CO2_surf/P_surf_dry
-    f_N2_dry = P_N2_surf/P_surf_dry
+    
+    ! mixing ratios at the surface
+    d%f_H2O_surf = P_H2O_start/d%P_surf
+    d%f_CO2_dry = P_CO2_surf/max(P_CO2_surf + P_N2_surf, tiny(1.0_dp))
+    d%f_N2_dry = P_N2_surf/max(P_CO2_surf + P_N2_surf, tiny(1.0_dp))
     
     ! Make P profile
-    P_out = logspace(log10(P_surf),log10(P_top),nz)
-    P_out(nz) = P_top
+    P = logspace(log10(d%P_surf),log10(P_top),nz)
+    P(1) = d%P_surf
+    P(nz) = P_top
     
-    if (T_surf <= T_strat) then
-      ! sort of an error
-      T_out = T_strat
-      f_H2O_out = f_H2O_surf
-      f_CO2_out = P_CO2_surf/P_surf
-      f_N2_out = P_N2_surf/P_surf
-      return
-    endif
-
-    if (surface_liquid_H2O) then
-      call make_profile_moist_start(T_surf, P_surf, f_CO2_dry, f_N2_dry, &
-                                    T_strat, P_top, &
-                                    P_out, T_out, f_H2O_out, f_CO2_out, f_N2_out, &
-                                    err)
+    ! associate d with inputs
+    d%T_surf => T_surf
+    d%planet_mass => planet_mass
+    d%planet_radius => planet_radius
+    d%T_trop => T_trop
+    d%P_top => P_top
+    d%nz => nz
+    d%P => P
+    d%z => z
+    d%T => T
+    d%f_H2O => f_H2O
+    d%f_CO2 => f_CO2
+    d%f_N2 => f_N2
+    
+    ! begin a new scope
+    if (.not. surface_liquid_H2O) then
+      call integrate_dry_start(d, err)
       if (allocated(err)) return
     else
-      call make_profile_dry_start(T_surf, P_surf, f_H2O_surf, f_CO2_dry, f_N2_dry, &
-                                  T_strat, P_top, &
-                                  P_out, T_out, f_H2O_out, f_CO2_out, f_N2_out, &
-                                  err)
+      call integrate_moist_start(d, err)
       if (allocated(err)) return
     endif
-    
+              
   end subroutine
   
-  subroutine make_profile_moist_start(T_surf, P_surf, f_CO2_dry, f_N2_dry, &
-                                      T_strat, P_top, &
-                                      P_out, T_out, f_H2O_out, f_CO2_out, f_N2_out, &
-                                      err)
-    real(dp), intent(in) :: T_surf !! K
-    real(dp), intent(in) :: P_surf !! dynes/cm2
-    real(dp), intent(in) :: f_CO2_dry, f_N2_dry
-    real(dp), target, intent(in) :: T_strat, P_top
-    real(dp), target, intent(inout) :: P_out(:)
-    
-    real(dp), target, intent(out) :: T_out(:)
-    real(dp), target, intent(out) :: f_H2O_out(:), f_CO2_out(:), f_N2_out(:)
+  subroutine integrate_moist_start(d, err)
+    type(KastingProfileData), target, intent(inout) :: d
     character(:), allocatable, intent(out) :: err
     
-    type(dop853_custom) :: dop_m
+    type(dop853_custom) :: dop
     logical :: status_ok
-    integer :: idid
-    real(dp) :: P
-    real(dp) :: T(1)
+    integer :: idid, i, ind
+    real(dp) :: u(2), Pn
+    real(dp) :: mubar
     
-    call dop_m%initialize(fcn=dT_dP_moist_dop, solout=solout_moist, n=1, &
-                          iprint=0, icomp=[1], status_ok=status_ok)
+    call dop%initialize(fcn=rhs_moist_dop, solout=solout_moist, n=2, &
+                        iprint=0, icomp=[1,2], status_ok=status_ok)
+    dop%d => d ! associate data
+    d%j = 2
+    d%T(1) = d%T_surf
+    d%z(1) = 0.0_dp
+    call mixing_ratios_moist(d%P_surf, d%T_surf, &
+                             d%f_CO2_dry, d%f_N2_dry, &
+                             d%f_H2O(1), d%f_CO2(1), d%f_N2(1))
+    d%stopping_reason = ReachedPtop
     if (.not. status_ok) then
       err = 'dop853 initialization failed'
       return
     endif
-    dop_m%f_CO2_dry = f_CO2_dry
-    dop_m%f_N2_dry = f_N2_dry
-    dop_m%T_strat => T_strat
-    dop_m%P_out => P_out
-    dop_m%T_out => T_out
-    dop_m%f_H2O_out => f_H2O_out
-    dop_m%f_CO2_out => f_CO2_out
-    dop_m%f_N2_out => f_N2_out
-    dop_m%T_out(1) = T_surf
-    call mixing_ratios_moist(P_surf, T_surf, &
-                             f_CO2_dry, f_N2_dry, &
-                             f_H2O_out(1), f_CO2_out(1), f_N2_out(1))
-    dop_m%j = 2
-    dop_m%stopping_reason = ReachedPtop
-
-    T(1) = T_surf
-    P = P_surf
-    call dop_m%integrate(P, T, P_top, [1.0e-6_dp], [1.0e-6_dp], iout=2, idid=idid)
-    if (allocated(dop_m%err)) then
-      err = dop_m%err
+    
+    ! integrate
+    u = [d%T_surf, 0.0_dp]
+    Pn = d%P_surf
+    call dop%integrate(Pn, u, d%P_top, [1.0e-6_dp], [1.0e-6_dp], iout=2, idid=idid)
+    if (allocated(d%err)) then
+      err = d%err
       return
     endif
     if (idid < 0) then
       err = 'dop853 integration failed'
       return
     endif
-    if (dop_m%stopping_reason == ReachedPtop) then
-      ! we made it to P_top (finished the integration)
+    
+    if (d%stopping_reason == ReachedPtop) then
       ! Nothing to do.
-    elseif (dop_m%stopping_reason == ReachedStratosphere) then
-      ! we made it to T_strat
+    elseif (d%stopping_reason == ReachedTropopause) then
+      ! We must compute results at and above the tropopause
       
-      ! fill in values for where the transition occured
-      P_out(dop_m%j) = dop_m%P_strat
-      T_out(dop_m%j) = T_strat
-      call mixing_ratios_moist(dop_m%P_strat, T_strat, &
-                               f_CO2_dry, f_N2_dry, &
-                               f_H2O_out(dop_m%j), f_CO2_out(dop_m%j), f_N2_out(dop_m%j))
+      ! Values at tropopause
+      d%P(d%j) = d%P_trop
+      d%T(d%j) = d%T_trop
+      d%z(d%j) = d%z_trop
+      call mixing_ratios_moist(d%P(d%j), d%T(d%j), &
+                               d%f_CO2_dry, d%f_N2_dry, &
+                               d%f_H2O(d%j), d%f_CO2(d%j), d%f_N2(d%j))
       
-      ! fill in the space, if there is space
-      if (size(T_out) > dop_m%j) then
-        T_out(dop_m%j+1:) = T_strat
-        f_H2O_out(dop_m%j+1:) = f_H2O_out(dop_m%j)
-        f_CO2_out(dop_m%j+1:) = f_CO2_out(dop_m%j)
-        f_N2_out(dop_m%j+1:) = f_N2_out(dop_m%j)
+      ! Values above the tropopause
+      if (size(d%T) > d%j) then
+        d%T(d%j+1:) = d%T_trop
+        d%f_H2O(d%j+1:) = d%f_H2O(d%j)
+        d%f_CO2(d%j+1:) = d%f_CO2(d%j)
+        d%f_N2(d%j+1:) = d%f_N2(d%j)
+        mubar = d%f_H2O(d%j)*MU_H2O + d%f_CO2(d%j)*MU_CO2 + d%f_N2(d%j)*MU_N2
+        do i = d%j+1,size(d%z)
+          d%z(i) = altitude_vs_P(d%P(i), d%T_trop, mubar, d%P_trop, &
+                   d%z_trop, d%planet_mass, d%planet_radius) 
+        enddo
       endif
-      
     endif
     
   end subroutine
   
-  subroutine make_profile_dry_start(T_surf, P_surf, f_H2O_surf, f_CO2_dry, f_N2_dry, &
-                                   T_strat, P_top, &
-                                   P_out, T_out, f_H2O_out, f_CO2_out, f_N2_out, &
-                                   err)
-    real(dp), intent(in) :: T_surf !! K
-    real(dp), intent(in) :: P_surf !! dynes/cm2
-    real(dp), intent(in) :: f_H2O_surf, f_CO2_dry, f_N2_dry
-    real(dp), target, intent(in) :: T_strat, P_top
-    real(dp), target, intent(inout) :: P_out(:)
-    
-    real(dp), target, intent(out) :: T_out(:)
-    real(dp), target, intent(out) :: f_H2O_out(:), f_CO2_out(:), f_N2_out(:)
+  subroutine integrate_dry_start(d, err)
+    type(KastingProfileData), target, intent(inout) :: d
     character(:), allocatable, intent(out) :: err
     
-    type(dop853_custom) :: dop, dop_m
+    type(dop853_custom) :: dop
     logical :: status_ok
-    integer :: idid, ind
+    integer :: idid, i, ind
+    real(dp) :: u(2), Pn
+    real(dp) :: mubar
     
-    real(dp) :: P
-    real(dp) :: T(1)
-    
-    ! integrate dry adiabat upward
-    call dop%initialize(fcn=dT_dP_dry_dop, solout=solout_dry, n=1, &
-                        iprint=0, icomp=[1], status_ok=status_ok)
+    call dop%initialize(fcn=rhs_dry_dop, solout=solout_dry, n=2, &
+                        iprint=0, icomp=[1,2], status_ok=status_ok)
+    dop%d => d ! associate data
+    d%j = 2
+    d%T(1) = d%T_surf
+    d%z(1) = 0.0_dp
+    d%f_H2O(1) = d%f_H2O_surf
+    call mixing_ratios_dry(d%f_H2O_surf, d%f_CO2_dry, d%f_N2_dry, &
+                           d%f_CO2(1), d%f_N2(1))
+    d%stopping_reason = ReachedPtop
     if (.not. status_ok) then
       err = 'dop853 initialization failed'
       return
     endif
-    dop%f_H2O_surf = f_H2O_surf
-    dop%f_CO2_dry = f_CO2_dry
-    dop%f_N2_dry = f_N2_dry
-    dop%j = 2
-    dop%T_strat => T_strat
-    dop%P_out => P_out
-    dop%T_out => T_out
-    dop%f_H2O_out => f_H2O_out
-    dop%f_CO2_out => f_CO2_out
-    dop%f_N2_out => f_N2_out
-    dop%T_out(1) = T_surf
-    f_H2O_out(1) = f_H2O_surf
-    call mixing_ratios_dry(f_H2O_surf, f_CO2_dry, f_N2_dry, &
-                           f_CO2_out(1), f_N2_out(1))
-    dop%T_out(1) = T_surf
-    dop%stopping_reason = ReachedPtop
-
-    T(1) = T_surf
-    P = P_surf
-    call dop%integrate(P, T, P_top, [1.0e-6_dp], [1.0e-6_dp], iout=2, idid=idid)
-    if (allocated(dop%err)) then
-      err = dop%err
+    
+    ! integrate
+    u = [d%T_surf, 0.0_dp]
+    Pn = d%P_surf
+    call dop%integrate(Pn, u, d%P_top, [1.0e-6_dp], [1.0e-6_dp], iout=2, idid=idid)
+    if (allocated(d%err)) then
+      err = d%err
       return
     endif
     if (idid < 0) then
       err = 'dop853 integration failed'
       return
     endif
-
-    ! why did we stop?
-    if (dop%stopping_reason == ReachedPtop) then
-      ! we made it to P_top (finished the integration)
-      ! nothing to do!
-    elseif (dop%stopping_reason == ReachedStratosphere) then
-      ! we made it to T_strat
+    
+    if (d%stopping_reason == ReachedPtop) then
+      ! Nothing to do.
+    elseif (d%stopping_reason == ReachedTropopause) then
+      ! We must compute results at and above the tropopause
       
-      ! fill in values for where the transition occured
-      P_out(dop%j) = dop%P_strat
-      T_out(dop%j) = T_strat
-      f_H2O_out(dop%j) = f_H2O_surf
-      call mixing_ratios_dry(f_H2O_surf, f_CO2_dry, f_N2_dry, &
-                             f_CO2_out(dop%j), f_N2_out(dop%j))
+      ! Values at tropopause
+      d%P(d%j) = d%P_trop
+      d%T(d%j) = d%T_trop
+      d%z(d%j) = d%z_trop
+      d%f_H2O(d%j) = d%f_H2O_surf
+      call mixing_ratios_dry(d%f_H2O_surf, d%f_CO2_dry, d%f_N2_dry, &
+                             d%f_CO2(d%j), d%f_N2(d%j))
       
-      ! fill in the space, if there is space
-      if (size(T_out) > dop%j) then
-        T_out(dop%j+1:) = T_strat
-        f_H2O_out(dop%j+1:) = f_H2O_out(dop%j)
-        f_CO2_out(dop%j+1:) = f_CO2_out(dop%j)
-        f_N2_out(dop%j+1:) = f_N2_out(dop%j)
+      ! Values above the tropopause
+      if (size(d%T) > d%j) then
+        d%T(d%j+1:) = d%T_trop
+        d%f_H2O(d%j+1:) = d%f_H2O(d%j)
+        d%f_CO2(d%j+1:) = d%f_CO2(d%j)
+        d%f_N2(d%j+1:) = d%f_N2(d%j)
+        mubar = d%f_H2O(d%j)*MU_H2O + d%f_CO2(d%j)*MU_CO2 + d%f_N2(d%j)*MU_N2
+        do i = d%j+1,size(d%z)
+          d%z(i) = altitude_vs_P(d%P(i), d%T_trop, mubar, d%P_trop, &
+                   d%z_trop, d%planet_mass, d%planet_radius) 
+        enddo
       endif
-      
-    elseif (dop%stopping_reason == ReachedMoistAdiabat) then
-      ! Hit the moist regime
-      
-      ! do another integration with a moist adiabat
-      call dop_m%initialize(fcn=dT_dP_moist_dop, solout=solout_moist, n=1, &
-                            iprint=0, icomp=[1], status_ok=status_ok)
+
+    elseif (d%stopping_reason == ReachedMoistAdiabat) then
+      ! Do another integration with a moist adiabat
+      call dop%initialize(fcn=rhs_moist_dop, solout=solout_moist, n=2, &
+                          iprint=0, icomp=[1,2], status_ok=status_ok)
+      dop%d => d ! associate data
+      d%stopping_reason = ReachedPtop
       if (.not. status_ok) then
         err = 'dop853 initialization failed'
         return
       endif
-      dop_m%f_H2O_surf = f_H2O_surf
-      dop_m%f_CO2_dry = f_CO2_dry
-      dop_m%f_N2_dry = f_N2_dry
-      dop_m%T_strat => T_strat
-      dop_m%P_out => P_out
-      dop_m%T_out => T_out
-      dop_m%f_H2O_out => f_H2O_out
-      dop_m%f_CO2_out => f_CO2_out
-      dop_m%f_N2_out => f_N2_out
-      dop_m%j = dop%j
-      dop_m%stopping_reason = ReachedPtop
-
-      T(1) = dop%T_bound
-      P = dop%P_bound
-      call dop_m%integrate(P, T, P_top, [1.0e-6_dp], [1.0e-6_dp], iout=2, idid=idid)
-      if (allocated(dop_m%err)) then
-        err = dop_m%err
+      
+      u = [d%T_bound, d%z_bound]
+      Pn = d%P_bound
+      call dop%integrate(Pn, u, d%P_top, [1.0e-6_dp], [1.0e-6_dp], iout=2, idid=idid)
+      if (allocated(d%err)) then
+        err = d%err
         return
       endif
       if (idid < 0) then
@@ -320,53 +302,55 @@ contains
         return
       endif
       
-      if (dop_m%stopping_reason == ReachedPtop) then
-        ! we made it to P_top (finished the integration)
-        ! Nothing to do.
-        ind = minloc(abs(P_out - dop%P_bound), 1)
-        P_out(ind) = dop%P_bound
-        T_out(ind) = dop%T_bound
-        f_H2O_out(ind) = f_H2O_surf
-        call mixing_ratios_dry(f_H2O_surf, f_CO2_dry, f_N2_dry, &
-                               f_CO2_out(ind), f_N2_out(ind))
-                               
-      elseif (dop_m%stopping_reason == ReachedStratosphere) then
-        ! we made it to T_strat
-        
-        ind = minloc(abs(P_out - dop%P_bound), 1)
-        P_out(ind) = dop%P_bound
-        T_out(ind) = dop%T_bound
-        f_H2O_out(ind) = f_H2O_surf
-        call mixing_ratios_dry(f_H2O_surf, f_CO2_dry, f_N2_dry, &
-                               f_CO2_out(ind), f_N2_out(ind))
-        
-        P_out(dop_m%j) = dop_m%P_strat
-        T_out(dop_m%j) = T_strat
-        call mixing_ratios_moist(dop_m%P_strat, T_strat, &
-                                 f_CO2_dry, f_N2_dry, &
-                                 f_H2O_out(dop_m%j), f_CO2_out(dop_m%j), f_N2_out(dop_m%j))
-        
-        ! fill in the space, if there is space
-        if (size(T_out) > dop_m%j) then
-          T_out(dop_m%j+1:) = T_strat
-          f_H2O_out(dop_m%j+1:) = f_H2O_out(dop_m%j)
-          f_CO2_out(dop_m%j+1:) = f_CO2_out(dop_m%j)
-          f_N2_out(dop_m%j+1:) = f_N2_out(dop_m%j)
+      ! In either case, we must save where the dry-moist
+      ! transition occured
+      ind = minloc(abs(d%P - d%P_bound), 1)
+      d%P(ind) = d%P_bound
+      d%T(ind) = d%T_bound
+      d%z(ind) = d%z_bound
+      d%f_H2O(ind) = d%f_H2O_surf
+      call mixing_ratios_dry(d%f_H2O_surf, d%f_CO2_dry, d%f_N2_dry, &
+                             d%f_CO2(ind), d%f_N2(ind))
+      
+      if (d%stopping_reason == ReachedPtop) then
+        ! Nothing more to do
+      elseif (d%stopping_reason == ReachedTropopause) then
+        ! Values at tropopause
+        d%P(d%j) = d%P_trop
+        d%T(d%j) = d%T_trop
+        d%z(d%j) = d%z_trop
+        call mixing_ratios_moist(d%P_trop, d%T_trop, &
+                                 d%f_CO2_dry, d%f_N2_dry, &
+                                 d%f_H2O(d%j), d%f_CO2(d%j), d%f_N2(d%j))
+        ! Values above the tropopause
+        if (size(d%T) > d%j) then
+          d%T(d%j+1:) = d%T_trop
+          d%f_H2O(d%j+1:) = d%f_H2O(d%j)
+          d%f_CO2(d%j+1:) = d%f_CO2(d%j)
+          d%f_N2(d%j+1:) = d%f_N2(d%j)
+          mubar = d%f_H2O(d%j)*MU_H2O + d%f_CO2(d%j)*MU_CO2 + d%f_N2(d%j)*MU_N2
+          do i = d%j+1,size(d%z)
+            d%z(i) = altitude_vs_P(d%P(i), d%T_trop, mubar, d%P_trop, &
+                  d%z_trop, d%planet_mass, d%planet_radius) 
+          enddo
         endif
-        
+      
       endif
       
     endif
-    
+
   end subroutine
   
-  subroutine find_stratosphere_boundary(dop, P_cur, P_old, P_strat, err)
+  !!!!!!!!!!!!!!!!!!!!!!!!
+  !!! Boundary finders !!!
+  !!!!!!!!!!!!!!!!!!!!!!!!
+  
+  subroutine find_tropopause(dop, d, P_cur, P_old)
     use minpack_module, only: lmdif1
     
-    class(dop853_custom),intent(inout) :: dop
+    class(dop853_class),intent(inout) :: dop
+    type(KastingProfileData), intent(inout) :: d
     real(dp), intent(in) :: P_cur, P_old
-    real(dp), intent(out) :: P_strat
-    character(:), allocatable, intent(out) :: err
     
     integer, parameter :: n = 1, m = 1
     real(dp) :: x(1)
@@ -380,10 +364,11 @@ contains
     x(1) = log10(0.5_dp*(P_cur+P_old))
     call lmdif1(fcn, m, n, x, fvec, tol, info, iwa, wa, lwa)
     if (info /= 2) then
-      err = 'lmdif1 root solve failed'
+      d%err = 'lmdif1 root solve failed'
       return
     endif
-    P_strat = 10.0_dp**x(1)
+    allocate(d%P_trop)
+    d%P_trop = 10.0_dp**x(1)
     
   contains
     subroutine fcn(m, n, x, fvec, iflag)
@@ -395,18 +380,17 @@ contains
       real(dp) :: T, P
       P = 10.0_dp**x(1)
       T = dop%contd8(1, P)
-      fvec(1) = dop%T_strat - T
+      fvec(1) = d%T_trop - T
     end subroutine
     
   end subroutine
   
-  subroutine find_dry_moist_boundary(dop, P_cur, P_old, P_bound, err)
+  subroutine find_dry_moist_boundary(dop, d, P_cur, P_old)
     use minpack_module, only: lmdif1
     
-    class(dop853_custom),intent(inout) :: dop
+    class(dop853_class),intent(inout) :: dop
+    type(KastingProfileData), intent(inout) :: d
     real(dp), intent(in) :: P_cur, P_old
-    real(dp), intent(out) :: P_bound
-    character(:), allocatable, intent(out) :: err
       
     integer, parameter :: n = 1, m = 1
     real(dp) :: x(1)
@@ -420,10 +404,11 @@ contains
     x(1) = log10(0.5_dp*(P_cur+P_old))
     call lmdif1(fcn, m, n, x, fvec, tol, info, iwa, wa, lwa)
     if (info /= 2) then
-      err = 'lmdif1 root solve failed'
+      d%err = 'lmdif1 root solve failed'
       return
     endif
-    P_bound = 10.0_dp**x(1)
+    allocate(d%P_bound)
+    d%P_bound = 10.0_dp**x(1)
     
   contains
     subroutine fcn(m, n, x, fvec, iflag)
@@ -436,11 +421,14 @@ contains
       P = 10.0_dp**x(1)
       T = dop%contd8(1, P)
       p_H2O_sat = sat_pressure_H2O(T)
-      fvec(1) = p_H2O_sat - P*dop%f_H2O_surf
+      fvec(1) = p_H2O_sat - P*d%f_H2O_surf
     end subroutine
   end subroutine
   
-  !! Dry adiabat
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !!! Dry adiabat funcitons !!!
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  
   subroutine solout_dry(self, nr, xold, x, y, irtrn, xout)
     class(dop853_class),intent(inout) :: self
     integer,intent(in)                :: nr
@@ -450,68 +438,78 @@ contains
     integer,intent(inout)             :: irtrn
     real(dp),intent(out)              :: xout
     
-    real(dp) :: p_H2O_sat
-    real(dp) :: T_cur, P_cur, P_old
-    real(dp) :: PP
+    type(KastingProfileData), pointer :: d
+    
+    real(dp) :: T_cur, z_cur, P_cur, P_old
+    real(dp) :: p_H2O_sat, PP
     
     P_old = xold
     P_cur = x
     T_cur = y(1)
+    z_cur = y(2)
     
     select type (self)
     class is (dop853_custom)
-      
-      if (T_cur < self%T_strat) then
-        ! entered the stratosphere
-        ! do a root solve for the exact P
-        ! where we enter the stratosphere
-        allocate(self%P_strat)
-        call find_stratosphere_boundary(self, P_cur, P_old, self%P_strat, self%err)
-        self%stopping_reason = ReachedStratosphere
-        irtrn = -1
-        
-      elseif (self%T_strat <= T_cur .and. T_cur < T_crit_H2O) then
-        p_H2O_sat = sat_pressure_H2O(T_cur)
-        
-        if (self%f_H2O_surf*P_cur > p_H2O_sat) then
-          ! Entered the moist regime. 
-          
-          ! Do a root solve for the exact P
-          ! where we enter the moist regime
-          allocate(self%P_bound, self%T_bound)
-          call find_dry_moist_boundary(self, P_cur, P_old, self%P_bound, self%err)
-          ! Temperature at the moist dry boundary
-          self%T_bound = self%contd8(1, self%P_bound)
-          
-          ! Hault integration
-          self%stopping_reason = ReachedMoistAdiabat
-          irtrn = -2
-          
-        endif
-      endif
-      
-      if (self%P_out(self%j) <= P_old .and. self%P_out(self%j) >= P_cur) then
-        if (irtrn == -1) then
-          PP = self%P_strat
-        elseif (irtrn == -2) then
-          PP = self%P_bound
-        else
-          PP = P_cur
-        endif
-        
-        do while (self%P_out(self%j) >= PP .and. self%j <= size(self%P_out))
-          self%T_out(self%j) = self%contd8(1, self%P_out(self%j))
-          self%f_H2O_out(self%j) = self%f_H2O_surf
-          call mixing_ratios_dry(self%f_H2O_surf, self%f_CO2_dry, self%f_N2_dry, &
-                                 self%f_CO2_out(self%j), self%f_N2_out(self%j))
-          self%j = self%j + 1
-        enddo
-      endif
-      
+      d => self%d
     end select
+    
+    ! Check if the integration needs to be stopped 
+    if (T_cur < d%T_trop) then
+      ! Hit the tropopause
+
+      ! Solve for the exact pressure of
+      ! the tropopause.
+      call find_tropopause(self, d, P_cur, P_old)
+      
+      ! altitude of tropopause
+      allocate(d%z_trop)
+      d%z_trop = self%contd8(2, d%P_trop)
+      
+      d%stopping_reason = ReachedTropopause
+      irtrn = -1
+      
+    elseif (d%T_trop <= T_cur .and. T_cur < T_crit_H2O) then
+      p_H2O_sat = sat_pressure_H2O(T_cur)
+      if (d%f_H2O_surf*P_cur > p_H2O_sat) then
+        ! Entered the moist adiabat regime.
+        
+        ! Solve for the exact P where we entered the
+        ! moist regime.
+        call find_dry_moist_boundary(self, d, P_cur, P_old)
+        
+        allocate(d%T_bound, d%z_bound)
+        d%T_bound = self%contd8(1, d%P_bound)
+        d%z_bound = self%contd8(2, d%P_bound)
+        
+        d%stopping_reason = ReachedMoistAdiabat
+        irtrn = -2
+      endif
+
+    endif
+    
+    ! save results
+    if (d%P(d%j) <= P_old .and. d%P(d%j) >= P_cur) then
+      if (irtrn == -1) then
+        PP = d%P_trop
+      elseif (irtrn == -2) then
+        PP = d%P_bound
+      else
+        PP = P_cur
+      endif
+      
+      do while (d%P(d%j) >= PP .and. d%j <= size(d%P))
+        d%T(d%j) = self%contd8(1, d%P(d%j))
+        d%z(d%j) = self%contd8(2, d%P(d%j))
+        d%f_H2O(d%j) = d%f_H2O_surf
+        call mixing_ratios_dry(d%f_H2O_surf, d%f_CO2_dry, d%f_N2_dry, &
+                               d%f_CO2(d%j), d%f_N2(d%j))
+        d%j = d%j + 1
+      enddo
+    endif
+
   end subroutine
   
-  subroutine dT_dP_dry_dop(self, tn, u, du)
+  subroutine rhs_dry_dop(self, tn, u, du)
     class(dop853_class), intent(inout) :: self
     real(dp), intent(in) :: tn
     real(dp), intent(in), dimension(:) :: u
@@ -519,34 +517,39 @@ contains
     
     select type (self)
     class is (dop853_custom)
-      du(1) = dT_dP_dry(tn, u(1), self%f_H2O_surf, self%f_CO2_dry, self%f_N2_dry)
+      du(1:2) = rhs_dry(tn, u, self%d%f_H2O_surf, self%d%f_CO2_dry, &
+                        self%d%f_N2_dry, self%d%planet_mass, self%d%planet_radius)
     end select
-  
+
   end subroutine
   
   pure subroutine mixing_ratios_dry(f_H2O_surf, f_CO2_dry, f_N2_dry, f_CO2, f_N2)
     real(dp), intent(in) :: f_H2O_surf, f_CO2_dry, f_N2_dry
     real(dp), intent(out) :: f_CO2, f_N2
-    
     real(dp) :: f_dry
-    
-    ! get CO2 and N2 mixing ratios
     f_dry = 1.0_dp - f_H2O_surf
     f_CO2 = f_CO2_dry*f_dry
     f_N2 = f_N2_dry*f_dry
-    
   end subroutine
   
-  function dT_dP_dry(P, T, f_H2O_surf, f_CO2_dry, f_N2_dry) result(dTdP)
+  pure function rhs_dry(P, u, f_H2O_surf, f_CO2_dry, f_N2_dry, planet_mass, planet_radius) result(rhs)
     use clima_const, only: N_avo, k_boltz
+    use clima_eqns, only: gravity
     real(dp), intent(in) :: P !! dynes/cm2
-    real(dp), intent(in) :: T !! K
+    real(dp), intent(in) :: u(2) !! K
     real(dp), intent(in) :: f_H2O_surf, f_CO2_dry, f_N2_dry
+    real(dp), intent(in) :: planet_mass, planet_radius
     
-    real(dp) :: dTdP
+    real(dp) :: rhs(2)
     
+    real(dp) :: T, z
     real(dp) :: mubar, cp
-    real(dp) :: f_CO2, f_N2
+    real(dp) :: f_CO2, f_N2, grav
+    real(dp) :: dTdP, dzdP
+    
+    ! unpack u
+    T = u(1)
+    z = u(2)
     
     ! get CO2 and N2 mixing ratios
     call mixing_ratios_dry(f_H2O_surf, f_CO2_dry, f_N2_dry, f_CO2, f_N2)
@@ -561,12 +564,20 @@ contains
     ! convert to erg/(g*K)
     cp = cp*1.0e4_dp
     
-    ! adiabat
+    ! How T changes with pressure
     dTdP = (N_avo*k_boltz*T)/(P*mubar*cp)
+    
+    ! How altitude changes with pressure
+    grav = gravity(planet_radius, planet_mass, z)
+    dzdP = -(N_avo*k_boltz*T)/(grav*P*mubar)
+    
+    rhs = [dTdP, dzdP]
     
   end function
   
-  !! Moist adiabat
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !!! Moist adiabat funcitons !!!
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   
   subroutine solout_moist(self, nr, xold, x, y, irtrn, xout)
     class(dop853_class),intent(inout) :: self
@@ -577,47 +588,60 @@ contains
     integer,intent(inout)             :: irtrn
     real(dp),intent(out)              :: xout
     
-    real(dp) :: T_cur, P_cur, P_old
+    type(KastingProfileData), pointer :: d
+    
+    real(dp) :: T_cur, z_cur, P_cur, P_old
     real(dp) :: PP
     
     P_old = xold
     P_cur = x
     T_cur = y(1)
+    z_cur = y(2)
     
     select type (self)
     class is (dop853_custom)
-      
-      if (T_cur < self%T_strat) then
-        ! entered the stratosphere
-        ! do a root solve for the exact P
-        ! where we enter the stratosphere
-        allocate(self%P_strat)
-        call find_stratosphere_boundary(self, P_cur, P_old, self%P_strat, self%err)
-        self%stopping_reason = ReachedStratosphere
-        irtrn = -1
-      endif
-      
-      if (self%P_out(self%j) <= P_old .and. self%P_out(self%j) >= P_cur) then
-        if (irtrn == -1) then
-          PP = self%P_strat
-        else
-          PP = P_cur
-        endif
-        
-        do while (self%P_out(self%j) >= PP .and. self%j <= size(self%P_out))
-          self%T_out(self%j) = self%contd8(1, self%P_out(self%j))
-          call mixing_ratios_moist(self%P_out(self%j), self%T_out(self%j), &
-                                   self%f_CO2_dry, self%f_N2_dry, &
-                                   self%f_H2O_out(self%j), self%f_CO2_out(self%j), &
-                                   self%f_N2_out(self%j))
-          self%j = self%j + 1
-        enddo
-      endif
-      
+      d => self%d
     end select
+    
+    ! Check if the integration needs to be stopped 
+    if (T_cur < d%T_trop) then
+      ! Hit the tropopause
+
+      ! Solve for the exact pressure of
+      ! the tropopause.
+      call find_tropopause(self, d, P_cur, P_old)
+      
+      ! altitude of tropopause
+      allocate(d%z_trop)
+      d%z_trop = self%contd8(2, d%P_trop)
+      
+      d%stopping_reason = ReachedTropopause
+      irtrn = -1
+      
+    endif
+    
+    ! save results
+    if (d%P(d%j) <= P_old .and. d%P(d%j) >= P_cur) then
+      if (irtrn == -1) then
+        PP = d%P_trop
+      else
+        PP = P_cur
+      endif
+      
+      do while (d%P(d%j) >= PP .and. d%j <= size(d%P))
+        d%T(d%j) = self%contd8(1, d%P(d%j))
+        d%z(d%j) = self%contd8(2, d%P(d%j))
+        call mixing_ratios_moist(d%P(d%j), d%T(d%j), &
+                                 d%f_CO2_dry, d%f_N2_dry, &
+                                 d%f_H2O(d%j), d%f_CO2(d%j), d%f_N2(d%j))
+        d%j = d%j + 1
+      enddo
+    endif
+    
+    
   end subroutine
   
-  subroutine dT_dP_moist_dop(self, tn, u, du)
+  subroutine rhs_moist_dop(self, tn, u, du)
     class(dop853_class), intent(inout) :: self
     real(dp), intent(in) :: tn
     real(dp), intent(in), dimension(:) :: u
@@ -625,7 +649,8 @@ contains
     
     select type (self)
     class is (dop853_custom)
-      du(1) = dT_dP_moist(tn, u(1), self%f_CO2_dry, self%f_N2_dry)
+      du(1:2) = rhs_moist(tn, u, self%d%f_CO2_dry, self%d%f_N2_dry, &
+                          self%d%planet_mass, self%d%planet_radius)
     end select
   
   end subroutine
@@ -648,17 +673,25 @@ contains
     
   end subroutine
   
-  pure function dT_dP_moist(P, T, f_CO2_dry, f_N2_dry) result(dTdP)
+  pure function rhs_moist(P, u, f_CO2_dry, f_N2_dry, planet_mass, planet_radius) result(rhs)
     use clima_const, only: N_avo, k_boltz
+    use clima_eqns, only: gravity
     real(dp), intent(in) :: P !! dynes/cm2
-    real(dp), intent(in) :: T !! K
+    real(dp), intent(in) :: u(2) !! K
     real(dp), intent(in) :: f_CO2_dry, f_N2_dry
+    real(dp), intent(in) :: planet_mass, planet_radius
     
-    real(dp) :: dTdP
+    real(dp) :: rhs(2)
     
+    real(dp) :: T, z
     real(dp) :: mubar, cp
     real(dp) :: f_CO2, f_N2
-    real(dp) :: f_H2O, mass_frac_H2O
+    real(dp) :: f_H2O, mass_frac_H2O, grav
+    real(dp) :: dTdP, dzdP
+    
+    ! unpack u
+    T = u(1)
+    z = u(2)
   
     call mixing_ratios_moist(P, T, f_CO2_dry, f_N2_dry, f_H2O, f_CO2, f_N2)
     
@@ -675,10 +708,33 @@ contains
     ! mass fraction of atmosphere that is H2O
     mass_frac_H2O = (MU_H2O/mubar)*f_H2O
     
-    ! adiabat
+    ! How T changes with pressure
     dTdP = ((N_avo*k_boltz*T)/(P*mubar))* &
             (1.0_dp + (L_H2O*mubar*mass_frac_H2O)/(N_avo*k_boltz*T))/ &
             (cp + (L_H2O**2.0_dp*MU_H2O*mass_frac_H2O)/(N_avo*k_boltz*T**2.0_dp))
+    
+    ! How altitude changes with pressure
+    grav = gravity(planet_radius, planet_mass, z)
+    dzdP = -(N_avo*k_boltz*T)/(grav*P*mubar)
+    
+    rhs = [dTdP, dzdP]
+    
+  end function
+  
+  !!!!!!!!!!!!!!!!!!!!!!!!
+  !!! useful functions !!!
+  !!!!!!!!!!!!!!!!!!!!!!!!
+  
+  !! analytical solution for z(P) for constant mubar and T
+  pure function altitude_vs_P(P, T, mubar, P0, z0, planet_mass, planet_radius) result(z)
+    use clima_const, only: k_boltz, N_avo
+    real(dp), intent(in) :: P
+    real(dp), intent(in) :: T, mubar, P0, z0, planet_mass, planet_radius
+    real(dp) :: z
+    real(dp), parameter :: G_grav_cgs = 6.67e-8_dp
+    
+    z = ((N_avo*k_boltz*T)/(G_grav_cgs*planet_mass*mubar)*log(P/P0) &
+        + 1/(planet_radius + z0))**(-1.0_dp) - planet_radius
 
   end function
   
@@ -741,4 +797,3 @@ contains
   end function
   
 end module
-! end submodule

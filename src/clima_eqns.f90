@@ -137,21 +137,33 @@ contains
     enddo
   end subroutine
   
-  pure subroutine gravity(radius, mass, nz, z, grav)
+  ! pure subroutine gravity(radius, mass, nz, z, grav)
+  !   use clima_const, only: G_grav
+  !   real(dp), intent(in) :: radius, mass ! radius in cm, mass in grams
+  !   integer, intent(in) :: nz
+  !   real(dp), intent(in) :: z(nz) ! cm
+  !   real(dp), intent(out) :: grav(nz) ! cm/s2
+  ! 
+  !   integer :: i
+  ! 
+  !   do i = 1, nz              
+  !     grav(i) = G_grav * (mass/1.e3_dp) / ((radius + z(i))/1.e2_dp)**2.0_dp
+  !     grav(i) = grav(i)*1.e2_dp ! convert to cgs
+  !   enddo 
+  ! 
+  ! end subroutine
+  
+  pure function gravity(radius, mass, z) result(grav)
     use clima_const, only: G_grav
     real(dp), intent(in) :: radius, mass ! radius in cm, mass in grams
-    integer, intent(in) :: nz
-    real(dp), intent(in) :: z(nz) ! cm
-    real(dp), intent(out) :: grav(nz) ! cm/s2
-
-    integer :: i
+    real(dp), intent(in) :: z ! cm
     
-    do i = 1, nz              
-      grav(i) = G_grav * (mass/1.e3_dp) / ((radius + z(i))/1.e2_dp)**2.0_dp
-      grav(i) = grav(i)*1.e2_dp ! convert to cgs
-    enddo 
+    real(dp) :: grav ! cm/s2
+           
+    grav = G_grav * (mass/1.0e3_dp) / ((radius + z)/1.0e2_dp)**2.0_dp
+    grav = grav*1.0e2_dp ! convert to cgs
     
-  end subroutine
+  end function
   
   pure subroutine press_and_den(nz, T, grav, Psurf, dz, &
                                 mubar, pressure, density)
