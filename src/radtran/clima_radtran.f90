@@ -41,7 +41,8 @@ module clima_radtran
     
     type(ClimaRadtranWrk) :: wrk_ir
     
-  
+  contains
+    procedure :: radiate => RadtranIR_radiate
   end type
   
   type, extends(RadtranIR) :: Radtran
@@ -58,6 +59,7 @@ module clima_radtran
   
   interface RadtranIR
     module procedure :: create_RadtranIR
+    module procedure :: create_RadtranIR_
   end interface
   
 contains
