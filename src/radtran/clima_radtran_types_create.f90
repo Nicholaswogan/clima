@@ -94,6 +94,8 @@ contains
     allocate(rw%cia(nz,op%ncia))
     allocate(rw%axs(nz,op%naxs))
     allocate(rw%pxs(nz,op%npxs))
+    allocate(rw%H2O(nz))
+    allocate(rw%foreign(nz))
     
     ! if there are k-distributions
     ! then we need to allocate some work arrays
@@ -315,6 +317,16 @@ contains
       op%npxs = 0
     endif
     
+    !!!!!!!!!!!!!!!!!
+    !!! Continuum !!!
+    !!!!!!!!!!!!!!!!!
+    if (allocated(sop%water_continuum)) then
+      allocate(op%cont)
+      filename = datadir//"/water_continuum/"//trim(sop%water_continuum)//".h5"
+      op%cont = create_WaterContinuum(sop%water_continuum, filename, species_names, op%wavl, err)
+      if (allocated(err)) return
+    endif
+    
   end function
   
   subroutine read_wavl(filename, optype, wavl, err)
@@ -357,6 +369,181 @@ contains
     call h%close()
     
   end subroutine
+  
+  function create_WaterContinuum(model, filename, species_names, wavl, err) result(cont)
+    use clima_const, only: log10tiny
+    use h5fortran
+    use futils, only: addpnt, inter2
+    
+    character(*), intent(in) :: model
+    character(*), intent(in) :: filename
+    character(*), intent(in) :: species_names(:)
+    real(dp), intent(in) :: wavl(:)
+    character(:), allocatable, intent(out) :: err
+    
+    type(WaterContinuum) :: cont
+    integer(HSIZE_T), allocatable :: dims(:)
+    real(dp), allocatable :: wav_f(:), wav_f_save(:), tmp_xs(:,:)
+    real(dp), allocatable :: log10_xs_H2O(:,:)
+    real(dp), allocatable :: log10_xs_foreign(:,:)
+    integer :: i, k, kk, ierr, ind
+    real(dp), parameter :: rdelta = 1.0e-4_dp
+    
+    type(hdf5_file) :: h
+    
+    ! Look for H2O
+    ind = findloc(species_names,"H2O",1)
+    if (ind == 0) then
+      err = '"H2O" must be a species to include the "continuum" opacity'
+      return
+    endif
+    if (.not. size(species_names) > 1) then
+      err = 'There must be more than 1 species in order to use the "continuum"'// &
+            ' opacity'
+      return
+    endif
+    
+    cont%LH2O = ind
+
+    if (.not. is_hdf5(filename)) then
+      err = 'Continuum "'//model//'" is not avaliable.'
+      return
+    endif
+    
+    call h%open(filename,'r')
+    
+    call check_h5_dataset(h, "wavelengths", 1, H5T_FLOAT_F, filename, err)
+    if (allocated(err)) then
+      call h%close()
+      return
+    endif
+    call h%shape("wavelengths", dims)
+    allocate(wav_f(dims(1)+4))
+    wav_f = 0.0_dp
+    call h%read("wavelengths", wav_f(1:dims(1)))
+    wav_f = wav_f*1.0e3_dp ! convert from um to nm
+    wav_f_save = wav_f
+    
+    call check_h5_dataset(h, "T", 1, H5T_FLOAT_F, filename, err)
+    if (allocated(err)) then
+      call h%close()
+      return
+    endif
+    call h%shape("T", dims)
+    cont%ntemp = dims(1)
+    allocate(cont%temp(cont%ntemp))
+    call h%read("T", cont%temp)
+    
+    !!!!!!!!!!!
+    !!! H2O !!!
+    !!!!!!!!!!!
+    call check_h5_dataset(h, "log10xs_H2O", 2, H5T_FLOAT_F, filename, err)
+    if (allocated(err)) then
+      call h%close()
+      return
+    endif
+    call h%shape("log10xs_H2O", dims)
+    if (dims(1) /= cont%ntemp) then
+      err = '"log10xs_H2O" has a bad dimension in "'//trim(filename)//'"'
+      call h%close()
+      return
+    endif
+    allocate(log10_xs_H2O(dims(1), dims(2)+4))
+    log10_xs_H2O = 0.0_dp
+    call h%read("log10xs_H2O", log10_xs_H2O(:,1:dims(2)))
+    
+    allocate(tmp_xs(cont%ntemp,size(wavl)))
+    
+    kk = dims(2) + 4
+    do i = 1,cont%ntemp
+      k = dims(2)
+      call addpnt(wav_f, log10_xs_H2O(i,:), kk, k, wav_f(1)*(1.0_dp-rdelta), log10tiny,ierr)
+      call addpnt(wav_f, log10_xs_H2O(i,:), kk, k, 0.0_dp, log10tiny,ierr)
+      call addpnt(wav_f, log10_xs_H2O(i,:), kk, k, wav_f(k)*(1.0_dp+rdelta), log10tiny,ierr)
+      call addpnt(wav_f, log10_xs_H2O(i,:), kk, k, huge(rdelta), log10tiny,ierr)
+      if (ierr /= 0) then
+        err = 'Problem interpolating data in "'//trim(filename)//'"'
+        call h%close()
+        return
+      endif
+      call inter2(size(wavl), wavl, tmp_xs(i,:), &
+                  kk, wav_f, log10_xs_H2O(i,:), ierr)
+      if (ierr /= 0) then
+        err = 'Problem interpolating data in "'//trim(filename)//'"'
+        call h%close()
+        return
+      endif
+      
+      wav_f = wav_f_save
+    enddo
+    
+    allocate(cont%log10_xs_H2O(size(wavl) - 1))
+    do i = 1,size(wavl)-1
+      call cont%log10_xs_H2O(i)%initialize(cont%temp, tmp_xs(:,i), ierr)
+      if (ierr /= 0) then
+        err = 'Failed to initialize interpolator for "'//filename//'"'
+        call h%close()
+        return
+      endif
+    enddo
+    deallocate(tmp_xs)
+    
+    !!!!!!!!!!!!!!!
+    !!! foreign !!!
+    !!!!!!!!!!!!!!!
+    call check_h5_dataset(h, "log10xs_foreign", 2, H5T_FLOAT_F, filename, err)
+    if (allocated(err)) then
+      call h%close()
+      return
+    endif
+    call h%shape("log10xs_foreign", dims)
+    if (dims(1) /= cont%ntemp) then
+      err = '"log10xs_foreign" has a bad dimension in "'//trim(filename)//'"'
+      call h%close()
+      return
+    endif
+    allocate(log10_xs_foreign(dims(1), dims(2)+4))
+    log10_xs_foreign = 0.0_dp
+    call h%read("log10xs_foreign", log10_xs_foreign(:,1:dims(2)))
+    
+    allocate(tmp_xs(cont%ntemp,size(wavl)))
+    
+    kk = dims(2) + 4
+    do i = 1,cont%ntemp
+      k = dims(2)
+      call addpnt(wav_f, log10_xs_foreign(i,:), kk, k, wav_f(1)*(1.0_dp-rdelta), log10tiny,ierr)
+      call addpnt(wav_f, log10_xs_foreign(i,:), kk, k, 0.0_dp, log10tiny,ierr)
+      call addpnt(wav_f, log10_xs_foreign(i,:), kk, k, wav_f(k)*(1.0_dp+rdelta), log10tiny,ierr)
+      call addpnt(wav_f, log10_xs_foreign(i,:), kk, k, huge(rdelta), log10tiny,ierr)
+      if (ierr /= 0) then
+        err = 'Problem interpolating data in "'//trim(filename)//'"'
+        call h%close()
+        return
+      endif
+      call inter2(size(wavl), wavl, tmp_xs(i,:), &
+                  kk, wav_f, log10_xs_foreign(i,:), ierr)
+      if (ierr /= 0) then
+        err = 'Problem interpolating data in "'//trim(filename)//'"'
+        call h%close()
+        return
+      endif
+      
+      wav_f = wav_f_save
+    enddo
+    
+    allocate(cont%log10_xs_foreign(size(wavl) - 1))
+    do i = 1,size(wavl)-1
+      call cont%log10_xs_foreign(i)%initialize(cont%temp, tmp_xs(:,i), ierr)
+      if (ierr /= 0) then
+        err = 'Failed to initialize interpolator for "'//filename//'"'
+        call h%close()
+        return
+      endif
+    enddo
+    
+    call h%close()
+    
+  end function
   
   function create_RayleighXsection(filename, dict, sp, sp_ind, wavl, err) result(xs)
     use clima_eqns, only: rayleigh_vardavas

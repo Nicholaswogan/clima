@@ -44,6 +44,14 @@ module clima_radtran_types
     type(linear_interp_1d), allocatable :: log10_xs_1d(:) ! (nw) 
   end type
   
+  type :: WaterContinuum
+    integer :: LH2O ! index of H2O
+    integer :: ntemp ! number of temperatures
+    real(dp), allocatable :: temp(:) ! (ntemp) Kelvin
+    type(linear_interp_1d), allocatable :: log10_xs_H2O(:) ! (nw) 
+    type(linear_interp_1d), allocatable :: log10_xs_foreign(:) ! (nw) 
+  end type
+  
   ! integer :: k_method 
   enum, bind(c)
     enumerator :: K_RandomOverlap, k_RandomOverlapResortRebin
@@ -87,6 +95,10 @@ module clima_radtran_types
     integer :: npxs
     type(Xsection), allocatable :: pxs(:)
     
+    ! Water Continuum absorption. Can only be a thing if H2O is a species
+    ! and if there are other gases in the atmosphere.
+    type(WaterContinuum), allocatable :: cont
+    
   end type
   
   interface
@@ -116,6 +128,7 @@ module clima_radtran_types
     real(dp), allocatable :: cia(:,:)
     real(dp), allocatable :: axs(:,:)
     real(dp), allocatable :: pxs(:,:)
+    real(dp), allocatable :: H2O(:), foreign(:)
     
     ! work arrays that are needed only if
     ! k_method == k_RandomOverlapResortRebin

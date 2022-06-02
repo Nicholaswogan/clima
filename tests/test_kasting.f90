@@ -6,11 +6,11 @@ program test_kasting
   
   type(KastingClimateModel) :: c
   integer :: nz, i
-  real(dp) :: OLR(300)
-  real(dp) :: T_surf(300)
+  real(dp) :: OLR(100)
+  real(dp) :: T_surf(100)
   character(:), allocatable :: err
   
-  nz = 50
+  nz = 100
   
   c = KastingClimateModel('../data', nz, err)
   if (allocated(err)) then
@@ -26,19 +26,20 @@ program test_kasting
   enddo
   print*,''
   
+  
 
-  T_surf = linspace(220.0_dp, 1800.0_dp, 300)
+  T_surf = linspace(220.0_dp, 1000.0_dp, 100)
 
 
   do i = 1,size(T_surf)
-    OLR(i) = c%OLR(T_surf(i), 270.0e6_dp, 0.000000001e6_dp, 1.0e6_dp, err)
+    OLR(i) = c%OLR(T_surf(i), 0.1e6_dp, 90.0e6_dp, 3.0e6_dp, err)
     if (allocated(err)) then
       print*,err
       stop 1
     endif
   enddo
   
-  open(unit=1,file='../runaway1.dat',form='unformatted',status='replace')
+  open(unit=1,file='../runaway.dat',form='unformatted',status='replace')
   write(1) T_surf
   write(1) OLR
   close(1)

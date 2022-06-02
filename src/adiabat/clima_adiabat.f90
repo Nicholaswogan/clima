@@ -50,10 +50,11 @@ contains
     ! create the settings
     allocate(s%ir)
     s%ir%k_method = "RandomOverlapResortRebin"
-    s%ir%nbins = 8
+    s%ir%nbins = 16
     s%ir%k_distributions = ['H2O', 'CO2']  
-    s%ir%cia = ['H2O-H2O']
+    s%ir%cia = ['CO2-CO2']
     s%ir%rayleigh = ['H2O', 'CO2', 'N2 ']
+    s%ir%water_continuum = "MT_CKD"
     
     c%nz = nz
     ! species names

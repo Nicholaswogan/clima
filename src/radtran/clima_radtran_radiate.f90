@@ -53,6 +53,7 @@ contains
     ! other work
     real(dp) :: dfreq
     real(dp), allocatable :: cols(:,:)
+    real(dp), allocatable :: foreign_col(:)
     
     kset => op%kset
     nz = size(dz)
@@ -61,6 +62,17 @@ contains
     do i = 1,ng
       cols(:,i) = densities(:,i)*dz(:)
     enddo
+    if (allocated(op%cont)) then
+      allocate(foreign_col(nz))
+      do j = 1,nz
+        foreign_col(j) = 0.0_dp
+        do i = 1,ng
+          if (i /= op%cont%LH2O) then
+            foreign_col(j) = foreign_col(j) + cols(j,i)
+          endif
+        enddo
+      enddo
+    endif
     
     !$omp parallel private(i, j, k, l, n, jj, &
     !$omp& iks, avg_freq, &
@@ -94,7 +106,12 @@ contains
       do i = 1,op%npxs
         call interpolate_Xsection(op%pxs(i), l, P, T, rw%pxs(:,i))
       enddo
-    
+      
+      ! continuum absorption
+      if (allocated(op%cont)) then
+        call interpolate_WaterContinuum(op%cont, l, T, rw%H2O, rw%foreign)
+      endif
+      
       ! compute tau
       ! rayleigh scattering
       rz%tausg(:) = 0.0_dp
@@ -135,6 +152,16 @@ contains
         enddo
       enddo
       
+      ! continuum absorption
+      if (allocated(op%cont)) then
+        do k = 1,nz
+          n = nz+1-k
+          rz%taua(n) = rz%taua(n) &
+                       + rw%H2O(k)*densities(k,op%cont%LH2O)*cols(k,op%cont%LH2O) &
+                       + rw%foreign(k)*densities(k,op%cont%LH2O)*foreign_col(k)
+        enddo
+      endif
+
       ! plank function, only if in the IR
       ! bplanck has units [mW sr^−1 m^−2 Hz^-1]
       if (op%op_type == IROpticalProperties) then
@@ -444,16 +471,33 @@ contains
       enddo
     elseif (xs%dim == 1) then
       do j = 1,size(P)
-        if (T(j) < minval(xs%temp)) then
-          call xs%log10_xs_1d(l)%evaluate(minval(xs%temp), val)
-        elseif (T(j) > maxval(xs%temp)) then
-          call xs%log10_xs_1d(l)%evaluate(maxval(xs%temp), val)
-        else
-          call xs%log10_xs_1d(l)%evaluate(T(j), val)
-        endif
+        call xs%log10_xs_1d(l)%evaluate(T(j), val)
         res(j) = ten2power(val)
       enddo
     endif
+    
+  end subroutine
+  
+  subroutine interpolate_WaterContinuum(cont, l, T, H2O, foreign)
+    use clima_radtran_types, only: WaterContinuum
+    use clima_eqns, only: ten2power
+    
+    type(WaterContinuum), intent(inout) :: cont
+    integer, intent(in) :: l
+    real(dp), intent(in) :: T(:)
+    real(dp), intent(out) :: H2O(size(T))
+    real(dp), intent(out) :: foreign(size(T))
+    
+    integer :: j
+    real(dp) :: val
+    
+    do j = 1,size(T)
+      call cont%log10_xs_H2O(l)%evaluate(T(j), val)
+      H2O(j) = ten2power(val)
+      
+      call cont%log10_xs_foreign(l)%evaluate(T(j), val)
+      foreign(j) = ten2power(val)
+    enddo
     
   end subroutine
   

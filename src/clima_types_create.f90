@@ -532,7 +532,13 @@ contains
         return
       endif
     endif
-
+    
+    ! continuum
+    node => opacities%get("water-continuum")
+    if (associated(node)) then
+      op%water_continuum = trim(opacities%get_string("water-continuum", error=io_err))
+    endif
+    
   end subroutine
   
   pure function check_for_duplicates(str_list) result(ind)

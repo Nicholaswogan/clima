@@ -18,6 +18,7 @@ module clima_types
     logical, allocatable :: rayleigh_bool
     character(s_str_len), allocatable :: absorption_xs(:)
     character(s_str_len), allocatable :: photolysis_xs(:)
+    character(:), allocatable :: water_continuum
   end type
   
   type :: ClimaSettings  
