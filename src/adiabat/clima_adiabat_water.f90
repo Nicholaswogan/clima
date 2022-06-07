@@ -148,11 +148,10 @@ contains
       call integrate_moist_start(self, d, err)
       if (allocated(err)) return
     else
-      
-      stop 1
-      
+      call integrate_dry_start(self, d, err)
+      if (allocated(err)) return
     endif
-
+    
   end subroutine
   
   subroutine integrate_moist_start(c, d, err)
@@ -163,8 +162,8 @@ contains
     
     type(dop853_custom) :: dop
     logical :: status_ok
-    integer :: idid, i
-    real(dp) :: u(2), Pn
+    integer :: idid, i, j
+    real(dp) :: u(2), Pn, mubar
     
     call dop%initialize(fcn=rhs_moist_dop, solout=solout_moist, n=2, &
                         iprint=0, icomp=[1,2], status_ok=status_ok)
@@ -185,6 +184,160 @@ contains
     u = [d%T_surf, 0.0_dp]
     Pn = d%P_surf
     call dop%integrate(Pn, u, c%P_top, [1.0e-9_dp], [1.0e-6_dp], iout=2, idid=idid)
+    if (allocated(d%err)) then
+      err = d%err
+      return
+    endif
+    if (idid < 0) then
+      err = 'dop853 integration failed'
+      return
+    endif
+    
+    if (d%stopping_reason == ReachedPtop) then
+      ! Nothing to do.
+    elseif (d%stopping_reason == ReachedTropopause) then
+      ! Values at tropopause
+      d%P(d%j) = d%P_trop
+      d%T(d%j) = c%T_trop
+      d%z(d%j) = d%z_trop
+      
+      call mixing_ratios_moist(c, d, d%P(d%j), d%T(d%j), d%f_i(d%j,:))
+      
+      ! Values above the tropopause
+      do i = d%j+1,size(d%z)
+        d%T(i) = c%T_trop
+        d%f_i(i,:) = d%f_i(d%j,:)
+        mubar = 0.0_dp
+        do j = 1,c%sp%ng
+          mubar = mubar + d%f_i(d%j,j)*c%sp%g(j)%mass
+        enddo
+        d%z(i) = altitude_vs_P(d%P(i), c%T_trop, mubar, d%P_trop, &
+                 d%z_trop, c%planet_mass, c%planet_radius) 
+      enddo
+      
+    endif
+    
+  end subroutine
+  
+  subroutine integrate_dry_start(c, d, err)
+    type(AdiabatClimateModel), target, intent(in) :: c
+    type(AdiabatProfileData), target, intent(inout) :: d
+    
+    character(:), allocatable, intent(out) :: err
+    
+    type(dop853_custom) :: dop
+    logical :: status_ok
+    integer :: idid, i, j, ind
+    real(dp) :: u(2), Pn
+    real(dp) :: mubar
+    
+    call dop%initialize(fcn=rhs_dry_dop, solout=solout_dry, n=2, &
+                        iprint=0, icomp=[1,2], status_ok=status_ok)
+    dop%c => c
+    dop%d => d ! associate data
+    d%j = 2
+    d%T(1) = d%T_surf
+    d%z(1) = 0.0_dp
+    d%f_i(1,:) = d%f_i_surf(:)
+    d%stopping_reason = ReachedPtop
+    if (.not. status_ok) then
+      err = 'dop853 initialization failed'
+      return
+    endif
+    
+    ! integrate
+    u = [d%T_surf, 0.0_dp]
+    Pn = d%P_surf
+    call dop%integrate(Pn, u, c%P_top, [1.0e-9_dp], [1.0e-6_dp], iout=2, idid=idid)
+    if (allocated(d%err)) then
+      err = d%err
+      return
+    endif
+    if (idid < 0) then
+      err = 'dop853 integration failed'
+      return
+    endif
+    
+    if (d%stopping_reason == ReachedPtop) then
+      ! Nothing to do.
+    elseif (d%stopping_reason == ReachedTropopause) then
+      ! We must compute results at and above the tropopause
+      
+      ! Values at tropopause
+      d%P(d%j) = d%P_trop
+      d%T(d%j) = c%T_trop
+      d%z(d%j) = d%z_trop
+      d%f_i(d%j,:) = d%f_i_surf(:)
+      
+      ! Values above the tropopause
+      do i = d%j+1,size(d%z)
+        d%T(i) = c%T_trop
+        d%f_i(i,:) = d%f_i(d%j,:)
+        mubar = 0.0_dp
+        do j = 1,c%sp%ng
+          mubar = mubar + d%f_i(d%j,j)*c%sp%g(j)%mass
+        enddo
+        d%z(i) = altitude_vs_P(d%P(i), c%T_trop, mubar, d%P_trop, &
+                 d%z_trop, c%planet_mass, c%planet_radius) 
+      enddo
+      
+
+    elseif (d%stopping_reason == ReachedMoistAdiabat) then
+      ! ! Do another integration with a moist adiabat
+      call dop%initialize(fcn=rhs_moist_dop, solout=solout_moist, n=2, &
+                          iprint=0, icomp=[1,2], status_ok=status_ok)
+      dop%c => c
+      dop%d => d ! associate data
+      d%stopping_reason = ReachedPtop
+      if (.not. status_ok) then
+        err = 'dop853 initialization failed'
+        return
+      endif
+      
+      u = [d%T_bound, d%z_bound]
+      Pn = d%P_bound
+      call dop%integrate(Pn, u, c%P_top, [1.0e-9_dp], [1.0e-6_dp], iout=2, idid=idid)
+      if (allocated(d%err)) then
+        err = d%err
+        return
+      endif
+      if (idid < 0) then
+        err = 'dop853 integration failed'
+        return
+      endif
+      
+      ! In either case, we must save where the dry-moist
+      ! transition occured
+      ind = minloc(abs(d%P - d%P_bound), 1)
+      d%P(ind) = d%P_bound
+      d%T(ind) = d%T_bound
+      d%z(ind) = d%z_bound
+      d%f_i(ind,:) = d%f_i_surf(:)
+      
+      if (d%stopping_reason == ReachedPtop) then
+        ! Nothing more to do
+      elseif (d%stopping_reason == ReachedTropopause) then
+        ! Values at tropopause
+        d%P(d%j) = d%P_trop
+        d%T(d%j) = c%T_trop
+        d%z(d%j) = d%z_trop
+        call mixing_ratios_moist(c, d, d%P(d%j), d%T(d%j), d%f_i(d%j,:))
+        
+        ! Values above the tropopause
+        do i = d%j+1,size(d%z)
+          d%T(i) = c%T_trop
+          d%f_i(i,:) = d%f_i(d%j,:)
+          mubar = 0.0_dp
+          do j = 1,c%sp%ng
+            mubar = mubar + d%f_i(d%j,j)*c%sp%g(j)%mass
+          enddo
+          d%z(i) = altitude_vs_P(d%P(i), c%T_trop, mubar, d%P_trop, &
+                   d%z_trop, c%planet_mass, c%planet_radius) 
+        enddo
+      
+      endif
+      
+    endif
     
     
     
@@ -194,7 +347,7 @@ contains
     use minpack_module, only: lmdif1
     
     class(dop853_class),intent(inout) :: dop
-    type(AdiabatClimateModel), intent(inout) :: c
+    type(AdiabatClimateModel), intent(in) :: c
     type(AdiabatProfileData), intent(inout) :: d
     real(dp), intent(in) :: P_cur, P_old
     
@@ -227,6 +380,197 @@ contains
       T = dop%contd8(1, P)
       fvec(1) = c%T_trop - T
     end subroutine
+    
+  end subroutine
+  
+  subroutine find_dry_moist_boundary(dop, c, d, P_cur, P_old)
+    use minpack_module, only: lmdif1
+    
+    class(dop853_class),intent(inout) :: dop
+    type(AdiabatClimateModel), intent(in) :: c
+    type(AdiabatProfileData), intent(inout) :: d
+    real(dp), intent(in) :: P_cur, P_old
+      
+    integer, parameter :: n = 1, m = 1
+    real(dp) :: x(1)
+    real(dp) :: fvec(1)
+    real(dp), parameter :: tol = 1.0e-8_dp
+    integer :: info
+    integer :: iwa(n)
+    integer, parameter :: lwa = (n*(3*n+13))/2 + 1
+    real(dp) :: wa(lwa)
+    
+    x(1) = log10(0.5_dp*(P_cur+P_old))
+    call lmdif1(fcn, m, n, x, fvec, tol, info, iwa, wa, lwa)
+    if (info < 1 .or. info > 4) then
+      d%err = 'lmdif1 root solve failed'
+    endif
+    allocate(d%P_bound)
+    d%P_bound = 10.0_dp**x(1)
+    
+  contains
+    subroutine fcn(m, n, x, fvec, iflag)
+      integer, intent(in) :: m !! the number of variables.
+      integer, intent(in) :: n !! the number of variables.
+      real(dp), intent(in) :: x(n) !! independent variable vector
+      real(dp), intent(out) :: fvec(n) !! value of function at `x`
+      integer, intent(inout) :: iflag !! set to <0 to terminate execution
+      real(dp) :: T, P, p_H2O_sat
+      P = 10.0_dp**x(1)
+      T = dop%contd8(1, P)
+      p_H2O_sat = sat_pressure_H2O(T, c%sp%g(c%LH2O)%mass)
+      fvec(1) = p_H2O_sat - P*d%f_i_surf(c%LH2O)
+    end subroutine
+  end subroutine
+  
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !!! Dry adiabat funcitons !!!
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  
+  subroutine solout_dry(self, nr, xold, x, y, irtrn, xout)
+    class(dop853_class),intent(inout) :: self
+    integer,intent(in)                :: nr
+    real(dp),intent(in)               :: xold
+    real(dp),intent(in)               :: x
+    real(dp),dimension(:),intent(in)  :: y
+    integer,intent(inout)             :: irtrn
+    real(dp),intent(out)              :: xout
+    
+    type(AdiabatClimateModel), pointer :: c
+    type(AdiabatProfileData), pointer :: d
+    
+    real(dp) :: T_cur, z_cur, P_cur, P_old
+    real(dp) :: PP
+    real(dp) :: mu_H2O, p_H2O_sat
+    
+    P_old = xold
+    P_cur = x
+    T_cur = y(1)
+    z_cur = y(2)
+    
+    select type (self)
+    class is (dop853_custom)
+      c => self%c
+      d => self%d
+    end select
+    
+    ! Check if the integration needs to be stopped 
+    if (T_cur < c%T_trop) then
+      ! Hit the tropopause
+
+      ! Solve for the exact pressure of
+      ! the tropopause.
+      call find_tropopause(self, c, d, P_cur, P_old)
+      
+      ! altitude of tropopause
+      allocate(d%z_trop)
+      d%z_trop = self%contd8(2, d%P_trop)
+      
+      d%stopping_reason = ReachedTropopause
+      irtrn = -1
+      
+    elseif (c%T_trop <= T_cur .and. T_cur < T_crit_H2O) then
+      mu_H2O = c%sp%g(c%LH2O)%mass
+      p_H2O_sat = sat_pressure_H2O(T_cur, mu_H2O)
+      if (d%f_i_surf(c%LH2O)*P_cur > p_H2O_sat) then
+        ! Entered the moist adiabat regime.
+        
+        ! Solve for the exact P where we entered the
+        ! moist regime.
+        call find_dry_moist_boundary(self, c, d, P_cur, P_old)
+        
+        allocate(d%T_bound, d%z_bound)
+        d%T_bound = self%contd8(1, d%P_bound)
+        d%z_bound = self%contd8(2, d%P_bound)
+        
+        d%stopping_reason = ReachedMoistAdiabat
+        irtrn = -2
+  
+      endif
+
+    endif
+    
+    ! save results
+    if (d%j <= size(d%P)) then
+    
+      if (d%P(d%j) <= P_old .and. d%P(d%j) >= P_cur) then
+        if (irtrn == -1) then
+          PP = d%P_trop
+        elseif (irtrn == -2) then
+          PP = d%P_bound
+        else
+          PP = P_cur
+        endif
+      
+        do while (d%P(d%j) >= PP)
+          d%T(d%j) = self%contd8(1, d%P(d%j))
+          d%z(d%j) = self%contd8(2, d%P(d%j))
+          d%f_i(d%j, :) = d%f_i_surf(:)
+          d%j = d%j + 1
+          if (d%j > size(d%P)) exit
+        enddo
+      endif
+      
+    endif
+    
+    
+    
+  end subroutine
+  
+  subroutine rhs_dry_dop(self, P, u, du)
+    use clima_const, only: Rgas
+    use clima_eqns, only: gravity, heat_capacity_eval
+    class(dop853_class), intent(inout) :: self
+    real(dp), intent(in) :: P
+    real(dp), intent(in), dimension(:) :: u
+    real(dp), intent(out), dimension(:) :: du
+    
+    type(AdiabatClimateModel), pointer :: c
+    type(AdiabatProfileData), pointer :: d
+    
+    real(dp) :: T, z
+    real(dp) :: mubar, cp, tmp
+    logical :: found
+    real(dp) :: grav
+    real(dp) :: dT_dP, dz_dP
+    integer :: i
+    
+    select type (self)
+    class is (dop853_custom)
+      c => self%c
+      d => self%d
+    end select
+    
+    ! unpack u
+    T = u(1)
+    z = u(2)
+    
+    ! mean molecular weight
+    cp = 0.0_dp
+    mubar = 0.0_dp
+    do i = 1,c%sp%ng
+        mubar = mubar + d%f_i_surf(i)*c%sp%g(i)%mass
+        
+        ! J/(mol*K)
+        call heat_capacity_eval(c%sp%g(i)%thermo, T, found, tmp)
+        if (.not. found) then
+          print*,'not good!'
+          stop 1
+        endif
+        ! J/(kg*K)
+        cp = cp + d%f_i_surf(i)*tmp*(1.0_dp/(c%sp%g(i)%mass*1.0e-3_dp))
+    enddo
+    ! convert to erg/(g*K)
+    cp = cp*1.0e4_dp
+    
+    ! How T changes with pressure
+    dT_dP = (Rgas*T)/(P*mubar*cp)
+    
+    ! How altitude changes with pressure
+    grav = gravity(c%planet_radius, c%planet_mass, z)
+    dz_dP = -(Rgas*T)/(grav*P*mubar)
+    
+    du = [dT_dP, dz_dP]
     
   end subroutine
   
@@ -320,10 +664,8 @@ contains
         f_i_layer(i) = f_dry*d%f_i_dry(i)
       endif
     enddo
-    print*,f_i_layer
     
   end subroutine
-  
   
   subroutine rhs_moist_dop(self, P, u, du)
     use clima_const, only: Rgas
@@ -375,8 +717,8 @@ contains
     f_dry = 1.0_dp - f_H2O
     
     ! mudry and dry heat capacity
-    mu_dry = tiny(1.0_dp)**(0.25_dp)
-    cp_dry = tiny(1.0_dp)**(0.25_dp)
+    mu_dry = tiny(0.0_dp)
+    cp_dry = tiny(0.0_dp)
     do i = 1,c%sp%ng
       if (i /= c%LH2O) then
         mu_dry = mu_dry + d%f_i_dry(i)*c%sp%g(i)%mass

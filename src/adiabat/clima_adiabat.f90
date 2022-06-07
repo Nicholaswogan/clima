@@ -57,10 +57,12 @@ module clima_adiabat
     type(RadtranIR) :: rad
     
     ! work variables
-    
+    real(dp), allocatable :: P(:), T(:), f_i(:,:), z(:), dz(:)
+    real(dp), allocatable :: densities(:,:)
     
   contains
     procedure :: make_profile => AdiabatClimateModel_make_profile
+    procedure :: OLR => AdiabatClimateModel_OLR
   end type
   
   interface AdiabatClimateModel
@@ -142,7 +144,9 @@ contains
     c%rad = RadtranIR(datadir, c%species_names, s, c%nz, err)
     if (allocated(err)) return
 
-    ! allocate work memory
+    ! allocate work variables
+    allocate(c%P(c%nz), c%T(c%nz), c%f_i(c%nz,c%sp%ng), c%z(c%nz), c%dz(c%nz))
+    allocate(c%densities(c%nz,c%sp%ng))
     
   end function
   
@@ -154,21 +158,54 @@ contains
     character(:), allocatable, intent(out) :: err
     
     real(dp), allocatable :: P_e(:), z_e(:), T_e(:), f_i_e(:,:)
+    real(dp), allocatable :: density(:)
+    integer :: i, j
     
     allocate(P_e(self%nz+1),  z_e(self%nz+1), T_e(self%nz+1))
     allocate(f_i_e(self%nz+1,self%sp%ng))
+    allocate(density(self%nz))
     
     call make_profile_a(self, T_surf, P_i_surf, &
                         P_e, z_e, T_e, f_i_e, &
                         err)
     if (allocated(err)) return
     
+    do i = 1,self%nz
+      self%P(i) = sqrt(P_e(i)*P_e(i+1))
+      self%T(i) = 0.5_dp*(T_e(i)+T_e(i+1))
+      self%z(i) = 0.5_dp*(z_e(i)+z_e(i+1))
+      self%dz(i) = z_e(i+1) - z_e(i)
+      
+      do j =1,self%sp%ng
+        self%f_i(i,j) = sqrt(f_i_e(i,j)*f_i_e(i+1,j))
+      enddo
+    enddo
     
+    density = self%P/(k_boltz*self%T)
+    do j =1,self%sp%ng
+      self%densities(:,j) = self%f_i(:,j)*density(:)
+    enddo
     
   end subroutine
   
+  function AdiabatClimateModel_OLR(self, T_surf, P_i_surf, err) result(OLR)
+    class(AdiabatClimateModel), intent(inout) :: self
+    real(dp), target, intent(in) :: T_surf !! K
+    real(dp), target, intent(in) :: P_i_surf(:)
+    character(:), allocatable, intent(out) :: err
+    
+    real(dp) :: OLR
+    
+    ! make atmosphere profile
+    call self%make_profile(T_surf, P_i_surf, err)
+    if (allocated(err)) return
+    
+    ! Do radiative transfer
+    ! MUST CONVERT P TO BARS
+    OLR = self%rad%OLR(self%T, self%P/1.0e6_dp, self%densities, self%dz, err)
+    if (allocated(err)) return
   
-  
+  end function
   
   function create_KastingClimateModel(datadir, nz, err) result(c)
     use clima_types, only: ClimaSettings 
