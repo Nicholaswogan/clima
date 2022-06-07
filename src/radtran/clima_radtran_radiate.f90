@@ -51,7 +51,7 @@ contains
     integer :: iks(op%nk)
     
     ! other work
-    real(dp) :: dfreq
+    real(dp) :: dfreq, TT, log10P, log10PP
     real(dp), allocatable :: cols(:,:)
     real(dp), allocatable :: foreign_col(:)
     
@@ -75,7 +75,7 @@ contains
     endif
     
     !$omp parallel private(i, j, k, l, n, jj, &
-    !$omp& iks, avg_freq, &
+    !$omp& iks, avg_freq, TT, log10P, log10PP, &
     !$omp& rw, rz)
     
     !$omp do
@@ -86,7 +86,26 @@ contains
       do i = 1,op%nk
         do k = 1,op%k(i)%ngauss
           do j = 1,nz
-            call op%k(i)%log10k(k,l)%evaluate(log10(P(j)), T(j), rw%ks(i)%k(j,k))
+            
+            if (T(j) < minval(op%k(i)%temp)) then
+              TT = minval(op%k(i)%temp)
+            elseif (T(j) > maxval(op%k(i)%temp)) then
+              TT = maxval(op%k(i)%temp)
+            else
+              TT = T(j)
+            endif
+            
+            log10P = log10(P(j))
+            
+            if (log10P < minval(op%k(i)%log10P)) then
+              log10PP = minval(op%k(i)%log10P)
+            elseif (log10P > maxval(op%k(i)%log10P)) then
+              log10PP = maxval(op%k(i)%log10P)
+            else
+              log10PP = log10P
+            endif
+  
+            call op%k(i)%log10k(k,l)%evaluate(log10PP, TT, rw%ks(i)%k(j,k))
             rw%ks(i)%k(j,k) = ten2power(rw%ks(i)%k(j,k))
           enddo
         enddo
@@ -463,7 +482,7 @@ contains
     real(dp), intent(out) :: res(size(P))
     
     integer :: j
-    real(dp) :: val
+    real(dp) :: val, TT
 
     if (xs%dim == 0) then
       do j = 1,size(P)
@@ -471,7 +490,16 @@ contains
       enddo
     elseif (xs%dim == 1) then
       do j = 1,size(P)
-        call xs%log10_xs_1d(l)%evaluate(T(j), val)
+        
+        if (T(j) < minval(xs%temp)) then
+          TT = minval(xs%temp)
+        elseif (T(j) > maxval(xs%temp)) then
+          TT = maxval(xs%temp)
+        else
+          TT = T(j)
+        endif
+        
+        call xs%log10_xs_1d(l)%evaluate(TT, val)
         res(j) = ten2power(val)
       enddo
     endif
@@ -489,13 +517,21 @@ contains
     real(dp), intent(out) :: foreign(size(T))
     
     integer :: j
-    real(dp) :: val
+    real(dp) :: val, TT
     
     do j = 1,size(T)
-      call cont%log10_xs_H2O(l)%evaluate(T(j), val)
+      if (T(j) < minval(cont%temp)) then
+        TT = minval(cont%temp)
+      elseif (T(j) > maxval(cont%temp)) then
+        TT = maxval(cont%temp)
+      else
+        TT = T(j)
+      endif
+      
+      call cont%log10_xs_H2O(l)%evaluate(TT, val)
       H2O(j) = ten2power(val)
       
-      call cont%log10_xs_foreign(l)%evaluate(T(j), val)
+      call cont%log10_xs_foreign(l)%evaluate(TT, val)
       foreign(j) = ten2power(val)
     enddo
     
