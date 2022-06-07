@@ -17,6 +17,7 @@ set(RADIATE_SOURCES
 )
 
 set(ADIABAT_SOURCES
+  adiabat/clima_adiabat_water.f90
   adiabat/clima_adiabat_kasting.f90
   adiabat/clima_adiabat.f90
 )
@@ -37,7 +38,7 @@ target_link_libraries(clima fortran-yaml-c finterp h5fortran futils fortran_stdl
 
 # Add special compiler flags to Clima
 if ("${CMAKE_Fortran_COMPILER_ID}" MATCHES "GNU")
-  target_compile_options(clima PRIVATE -Wunused -fimplicit-none)
+  target_compile_options(clima PRIVATE -Wunused -fcheck=all,no-array-temps -fimplicit-none)
   if (CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(clima PRIVATE -finline-functions -ftree-vectorize -funroll-loops -march=native)
   endif()

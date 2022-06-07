@@ -26,19 +26,19 @@ module clima_types
     
     ! atmosphere-grid
     logical :: atmos_grid_is_present
-    real(dp) :: bottom
-    real(dp) :: top
+    real(dp), allocatable :: bottom
+    real(dp), allocatable :: top
     integer :: nz
     
     ! planet
     logical :: planet_is_present
     character(:), allocatable :: back_gas_name
-    real(dp) :: P_surf
+    real(dp), allocatable :: P_surf
     real(dp) :: planet_mass
     real(dp) :: planet_radius
-    real(dp) :: surface_albedo
-    real(dp) :: diurnal_fac
-    real(dp) :: solar_zenith
+    real(dp), allocatable :: surface_albedo
+    real(dp), allocatable :: diurnal_fac
+    real(dp), allocatable :: solar_zenith
     
     ! optical-properties
     character(s_str_len), allocatable :: species(:)
@@ -90,6 +90,53 @@ module clima_types
       real(dp), intent(out) :: P(:)
       character(:), allocatable, intent(out) :: err
     end subroutine
+  end interface
+  
+  !!!!!!!!!!!!!!!
+  !!! Species !!!
+  !!!!!!!!!!!!!!!
+  
+  enum, bind(c)
+  enumerator :: &
+    ShomatePolynomial = 1, &
+    Nasa9Polynomial = 2
+  end enum
+  
+  type :: ThermodynamicData
+    integer :: dtype
+    integer :: ntemps
+    real(dp), allocatable :: temps(:)
+    real(dp), allocatable :: data(:,:)
+  end type
+  
+  type :: Gas
+    character(:), allocatable :: name
+    integer, allocatable :: composition(:) ! (natoms)
+    real(dp) :: mass
+    
+    ! thermodynamics
+    type(ThermodynamicData) :: thermo
+    
+  end type
+  
+  type :: Species
+    integer :: natoms
+    character(s_str_len), allocatable :: atoms_names(:)
+    real(dp), allocatable :: atoms_mass(:)
+    
+    integer :: ng
+    type(Gas), allocatable :: g(:) ! (ng)
+  end type
+  
+  interface
+    module function create_Species(filename, err) result(sp)
+      character(*), intent(in) :: filename
+      character(:), allocatable, intent(out) :: err
+      type(Species) :: sp
+    end function
+  end interface
+  interface Species
+    module procedure create_Species
   end interface
 
 end module

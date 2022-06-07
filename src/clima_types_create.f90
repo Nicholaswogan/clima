@@ -6,6 +6,248 @@ submodule(clima_types) clima_types_create
   
 contains
   
+  module function create_Species(filename, err) result(sp)
+    use fortran_yaml_c, only: parse, error_length
+    character(*), intent(in) :: filename
+    character(:), allocatable, intent(out) :: err
+    
+    type(Species) :: sp
+    
+    character(error_length) :: error
+    class(type_node), pointer :: root
+    
+    root => parse(filename, error=error)
+    if (len_trim(error) /= 0) then
+      err = trim(error)
+      return
+    end if
+    select type (root)
+      class is (type_dictionary)
+        call unpack_speciesfile(root, filename, sp, err)
+      class default
+        err = 'yaml file "'//filename//'" must have dictionaries at the root level.'
+    end select
+    call root%finalize()
+    deallocate(root)  
+    if (allocated(err)) return
+    
+  end function
+  
+  subroutine unpack_speciesfile(root, filename, sp, err)
+    type(type_dictionary), pointer :: root
+    character(*), intent(in) :: filename
+    type(Species), intent(inout) :: sp
+    character(:), allocatable, intent(out) :: err
+    
+    type(type_list), pointer :: tmp_list
+    type(type_dictionary), pointer :: dict
+    type(type_key_value_pair), pointer :: key_value_pair
+    type(type_list_item), pointer :: item
+    type(type_error), allocatable :: io_err
+
+    integer :: i, j, ind
+
+    !!! atoms !!!
+    tmp_list => root%get_list('atoms',.true.,error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    
+    sp%natoms = tmp_list%size()
+    allocate(sp%atoms_names(sp%natoms))
+    allocate(sp%atoms_mass(sp%natoms))
+    
+    j = 1
+    item => tmp_list%first
+    do while(associated(item))
+      select type (element => item%node)
+      class is (type_dictionary)
+        sp%atoms_names(j) = element%get_string("name",error = io_err)
+        if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+        sp%atoms_mass(j) = element%get_real("mass",error = io_err)
+        if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+      class default
+        err = '"atoms" in "'//trim(filename)//'" must made of dictionaries.'
+        return 
+      end select
+      j = j + 1
+      item => item%next
+    enddo
+    !!! done with atoms !!!
+    
+    !!! species !!!
+    tmp_list => root%get_list('species',.true.,error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+      
+    sp%ng = tmp_list%size()
+    allocate(sp%g(sp%ng))
+    do j = 1,sp%ng
+      allocate(sp%g(j)%composition(sp%natoms))
+      sp%g(j)%composition = 0
+    enddo
+    
+    j = 1
+    item => tmp_list%first
+    do while(associated(item))
+      select type (element => item%node)
+      class is (type_dictionary)
+        ! name
+        sp%g(j)%name = trim(element%get_string("name",error = io_err))
+        if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+        
+        ! composition
+        dict => element%get_dictionary("composition",.true.,error = io_err)
+        if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+        key_value_pair => dict%first
+        do while (associated(key_value_pair))
+          ind = findloc(sp%atoms_names,trim(key_value_pair%key), 1)
+          if (ind == 0) then
+            err = 'The atom "'// trim(key_value_pair%key)//'" in species "'// &
+                  sp%g(j)%name//'" is not in the list of atoms.'
+            return
+          endif
+          key_value_pair =>key_value_pair%next
+        enddo
+        do i=1,sp%natoms
+          sp%g(j)%composition(i) =  &
+              dict%get_integer(sp%atoms_names(i), default = 0, error = io_err)
+          if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+        enddo
+        
+        ! mass
+        sp%g(j)%mass = sum(sp%g(j)%composition*sp%atoms_mass)
+        
+        ! thermodynamics
+        call unpack_thermo(element, sp%g(j)%name, filename, sp%g(j)%thermo, err)
+        if (allocated(err)) return
+        
+      class default
+        err = '"species" in "'//trim(filename)//'" must made of dictionaries.'
+        return 
+      end select
+      j = j + 1
+      item => item%next
+    enddo
+    !!! done with species !!!
+    
+  end subroutine
+  
+  subroutine unpack_thermo(molecule, molecule_name, infile, thermo, err)
+    use clima_types, only: ThermodynamicData
+    class(type_dictionary), intent(in) :: molecule
+    character(len=*), intent(in) :: molecule_name
+    character(len=*), intent(in) :: infile
+    
+    type(ThermodynamicData), intent(out) :: thermo
+    character(:), allocatable, intent(out) :: err
+    
+    type (type_error), allocatable :: io_err
+    class(type_dictionary), pointer :: tmpdict
+    class(type_list), pointer :: tmplist
+    class(type_list_item), pointer :: item, item1
+    character(len=:), allocatable :: model
+    logical :: success
+    
+    integer :: j, k
+    
+    tmpdict => molecule%get_dictionary("thermo",.true.,error = io_err)
+    if (allocated(io_err)) then; err = trim(infile)//trim(io_err%message); return; endif
+    
+    ! check thermodynamic model
+    model = tmpdict%get_string("model",error = io_err)
+    if (allocated(io_err)) then; err = trim(infile)//trim(io_err%message); return; endif
+    if (model == "Shomate") then
+      thermo%dtype = 1
+    elseif (model == "NASA9") then
+      thermo%dtype = 2
+    else
+      err = "Thermodynamic data must be in Shomate or NASA9 format for "//trim(molecule_name)
+      return
+    endif
+    
+    ! get temperature ranges
+    tmplist =>tmpdict%get_list("temperature-ranges",.true.,error = io_err)
+    if (allocated(io_err)) then; err = trim(infile)//trim(io_err%message); return; endif
+      
+    thermo%ntemps = tmplist%size() - 1
+    if (thermo%ntemps /= 1 .and. thermo%ntemps /= 2) then
+      err = "Problem reading thermodynamic data for  "//trim(molecule_name)
+      return
+    endif
+    allocate(thermo%temps(thermo%ntemps + 1))
+    
+    j = 1
+    item => tmplist%first
+    do while (associated(item))
+      select type (listitem => item%node)
+      class is (type_scalar)
+        thermo%temps(j) = listitem%to_real(-1.0_dp,success)
+        if (.not. success) then
+          err = "Problem reading thermodynamic data for  "//trim(molecule_name)
+          return
+        endif
+      class default
+        err = "Problem reading thermodynamic data for "//trim(molecule_name)
+        return
+      end select
+      item => item%next
+      j = j + 1
+    enddo
+    
+    ! get data
+    tmplist => tmpdict%get_list("data",.true.,error = io_err)
+    if (allocated(io_err)) then; err = trim(infile)//trim(io_err%message); return; endif
+      
+    if (tmplist%size() /= thermo%ntemps) then
+      err = "Problem reading thermodynamic data for "//trim(molecule_name)
+      return
+    endif
+    
+    if (thermo%dtype == 1) then
+      ! Shomate
+      allocate(thermo%data(7,thermo%ntemps))
+    elseif (thermo%dtype == 2) then
+      ! NASA9
+      allocate(thermo%data(9,thermo%ntemps))
+    endif
+    
+    k = 1
+    item => tmplist%first
+    do while (associated(item))
+      select type (listitem => item%node)
+      class is (type_list)
+        
+        if (listitem%size() /= size(thermo%data,1)) then
+          err = "Too much or too little thermodynamic data for "//trim(molecule_name)
+          return
+        endif
+        
+        j = 1
+        item1 => listitem%first
+        do while (associated(item1)) 
+          select type (listitem1 => item1%node)
+          class is (type_scalar)
+
+            thermo%data(j, k) = listitem1%to_real(-1.0_dp,success)
+            if (.not.success) then
+              err = "Problem reading thermodynamic data for "//trim(molecule_name)
+              return
+            endif
+          class default
+            err = "Problem reading thermodynamic data for "//trim(molecule_name)
+            return
+          end select
+        item1 => item1%next
+        j = j + 1
+        enddo
+      class default
+        err = "IOError: Problem reading thermodynamic data for "//trim(molecule_name)
+        return
+      end select
+      item => item%next
+      k = k + 1
+    enddo          
+                            
+  end subroutine
+  
   module function create_AtmosphereFile(atm_file, err) result(atm)
     character(*), intent(in) :: atm_file
     character(:), allocatable, intent(out) :: err
@@ -318,13 +560,28 @@ contains
     character(:), allocatable, intent(out) :: err
     
     type (type_error), allocatable :: io_err
+    real(dp) :: tmp
     
-    s%bottom = grid%get_real('bottom',error = io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    s%top = grid%get_real('top',error = io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    ! required
     s%nz = grid%get_integer('number-of-layers',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    
+    ! not required
+    tmp = grid%get_real('bottom', error = io_err)
+    if (.not. allocated(io_err)) then
+      allocate(s%bottom)
+      s%bottom = tmp
+    else
+      deallocate(io_err)
+    endif
+    
+    tmp = grid%get_real('top', error = io_err)
+    if (.not. allocated(io_err)) then
+      allocate(s%top)
+      s%top = tmp
+    else
+      deallocate(io_err)
+    endif
     
   end subroutine
     
@@ -335,16 +592,32 @@ contains
     character(:), allocatable, intent(out) :: err
     
     type (type_error), allocatable :: io_err
+    real(dp) :: tmp
+    character(:), allocatable :: tmp_str
     
-    s%back_gas_name = trim(planet%get_string("background-gas", error=io_err))
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-      
-    s%P_surf = planet%get_real('surface-pressure',error = io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (s%P_surf <= 0.0_dp) then
-      err = 'IOError: Planet surface pressure must be greater than zero.'
-      return
+    ! not required
+    tmp_str = trim(planet%get_string("background-gas", error=io_err))
+    if (.not. allocated(io_err)) then
+      s%back_gas_name = tmp_str
+      deallocate(tmp_str)
+    else
+      deallocate(io_err)
     endif
+      
+    
+    tmp = planet%get_real('surface-pressure',error = io_err)
+    if (.not. allocated(io_err)) then
+      allocate(s%P_surf)
+      s%P_surf = tmp
+      if (s%P_surf <= 0.0_dp) then
+        err = 'IOError: Planet surface pressure must be greater than zero.'
+        return
+      endif
+    else
+      deallocate(io_err)
+    endif
+    
+    ! required
     s%planet_mass = planet%get_real('planet-mass',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (s%planet_mass <= 0.0_dp) then
@@ -357,24 +630,42 @@ contains
       err = 'IOError: Planet radius must be greater than zero.'
       return
     endif
-    s%surface_albedo = planet%get_real('surface-albedo',error = io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (s%surface_albedo < 0.0_dp) then
-      err = 'IOError: Surface albedo must be greater than zero.'
-      return
-    endif
-    s%diurnal_fac = planet%get_real('diurnal-averaging-factor',error = io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (s%diurnal_fac < 0.0_dp .or. s%diurnal_fac > 1.0_dp) then
-      err = 'IOError: diurnal-averaging-factor must be between 0 and 1.'
-      return
+    
+    ! not required
+    tmp = planet%get_real('surface-albedo',error = io_err)
+    if (.not. allocated(io_err)) then
+      allocate(s%surface_albedo)
+      s%surface_albedo = tmp
+      if (s%surface_albedo < 0.0_dp) then
+        err = 'IOError: Surface albedo must be greater than zero.'
+        return
+      endif
+    else
+      deallocate(io_err)
     endif
     
-    s%solar_zenith = planet%get_real('solar-zenith-angle',error = io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (s%solar_zenith < 0.0_dp .or. s%solar_zenith > 90.0_dp) then
-      err = 'IOError: solar zenith must be between 0 and 90.'
-      return
+    tmp = planet%get_real('diurnal-averaging-factor',error = io_err)
+    if (.not. allocated(io_err)) then
+      allocate(s%diurnal_fac)
+      s%diurnal_fac = tmp
+      if (s%diurnal_fac < 0.0_dp .or. s%diurnal_fac > 1.0_dp) then
+        err = 'IOError: diurnal-averaging-factor must be between 0 and 1.'
+        return
+      endif
+    else
+      deallocate(io_err)
+    endif
+    
+    tmp = planet%get_real('solar-zenith-angle',error = io_err)
+    if (.not. allocated(io_err)) then
+      allocate(s%solar_zenith)
+      s%solar_zenith = tmp
+      if (s%solar_zenith < 0.0_dp .or. s%solar_zenith > 90.0_dp) then
+        err = 'IOError: solar zenith must be between 0 and 90.'
+        return
+      endif
+    else
+      deallocate(io_err)
     endif
     
   end subroutine

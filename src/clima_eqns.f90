@@ -55,36 +55,36 @@ contains
          coeffs(4)*TT**3 + coeffs(5)/TT**2
   end function
   
-  ! pure subroutine heat_capacity_eval(thermo, T, found, cp)
-  !   use clima_types, only: ShomatePolynomial, Nasa9Polynomial
-  !   use clima_types, only: ThermodynamicData
-  ! 
-  !   type(ThermodynamicData), intent(in) :: thermo
-  !   real(dp), intent(in) :: T
-  !   logical, intent(out) :: found
-  !   real(dp), intent(out) :: cp
-  ! 
-  !   integer :: k
-  ! 
-  !   found = .false.
-  !   do k = 1,thermo%ntemps
-  !     if (T >= thermo%temps(k) .and. &
-  !         T <  thermo%temps(k+1)) then
-  ! 
-  !       found = .true.
-  !       if (thermo%dtype == ShomatePolynomial) then
-  !         cp = heat_capacity_shomate(thermo%data(1:7,k), T)
-  !       elseif (thermo%dtype == Nasa9Polynomial) then
-  !         ! gibbs_energy = gibbs_energy_nasa9(thermo%data(1:9,k), T)
-  !         found = .false.         
-  !       endif
-  ! 
-  !       exit
-  ! 
-  !     endif
-  !   enddo
-  ! 
-  ! end subroutine
+  pure subroutine heat_capacity_eval(thermo, T, found, cp)
+    use clima_types, only: ShomatePolynomial, Nasa9Polynomial
+    use clima_types, only: ThermodynamicData
+  
+    type(ThermodynamicData), intent(in) :: thermo
+    real(dp), intent(in) :: T
+    logical, intent(out) :: found
+    real(dp), intent(out) :: cp
+  
+    integer :: k
+  
+    found = .false.
+    do k = 1,thermo%ntemps
+      if (T >= thermo%temps(k) .and. &
+          T <  thermo%temps(k+1)) then
+  
+        found = .true.
+        if (thermo%dtype == ShomatePolynomial) then
+          cp = heat_capacity_shomate(thermo%data(1:7,k), T)
+        elseif (thermo%dtype == Nasa9Polynomial) then
+          ! gibbs_energy = gibbs_energy_nasa9(thermo%data(1:9,k), T)
+          found = .false.         
+        endif
+  
+        exit
+  
+      endif
+    enddo
+  
+  end subroutine
   
   function eddy_for_heat(l, g, T, dTdz, adiabat) result(Kh)
     real(dp), intent(in) :: l, g, T, dTdz, adiabat
