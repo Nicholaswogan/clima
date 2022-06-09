@@ -25,7 +25,11 @@ module clima_radtran_types
     real(dp), allocatable :: weight_e(:) ! (ngauss+1) bin edges
     real(dp), allocatable :: weights(:) ! (ngauss)
     real(dp), allocatable :: log10P(:) ! (nwav) log10(bars)
+    real(dp) :: log10P_min
+    real(dp) :: log10P_max
     real(dp), allocatable :: temp(:) ! (ntemp) kelvin
+    real(dp) :: T_min
+    real(dp) :: T_max
     type(linear_interp_2d), allocatable :: log10k(:,:) ! (ngauss, nwav)
   end type
   
@@ -40,6 +44,8 @@ module clima_radtran_types
     integer, allocatable :: rxn ! photolysis reaction number (only for PhotolysisXsection)
     integer, allocatable :: ntemp ! number of temperatures (only for xs_dim = 1)
     real(dp), allocatable :: temp(:) ! (ntemp) Kelvin
+    real(dp), allocatable :: T_min
+    real(dp), allocatable :: T_max
     real(dp), allocatable :: xs_0d(:) ! (nw) 
     type(linear_interp_1d), allocatable :: log10_xs_1d(:) ! (nw) 
   end type
@@ -48,6 +54,8 @@ module clima_radtran_types
     integer :: LH2O ! index of H2O
     integer :: ntemp ! number of temperatures
     real(dp), allocatable :: temp(:) ! (ntemp) Kelvin
+    real(dp) :: T_min
+    real(dp) :: T_max
     type(linear_interp_1d), allocatable :: log10_xs_H2O(:) ! (nw) 
     type(linear_interp_1d), allocatable :: log10_xs_foreign(:) ! (nw) 
   end type

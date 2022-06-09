@@ -128,9 +128,10 @@ contains
 
   end function
   
-  subroutine RadtranIR_radiate(self, T, P, densities, dz, err)
+  subroutine RadtranIR_radiate(self, T_surface, T, P, densities, dz, err)
     use clima_radtran_radiate, only: radiate
     class(RadtranIR), target, intent(inout) :: self
+    real(dp), intent(in) :: T_surface
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
@@ -146,14 +147,15 @@ contains
                                          
     call radiate(self%ir, &
                  0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
-                 P, T, densities, dz, &
+                 P, T_surface, T, densities, dz, &
                  wrk%rx_ir, wrk%rz_ir, &
                  wrk%fup_a, wrk%fdn_a, wrk%fup_n, wrk%fdn_n)
     
   end subroutine
   
-  function RadtranIR_OLR(self, T, P, densities, dz, err) result(res)
+  function RadtranIR_OLR(self, T_surface, T, P, densities, dz, err) result(res)
     class(RadtranIR), target, intent(inout) :: self
+    real(dp), intent(in) :: T_surface
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
@@ -163,7 +165,7 @@ contains
     
     real(dp) :: res
     
-    call RadtranIR_radiate(self, T, P, densities, dz, err)
+    call RadtranIR_radiate(self, T_surface, T, P, densities, dz, err)
     if (allocated(err)) return
     res = self%wrk_ir%fup_n(self%nz+1)
     

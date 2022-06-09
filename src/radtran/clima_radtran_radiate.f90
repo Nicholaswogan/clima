@@ -10,7 +10,7 @@ contains
   !! only used during Solar radiative transfer.
   subroutine radiate(op, &
                      surface_albedo, u0, diurnal_fac, photons_sol, &
-                     P, T, densities, dz, &
+                     P, T_surface, T, densities, dz, &
                      rw, rz, &
                      fup_a, fdn_a, fup_n, fdn_n)
     use clima_radtran_types, only: RadiateXSWrk, RadiateZWrk, Ksettings
@@ -28,6 +28,7 @@ contains
     real(dp), intent(in) :: photons_sol(:) !! (nw) Average solar flux in each bin (mW/m2/Hz) (Needed only for solar)
   
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
+    real(dp), intent(in) :: T_surface
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
                                            !! molecule in each layer (molcules/cm3)
@@ -51,13 +52,15 @@ contains
     integer :: iks(op%nk)
     
     ! other work
-    real(dp) :: dfreq, TT, log10P, log10PP
-    real(dp), allocatable :: cols(:,:)
+    real(dp) :: dfreq, TT, log10PP
+    real(dp), allocatable :: cols(:,:), log10P(:)
     real(dp), allocatable :: foreign_col(:)
     
     kset => op%kset
     nz = size(dz)
     ng = size(densities, 2)
+    allocate(log10P(nz))
+    log10P = log10(P)
     allocate(cols(nz,ng))
     do i = 1,ng
       cols(:,i) = densities(:,i)*dz(:)
@@ -75,7 +78,7 @@ contains
     endif
     
     !$omp parallel private(i, j, k, l, n, jj, &
-    !$omp& iks, avg_freq, TT, log10P, log10PP, &
+    !$omp& iks, avg_freq, TT, log10PP, &
     !$omp& rw, rz)
     
     !$omp do
@@ -87,22 +90,20 @@ contains
         do k = 1,op%k(i)%ngauss
           do j = 1,nz
             
-            if (T(j) < minval(op%k(i)%temp)) then
-              TT = minval(op%k(i)%temp)
-            elseif (T(j) > maxval(op%k(i)%temp)) then
-              TT = maxval(op%k(i)%temp)
+            if (T(j) < op%k(i)%T_min) then
+              TT = op%k(i)%T_min
+            elseif (T(j) > op%k(i)%T_max) then
+              TT = op%k(i)%T_max
             else
               TT = T(j)
             endif
             
-            log10P = log10(P(j))
-            
-            if (log10P < minval(op%k(i)%log10P)) then
-              log10PP = minval(op%k(i)%log10P)
-            elseif (log10P > maxval(op%k(i)%log10P)) then
-              log10PP = maxval(op%k(i)%log10P)
+            if (log10P(j) < op%k(i)%log10P_min) then
+              log10PP = op%k(i)%log10P_min
+            elseif (log10P(j) > op%k(i)%log10P_max) then
+              log10PP =  op%k(i)%log10P_max
             else
-              log10PP = log10P
+              log10PP = log10P(j)
             endif
   
             call op%k(i)%log10k(k,l)%evaluate(log10PP, TT, rw%ks(i)%k(j,k))
@@ -185,7 +186,7 @@ contains
       ! bplanck has units [mW sr^−1 m^−2 Hz^-1]
       if (op%op_type == IROpticalProperties) then
         avg_freq = 0.5_dp*(op%freq(l) + op%freq(l+1))
-        rz%bplanck(nz+1) = planck_fcn(avg_freq, T(1)) ! ground level
+        rz%bplanck(nz+1) = planck_fcn(avg_freq, T_surface) ! ground level
         do j = 1,nz
           n = nz+1-j
           rz%bplanck(n) = planck_fcn(avg_freq, T(j))
@@ -485,16 +486,16 @@ contains
     real(dp) :: val, TT
 
     if (xs%dim == 0) then
-      do j = 1,size(P)
+      do j = 1,size(T)
         res(j) = xs%xs_0d(l)
       enddo
     elseif (xs%dim == 1) then
-      do j = 1,size(P)
+      do j = 1,size(T)
         
-        if (T(j) < minval(xs%temp)) then
-          TT = minval(xs%temp)
-        elseif (T(j) > maxval(xs%temp)) then
-          TT = maxval(xs%temp)
+        if (T(j) < xs%T_min) then
+          TT = xs%T_min
+        elseif (T(j) > xs%T_max) then
+          TT = xs%T_max
         else
           TT = T(j)
         endif
@@ -520,10 +521,10 @@ contains
     real(dp) :: val, TT
     
     do j = 1,size(T)
-      if (T(j) < minval(cont%temp)) then
-        TT = minval(cont%temp)
-      elseif (T(j) > maxval(cont%temp)) then
-        TT = maxval(cont%temp)
+      if (T(j) < cont%T_min) then
+        TT = cont%T_min
+      elseif (T(j) > cont%T_max) then
+        TT = cont%T_max
       else
         TT = T(j)
       endif

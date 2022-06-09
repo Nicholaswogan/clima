@@ -541,6 +541,9 @@ contains
       endif
     enddo
     
+    cont%T_min = minval(cont%temp)
+    cont%T_max = maxval(cont%temp)
+    
     call h%close()
     
   end function
@@ -750,7 +753,12 @@ contains
           return
         endif
       enddo
-
+      
+      allocate(xs%T_min)
+      allocate(xs%T_max)
+      xs%T_min = minval(xs%temp)
+      xs%T_max = maxval(xs%temp)
+    
     endif
 
     call h%close()
@@ -877,6 +885,12 @@ contains
     enddo
     
     k%sp_ind = sp_ind
+    
+    k%log10P_min = minval(k%log10P)
+    k%log10P_max = maxval(k%log10P)
+    
+    k%T_min = minval(k%temp)
+    k%T_max = maxval(k%temp)
     
   end function
   

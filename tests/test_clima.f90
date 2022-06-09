@@ -43,7 +43,7 @@ program test_clima
     densities(:,i) = mix(:,i)*density
   enddo
   
-  OLR = RadtranIR_OLR(rad, T, P, densities, dz, err)
+  OLR = RadtranIR_OLR(rad, 289.0_dp, T, P, densities, dz, err)
   if (allocated(err)) then
     print*,err
     stop 1

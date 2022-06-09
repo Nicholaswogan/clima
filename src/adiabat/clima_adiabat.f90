@@ -63,6 +63,7 @@ module clima_adiabat
   contains
     procedure :: make_profile => AdiabatClimateModel_make_profile
     procedure :: OLR => AdiabatClimateModel_OLR
+    procedure :: surface_temperature => AdiabatClimateModel_surface_temperature
   end type
   
   interface AdiabatClimateModel
@@ -194,17 +195,67 @@ contains
     real(dp), target, intent(in) :: P_i_surf(:)
     character(:), allocatable, intent(out) :: err
     
-    real(dp) :: OLR
+    real(dp) :: OLR, t(4)
     
     ! make atmosphere profile
     call self%make_profile(T_surf, P_i_surf, err)
     if (allocated(err)) return
-    
+
     ! Do radiative transfer
     ! MUST CONVERT P TO BARS
-    OLR = self%rad%OLR(self%T, self%P/1.0e6_dp, self%densities, self%dz, err)
+    OLR = self%rad%OLR(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, err)
     if (allocated(err)) return
+    
+  end function
   
+  function AdiabatClimateModel_surface_temperature(self, OLR, P_i_surf, T_guess, err) result(T_surf)
+    use minpack_module, only: hybrd1
+    class(AdiabatClimateModel), intent(inout) :: self
+    real(dp), intent(in) :: OLR !! K
+    real(dp), intent(in) :: P_i_surf(:)
+    real(dp), optional, intent(in) :: T_guess
+    character(:), allocatable, intent(out) :: err
+    
+    real(dp) :: T_surf
+    
+    real(dp) :: T_guess_
+    
+    integer, parameter :: n = 1, m = 1
+    real(dp) :: x(1)
+    real(dp) :: fvec(1)
+    real(dp), parameter :: tol = 1.0e-8_dp
+    integer :: info
+    integer, parameter :: lwa = (n*(3*n+13))/2 + 1
+    real(dp) :: wa(lwa)
+    
+    if (present(T_guess)) then
+      T_guess_ = T_guess
+    else
+      T_guess_ = 300.0_dp
+    endif
+    
+    x(1) = log10(T_guess_)
+    call hybrd1(fcn, n, x, fvec, tol, info, wa, lwa)
+    if (info < 1 .or. info > 4) then
+      err = 'hybrd1 root solve failed'
+      return
+    endif
+    
+    T_surf = 10.0_dp**x(1)
+    
+  contains
+    subroutine fcn(n, x, fvec, iflag)
+      integer, intent(in) :: n
+      real(dp), intent(in) :: x(n)
+      real(dp), intent(out) :: fvec(n)
+      integer, intent(inout) :: iflag
+      real(dp) :: T, OLR_
+      T = 10.0_dp**x(1)
+      OLR_ = self%OLR(T, P_i_surf, err)
+      fvec(1) = OLR - OLR_*1.0e-3_dp
+      print*,OLR, OLR_*1.0e-3_dp, T
+    end subroutine
+    
   end function
   
   function create_KastingClimateModel(datadir, nz, err) result(c)
@@ -292,7 +343,7 @@ contains
     
     ! Do radiative transfer
     ! MUST CONVERT P TO BARS
-    OLR = self%rad%OLR(self%T, self%P/1.0e6_dp, self%densities, self%dz, err)
+    OLR = self%rad%OLR(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, err)
     if (allocated(err)) return
   
   end function
