@@ -16,22 +16,9 @@ set(RADIATE_SOURCES
   radtran/clima_radtran.f90
 )
 
-set(ADIABAT_SOURCES
-  adiabat/clima_adiabat_water.f90
-  adiabat/clima_adiabat.f90
-)
-
-
-# set(CLIMATE_SOURCES
-#   climate/clima_climate_rhs.f90
-#   climate/clima_climate_integrate.f90
-#   climate/clima_climate.f90
-# )
-
 add_library(clima 
   ${BASE_SOURCES}
   ${RADIATE_SOURCES}
-  ${ADIABAT_SOURCES}
 )
 target_link_libraries(clima fortran-yaml-c finterp h5fortran futils fortran_stdlib mrgrnk dop853 minpack)
 

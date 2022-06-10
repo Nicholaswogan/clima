@@ -1,5 +1,5 @@
 
-set(CLIMA_TESTS test_clima test_adiabat)
+set(CLIMA_TESTS test_clima)
 
 foreach(CLIMA_TEST ${CLIMA_TESTS})
   add_executable(${CLIMA_TEST} "${CLIMA_TEST}.f90")

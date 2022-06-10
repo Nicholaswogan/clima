@@ -49,9 +49,9 @@ program test_clima
     stop 1
   endif
   
-  print*,OLR,rad%wrk_ir%fup_n(1),rad%wrk_ir%fdn_n(1)
+  print*,OLR
   
-  open(unit=1,file='../OLR_1.dat',form='unformatted',status='replace')
+  open(unit=1,file='../OLR.dat',form='unformatted',status='replace')
   write(1) 0.5_dp*(rad%ir%freq(1:rad%ir%nw)+rad%ir%freq(2:rad%ir%nw+1))
   write(1) rad%wrk_ir%fup_a(nz+1,:)
   close(1)
