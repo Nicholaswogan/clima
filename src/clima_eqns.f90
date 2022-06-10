@@ -156,7 +156,7 @@ contains
   pure function gravity(radius, mass, z) result(grav)
     use clima_const, only: G_grav
     real(dp), intent(in) :: radius, mass ! radius in cm, mass in grams
-    real(dp), intent(in) :: z ! cm
+    real(dp), intent(in) :: z ! cm 
     
     real(dp) :: grav ! cm/s2
            

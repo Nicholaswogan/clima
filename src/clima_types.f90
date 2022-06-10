@@ -28,7 +28,7 @@ module clima_types
     logical :: atmos_grid_is_present
     real(dp), allocatable :: bottom
     real(dp), allocatable :: top
-    integer :: nz
+    integer :: nz 
     
     ! planet
     logical :: planet_is_present

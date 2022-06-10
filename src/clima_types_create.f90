@@ -9,7 +9,7 @@ contains
   module function create_Species(filename, err) result(sp)
     use fortran_yaml_c, only: parse, error_length
     character(*), intent(in) :: filename
-    character(:), allocatable, intent(out) :: err
+    character(:), allocatable, intent(out) :: err 
     
     type(Species) :: sp
     

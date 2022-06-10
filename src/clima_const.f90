@@ -5,7 +5,7 @@ module clima_const
   
   integer, parameter :: s_str_len = 20
   
-  ! physical constants
+  ! physical constants 
   real(dp), parameter :: Rgas = 8.31446261815324e7_dp ! ideal gas constant (erg/(mol*K))
   real(dp), parameter :: k_boltz = 1.380649e-16_dp ! boltzmann's constant cgs units (egs/K)
   real(dp), parameter :: k_boltz_si = 1.380649e-23_dp ! boltzmann's constant si units (J/K)
