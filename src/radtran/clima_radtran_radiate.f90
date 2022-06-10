@@ -214,7 +214,6 @@ contains
         ! elseif (kset%k_method == 999) then
           ! No scattering (Only for IR)
           call k_no_scatter(op, cols, rw, rz)
-          
         endif
         
       else
