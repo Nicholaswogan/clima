@@ -1,11 +1,19 @@
-submodule(clima_adiabat) clima_adiabat_water
+module clima_adiabat_water
+  use clima_const, only: dp
+  use clima_types, only: Species
   use dop853_module, only: dop853_class
   implicit none
   
   type :: AdiabatProfileData
+    ! pointers to input data
+    type(Species), pointer :: sp
+    integer, pointer :: LH2O
+    real(dp), pointer :: planet_mass
+    real(dp), pointer :: planet_radius
+    real(dp), pointer :: P_top
+    real(dp), pointer :: T_trop
+    ! pointers to input variables
     real(dp), pointer :: T_surf
-    real(dp) :: P_surf
-    real(dp), allocatable :: f_i_surf(:), f_i_dry(:)
     
     ! intent(inout)
     real(dp), pointer :: P(:)
@@ -16,6 +24,8 @@ submodule(clima_adiabat) clima_adiabat_water
     real(dp), pointer :: f_i(:,:)
     
     ! work
+    real(dp) :: P_surf
+    real(dp), allocatable :: f_i_surf(:), f_i_dry(:)
     integer :: stopping_reason
     real(dp), allocatable :: P_trop, z_trop
     real(dp), allocatable :: P_bound, z_bound, T_bound
@@ -37,20 +47,26 @@ submodule(clima_adiabat) clima_adiabat_water
   real(dp), parameter :: T_crit_H2O = 647.0_dp !! K
   
   type, extends(dop853_class) :: dop853_custom
-    type(AdiabatClimateModel), pointer :: c => NULL()
     type(AdiabatProfileData), pointer :: d => NULL()
   end type
   
 contains
   
-  module subroutine make_profile_a(self, T_surf, P_i_surf, &
-                                   P, z, T, f_i, &
-                                   err)
+  module subroutine make_profile_water(T_surf, P_i_surf, &
+                                       sp, nz, LH2O, planet_mass, &
+                                       planet_radius, P_top, T_trop, &
+                                       P, z, T, f_i, &
+                                       err)
     use stdlib_math, only: logspace
-    type(AdiabatClimateModel), target, intent(in) :: self
     
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), intent(in) :: P_i_surf(:) !! (ng) dynes/cm2
+
+    type(Species), target, intent(in) :: sp
+    integer, intent(in) :: nz
+    integer, target, intent(in) :: LH2O
+    real(dp), target, intent(in) :: planet_mass, planet_radius
+    real(dp), target, intent(in) :: P_top, T_trop
     
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
@@ -68,23 +84,23 @@ contains
       err = "make_profile: Surface pressures must be positive"
       return
     endif
-    if (size(P_i_surf) /= self%sp%ng) then
+    if (size(P_i_surf) /= sp%ng) then
       err = 'make_profile: Input "P_i_surf" has the wrong shape'
       return
     endif
-    if (size(P) /= self%nz+1) then
+    if (size(P) /= nz+1) then
       err = 'make_profile: Input "P" has the wrong shape'
       return
     endif
-    if (size(z) /= self%nz+1) then
+    if (size(z) /= nz+1) then
       err = 'make_profile: Input "z" has the wrong shape'
       return
     endif
-    if (size(T) /= self%nz+1) then
+    if (size(T) /= nz+1) then
       err = 'make_profile: Input "T" has the wrong shape'
       return
     endif
-    if (size(f_i, 1) /= self%nz+1 .or. size(f_i, 2) /= self%sp%ng) then
+    if (size(f_i, 1) /= nz+1 .or. size(f_i, 2) /= sp%ng) then
       err = 'make_profile: Input "f_i" has the wrong shape'
       return
     endif
@@ -93,14 +109,14 @@ contains
       ! Above critical point of water.
       ! All H2O must be in the atmosphere.
       moist_start = .false.
-      P_H2O_start = P_i_surf(self%LH2O)
+      P_H2O_start = P_i_surf(LH2O)
     else
       ! Below critical point
-      P_H2O_sat_surf = sat_pressure_H2O(T_surf, self%sp%g(self%LH2O)%mass)
-      if (P_H2O_sat_surf > P_i_surf(self%LH2O)) then
+      P_H2O_sat_surf = sat_pressure_H2O(T_surf, sp%g(LH2O)%mass)
+      if (P_H2O_sat_surf > P_i_surf(LH2O)) then
         ! All water on surface is vaporized
         moist_start = .false.
-        P_H2O_start = P_i_surf(self%LH2O)
+        P_H2O_start = P_i_surf(LH2O)
       else
         ! Water is able to condense at the surface
         moist_start = .true.
@@ -109,15 +125,15 @@ contains
     endif
     
     ! allocate
-    allocate(P_i_surf_(self%sp%ng))
-    allocate(d%f_i_surf(self%sp%ng))
-    allocate(d%f_i_dry(self%sp%ng))
+    allocate(P_i_surf_(sp%ng))
+    allocate(d%f_i_surf(sp%ng))
+    allocate(d%f_i_dry(sp%ng))
     
     P_i_surf_ = P_i_surf
-    P_i_surf_(self%LH2O) = P_H2O_start
+    P_i_surf_(LH2O) = P_H2O_start
     
     d%P_surf = sum(P_i_surf_)
-    if (self%P_top > d%P_surf) then
+    if (P_top > d%P_surf) then
       err = 'make_profile: "P_top" is bigger than the surface pressure'
       return
     endif
@@ -125,18 +141,25 @@ contains
     ! mixing ratios at the surface
     d%f_i_surf = P_i_surf_/d%P_surf
     P_dry = tiny(1.0_dp)
-    do i = 1,self%sp%ng
-      if (i /= self%LH2O) then
+    do i = 1,sp%ng
+      if (i /= LH2O) then
         P_dry = P_dry + P_i_surf_(i)
       endif
     enddo
     d%f_i_dry = P_i_surf_/P_dry 
     
     ! Make P profile
-    P = logspace(log10(d%P_surf),log10(self%P_top),self%nz+1)
+    P = logspace(log10(d%P_surf),log10(P_top),nz+1)
     P(1) = d%P_surf
-    P(self%nz+1) = self%P_top
+    P(nz+1) = P_top
     
+    ! associate d with data
+    d%sp => sp
+    d%LH2O => LH2O
+    d%planet_mass => planet_mass
+    d%planet_radius => planet_radius
+    d%P_top => P_top
+    d%T_trop => T_trop
     ! associate d with inputs
     d%T_surf => T_surf
     d%P => P
@@ -145,17 +168,16 @@ contains
     d%f_i => f_i
     
     if (moist_start) then
-      call integrate_moist_start(self, d, err)
+      call integrate_moist_start(d, err)
       if (allocated(err)) return
     else
-      call integrate_dry_start(self, d, err)
+      call integrate_dry_start(d, err)
       if (allocated(err)) return
     endif
     
   end subroutine
   
-  subroutine integrate_moist_start(c, d, err)
-    type(AdiabatClimateModel), target, intent(in) :: c
+  subroutine integrate_moist_start(d, err)
     type(AdiabatProfileData), target, intent(inout) :: d
     
     character(:), allocatable, intent(out) :: err
@@ -167,10 +189,9 @@ contains
     
     call dop%initialize(fcn=rhs_moist_dop, solout=solout_moist, n=2, &
                         iprint=0, icomp=[1,2], status_ok=status_ok)
-    dop%c => c ! associate data
     dop%d => d
     d%j = 2
-    call mixing_ratios_moist(c, d, d%P_surf, d%T_surf, d%f_i(1,:))
+    call mixing_ratios_moist(d, d%P_surf, d%T_surf, d%f_i(1,:))
     d%T(1) = d%T_surf
     d%z(1) = 0.0_dp
     
@@ -183,7 +204,7 @@ contains
     ! integrate
     u = [d%T_surf, 0.0_dp]
     Pn = d%P_surf
-    call dop%integrate(Pn, u, c%P_top, [1.0e-9_dp], [1.0e-6_dp], iout=2, idid=idid)
+    call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-6_dp], iout=2, idid=idid)
     if (allocated(d%err)) then
       err = d%err
       return
@@ -198,29 +219,28 @@ contains
     elseif (d%stopping_reason == ReachedTropopause) then
       ! Values at tropopause
       d%P(d%j) = d%P_trop
-      d%T(d%j) = c%T_trop
+      d%T(d%j) = d%T_trop
       d%z(d%j) = d%z_trop
       
-      call mixing_ratios_moist(c, d, d%P(d%j), d%T(d%j), d%f_i(d%j,:))
+      call mixing_ratios_moist(d, d%P(d%j), d%T(d%j), d%f_i(d%j,:))
       
       ! Values above the tropopause
       do i = d%j+1,size(d%z)
-        d%T(i) = c%T_trop
+        d%T(i) = d%T_trop
         d%f_i(i,:) = d%f_i(d%j,:)
         mubar = 0.0_dp
-        do j = 1,c%sp%ng
-          mubar = mubar + d%f_i(d%j,j)*c%sp%g(j)%mass
+        do j = 1,d%sp%ng
+          mubar = mubar + d%f_i(d%j,j)*d%sp%g(j)%mass
         enddo
-        d%z(i) = altitude_vs_P(d%P(i), c%T_trop, mubar, d%P_trop, &
-                 d%z_trop, c%planet_mass, c%planet_radius) 
+        d%z(i) = altitude_vs_P(d%P(i), d%T_trop, mubar, d%P_trop, &
+                 d%z_trop, d%planet_mass, d%planet_radius) 
       enddo
       
     endif
     
   end subroutine
   
-  subroutine integrate_dry_start(c, d, err)
-    type(AdiabatClimateModel), target, intent(in) :: c
+  subroutine integrate_dry_start(d, err)
     type(AdiabatProfileData), target, intent(inout) :: d
     
     character(:), allocatable, intent(out) :: err
@@ -233,7 +253,6 @@ contains
     
     call dop%initialize(fcn=rhs_dry_dop, solout=solout_dry, n=2, &
                         iprint=0, icomp=[1,2], status_ok=status_ok)
-    dop%c => c
     dop%d => d ! associate data
     d%j = 2
     d%T(1) = d%T_surf
@@ -248,7 +267,7 @@ contains
     ! integrate
     u = [d%T_surf, 0.0_dp]
     Pn = d%P_surf
-    call dop%integrate(Pn, u, c%P_top, [1.0e-9_dp], [1.0e-6_dp], iout=2, idid=idid)
+    call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-6_dp], iout=2, idid=idid)
     if (allocated(d%err)) then
       err = d%err
       return
@@ -265,20 +284,20 @@ contains
       
       ! Values at tropopause
       d%P(d%j) = d%P_trop
-      d%T(d%j) = c%T_trop
+      d%T(d%j) = d%T_trop
       d%z(d%j) = d%z_trop
       d%f_i(d%j,:) = d%f_i_surf(:)
       
       ! Values above the tropopause
       do i = d%j+1,size(d%z)
-        d%T(i) = c%T_trop
+        d%T(i) = d%T_trop
         d%f_i(i,:) = d%f_i(d%j,:)
         mubar = 0.0_dp
-        do j = 1,c%sp%ng
-          mubar = mubar + d%f_i(d%j,j)*c%sp%g(j)%mass
+        do j = 1,d%sp%ng
+          mubar = mubar + d%f_i(d%j,j)*d%sp%g(j)%mass
         enddo
-        d%z(i) = altitude_vs_P(d%P(i), c%T_trop, mubar, d%P_trop, &
-                 d%z_trop, c%planet_mass, c%planet_radius) 
+        d%z(i) = altitude_vs_P(d%P(i), d%T_trop, mubar, d%P_trop, &
+                 d%z_trop, d%planet_mass, d%planet_radius) 
       enddo
       
 
@@ -286,7 +305,6 @@ contains
       ! ! Do another integration with a moist adiabat
       call dop%initialize(fcn=rhs_moist_dop, solout=solout_moist, n=2, &
                           iprint=0, icomp=[1,2], status_ok=status_ok)
-      dop%c => c
       dop%d => d ! associate data
       d%stopping_reason = ReachedPtop
       if (.not. status_ok) then
@@ -296,7 +314,7 @@ contains
       
       u = [d%T_bound, d%z_bound]
       Pn = d%P_bound
-      call dop%integrate(Pn, u, c%P_top, [1.0e-9_dp], [1.0e-6_dp], iout=2, idid=idid)
+      call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-6_dp], iout=2, idid=idid)
       if (allocated(d%err)) then
         err = d%err
         return
@@ -319,20 +337,20 @@ contains
       elseif (d%stopping_reason == ReachedTropopause) then
         ! Values at tropopause
         d%P(d%j) = d%P_trop
-        d%T(d%j) = c%T_trop
+        d%T(d%j) = d%T_trop
         d%z(d%j) = d%z_trop
-        call mixing_ratios_moist(c, d, d%P(d%j), d%T(d%j), d%f_i(d%j,:))
+        call mixing_ratios_moist(d, d%P(d%j), d%T(d%j), d%f_i(d%j,:))
         
         ! Values above the tropopause
         do i = d%j+1,size(d%z)
-          d%T(i) = c%T_trop
+          d%T(i) = d%T_trop
           d%f_i(i,:) = d%f_i(d%j,:)
           mubar = 0.0_dp
-          do j = 1,c%sp%ng
-            mubar = mubar + d%f_i(d%j,j)*c%sp%g(j)%mass
+          do j = 1,d%sp%ng
+            mubar = mubar + d%f_i(d%j,j)*d%sp%g(j)%mass
           enddo
-          d%z(i) = altitude_vs_P(d%P(i), c%T_trop, mubar, d%P_trop, &
-                   d%z_trop, c%planet_mass, c%planet_radius) 
+          d%z(i) = altitude_vs_P(d%P(i), d%T_trop, mubar, d%P_trop, &
+                   d%z_trop, d%planet_mass, d%planet_radius) 
         enddo
       
       endif
@@ -343,11 +361,10 @@ contains
     
   end subroutine
   
-  subroutine find_tropopause(dop, c, d, P_cur, P_old)
+  subroutine find_tropopause(dop, d, P_cur, P_old)
     use minpack_module, only: lmdif1
     
     class(dop853_class),intent(inout) :: dop
-    type(AdiabatClimateModel), intent(in) :: c
     type(AdiabatProfileData), intent(inout) :: d
     real(dp), intent(in) :: P_cur, P_old
     
@@ -378,16 +395,15 @@ contains
       real(dp) :: T, P
       P = 10.0_dp**x(1)
       T = dop%contd8(1, P)
-      fvec(1) = c%T_trop - T
+      fvec(1) = d%T_trop - T
     end subroutine
     
   end subroutine
   
-  subroutine find_dry_moist_boundary(dop, c, d, P_cur, P_old)
+  subroutine find_dry_moist_boundary(dop, d, P_cur, P_old)
     use minpack_module, only: lmdif1
     
     class(dop853_class),intent(inout) :: dop
-    type(AdiabatClimateModel), intent(in) :: c
     type(AdiabatProfileData), intent(inout) :: d
     real(dp), intent(in) :: P_cur, P_old
       
@@ -418,8 +434,8 @@ contains
       real(dp) :: T, P, p_H2O_sat
       P = 10.0_dp**x(1)
       T = dop%contd8(1, P)
-      p_H2O_sat = sat_pressure_H2O(T, c%sp%g(c%LH2O)%mass)
-      fvec(1) = p_H2O_sat - P*d%f_i_surf(c%LH2O)
+      p_H2O_sat = sat_pressure_H2O(T, d%sp%g(d%LH2O)%mass)
+      fvec(1) = p_H2O_sat - P*d%f_i_surf(d%LH2O)
     end subroutine
   end subroutine
   
@@ -436,7 +452,6 @@ contains
     integer,intent(inout)             :: irtrn
     real(dp),intent(out)              :: xout
     
-    type(AdiabatClimateModel), pointer :: c
     type(AdiabatProfileData), pointer :: d
     
     real(dp) :: T_cur, z_cur, P_cur, P_old
@@ -450,17 +465,16 @@ contains
     
     select type (self)
     class is (dop853_custom)
-      c => self%c
       d => self%d
     end select
     
     ! Check if the integration needs to be stopped 
-    if (T_cur < c%T_trop) then
+    if (T_cur < d%T_trop) then
       ! Hit the tropopause
 
       ! Solve for the exact pressure of
       ! the tropopause.
-      call find_tropopause(self, c, d, P_cur, P_old)
+      call find_tropopause(self, d, P_cur, P_old)
       
       ! altitude of tropopause
       allocate(d%z_trop)
@@ -469,15 +483,15 @@ contains
       d%stopping_reason = ReachedTropopause
       irtrn = -1
       
-    elseif (c%T_trop <= T_cur .and. T_cur < T_crit_H2O) then
-      mu_H2O = c%sp%g(c%LH2O)%mass
+    elseif (d%T_trop <= T_cur .and. T_cur < T_crit_H2O) then
+      mu_H2O = d%sp%g(d%LH2O)%mass
       p_H2O_sat = sat_pressure_H2O(T_cur, mu_H2O)
-      if (d%f_i_surf(c%LH2O)*P_cur > p_H2O_sat) then
+      if (d%f_i_surf(d%LH2O)*P_cur > p_H2O_sat) then
         ! Entered the moist adiabat regime.
         
         ! Solve for the exact P where we entered the
         ! moist regime.
-        call find_dry_moist_boundary(self, c, d, P_cur, P_old)
+        call find_dry_moist_boundary(self, d, P_cur, P_old)
         
         allocate(d%T_bound, d%z_bound)
         d%T_bound = self%contd8(1, d%P_bound)
@@ -525,7 +539,6 @@ contains
     real(dp), intent(in), dimension(:) :: u
     real(dp), intent(out), dimension(:) :: du
     
-    type(AdiabatClimateModel), pointer :: c
     type(AdiabatProfileData), pointer :: d
     
     real(dp) :: T, z
@@ -537,7 +550,6 @@ contains
     
     select type (self)
     class is (dop853_custom)
-      c => self%c
       d => self%d
     end select
     
@@ -548,17 +560,17 @@ contains
     ! mean molecular weight
     cp = 0.0_dp
     mubar = 0.0_dp
-    do i = 1,c%sp%ng
-        mubar = mubar + d%f_i_surf(i)*c%sp%g(i)%mass
+    do i = 1,d%sp%ng
+        mubar = mubar + d%f_i_surf(i)*d%sp%g(i)%mass
         
         ! J/(mol*K)
-        call heat_capacity_eval(c%sp%g(i)%thermo, T, found, tmp)
+        call heat_capacity_eval(d%sp%g(i)%thermo, T, found, tmp)
         if (.not. found) then
           print*,'not good!'
           stop 1
         endif
         ! J/(kg*K)
-        cp = cp + d%f_i_surf(i)*tmp*(1.0_dp/(c%sp%g(i)%mass*1.0e-3_dp))
+        cp = cp + d%f_i_surf(i)*tmp*(1.0_dp/(d%sp%g(i)%mass*1.0e-3_dp))
     enddo
     ! convert to erg/(g*K)
     cp = cp*1.0e4_dp
@@ -567,7 +579,7 @@ contains
     dT_dP = (Rgas*T)/(P*mubar*cp)
     
     ! How altitude changes with pressure
-    grav = gravity(c%planet_radius, c%planet_mass, z)
+    grav = gravity(d%planet_radius, d%planet_mass, z)
     dz_dP = -(Rgas*T)/(grav*P*mubar)
     
     du = [dT_dP, dz_dP]
@@ -588,7 +600,6 @@ contains
     integer,intent(inout)             :: irtrn
     real(dp),intent(out)              :: xout
     
-    type(AdiabatClimateModel), pointer :: c
     type(AdiabatProfileData), pointer :: d
     
     real(dp) :: T_cur, z_cur, P_cur, P_old
@@ -601,17 +612,16 @@ contains
     
     select type (self)
     class is (dop853_custom)
-      c => self%c
       d => self%d
     end select
     
     ! Check if the integration needs to be stopped 
-    if (T_cur < c%T_trop) then
+    if (T_cur < d%T_trop) then
       ! Hit the tropopause
 
       ! Solve for the exact pressure of
       ! the tropopause.
-      call find_tropopause(self, c, d, P_cur, P_old)
+      call find_tropopause(self, d, P_cur, P_old)
       
       ! altitude of tropopause
       allocate(d%z_trop)
@@ -634,7 +644,7 @@ contains
         do while (d%P(d%j) >= PP)
           d%T(d%j) = self%contd8(1, d%P(d%j))
           d%z(d%j) = self%contd8(2, d%P(d%j))
-          call mixing_ratios_moist(c, d, d%P(d%j), d%T(d%j), d%f_i(d%j,:))
+          call mixing_ratios_moist(d, d%P(d%j), d%T(d%j), d%f_i(d%j,:))
           d%j = d%j + 1
           if (d%j > size(d%P)) exit
         enddo
@@ -644,8 +654,7 @@ contains
 
   end subroutine
   
-  subroutine mixing_ratios_moist(c, d, P, T, f_i_layer)
-    type(AdiabatClimateModel) :: c
+  subroutine mixing_ratios_moist(d, P, T, f_i_layer)
     type(AdiabatProfileData) :: d
     real(dp) :: P, T
     real(dp) :: f_i_layer(:)
@@ -653,14 +662,14 @@ contains
     real(dp) :: mu_H2O, f_H2O, f_dry
     integer :: i
     
-    mu_H2O = c%sp%g(c%LH2O)%mass
+    mu_H2O = d%sp%g(d%LH2O)%mass
     f_H2O = sat_pressure_H2O(T, mu_H2O)/P
     
     f_dry = 1.0_dp - f_H2O
     
-    f_i_layer(c%LH2O) = f_H2O
-    do i = 1,c%sp%ng
-      if (i /= c%LH2O) then
+    f_i_layer(d%LH2O) = f_H2O
+    do i = 1,d%sp%ng
+      if (i /= d%LH2O) then
         f_i_layer(i) = f_dry*d%f_i_dry(i)
       endif
     enddo
@@ -675,7 +684,6 @@ contains
     real(dp), intent(in), dimension(:) :: u
     real(dp), intent(out), dimension(:) :: du
     
-    type(AdiabatClimateModel), pointer :: c
     type(AdiabatProfileData), pointer :: d
     
     real(dp) :: T, z
@@ -692,7 +700,6 @@ contains
     
     select type (self)
     class is (dop853_custom)
-      c => self%c
       d => self%d
     end select
     
@@ -701,16 +708,16 @@ contains
     z = u(2)
     
     ! Water
-    mu_H2O = c%sp%g(c%LH2O)%mass
+    mu_H2O = d%sp%g(d%LH2O)%mass
     P_H2O = sat_pressure_H2O(T, mu_H2O)
     f_H2O = P_H2O/P
-    call heat_capacity_eval(c%sp%g(c%LH2O)%thermo, T, found, cp)
+    call heat_capacity_eval(d%sp%g(d%LH2O)%thermo, T, found, cp)
     if (.not. found) then
       print*,'not good!'
       stop 1
     endif
     ! convert to erg/(g*K)
-    cp_H2O = cp*(1.0_dp/(c%sp%g(c%LH2O)%mass*1.0e-3_dp))*1.0e4_dp
+    cp_H2O = cp*(1.0_dp/(d%sp%g(d%LH2O)%mass*1.0e-3_dp))*1.0e4_dp
     
     ! Dry atmosphere
     P_dry = P - P_H2O
@@ -719,18 +726,18 @@ contains
     ! mudry and dry heat capacity
     mu_dry = tiny(0.0_dp)
     cp_dry = tiny(0.0_dp)
-    do i = 1,c%sp%ng
-      if (i /= c%LH2O) then
-        mu_dry = mu_dry + d%f_i_dry(i)*c%sp%g(i)%mass
+    do i = 1,d%sp%ng
+      if (i /= d%LH2O) then
+        mu_dry = mu_dry + d%f_i_dry(i)*d%sp%g(i)%mass
         
         ! J/(mol*K)
-        call heat_capacity_eval(c%sp%g(i)%thermo, T, found, cp)
+        call heat_capacity_eval(d%sp%g(i)%thermo, T, found, cp)
         if (.not. found) then
           print*,'not good!'
           stop 1
         endif
         ! J/(kg*K)
-        cp_dry = cp_dry + d%f_i_dry(i)*cp*(1.0_dp/(c%sp%g(i)%mass*1.0e-3_dp))
+        cp_dry = cp_dry + d%f_i_dry(i)*cp*(1.0_dp/(d%sp%g(i)%mass*1.0e-3_dp))
       endif
     enddo
     ! convert to erg/(g*K)
@@ -747,7 +754,7 @@ contains
     
     ! gravity
     mubar = f_dry*mu_dry + f_H2O*mu_H2O
-    grav = gravity(c%planet_radius, c%planet_mass, z)
+    grav = gravity(d%planet_radius, d%planet_mass, z)
     dz_dP = -(Rgas*T)/(grav*P*mubar)
     
     ! output
@@ -782,6 +789,4 @@ contains
     
   end function
   
-  
-  
-end submodule
+end module

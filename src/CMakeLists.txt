@@ -18,7 +18,6 @@ set(RADIATE_SOURCES
 
 set(ADIABAT_SOURCES
   adiabat/clima_adiabat_water.f90
-  adiabat/clima_adiabat_kasting.f90
   adiabat/clima_adiabat.f90
 )
 

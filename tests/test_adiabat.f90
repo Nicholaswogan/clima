@@ -1,15 +1,15 @@
 program test_adiabat
   use clima_const, only: dp
-  use clima_adiabat, only: AdiabatClimateModel
+  use clima_adiabat, only: WaterAdiabatClimateIR
   use stdlib_math, only: linspace
   implicit none
   
-  type(AdiabatClimateModel) :: c
+  type(WaterAdiabatClimateIR) :: c
   character(:), allocatable :: err
   real(dp) :: T
   integer :: i
   
-  c = AdiabatClimateModel('../data', &
+  c = WaterAdiabatClimateIR('../data', &
                           '../templates/runaway_greenhouse/species.yaml', &
                           '../templates/runaway_greenhouse/settings.yaml', &
                           err)
