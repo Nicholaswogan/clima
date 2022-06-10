@@ -29,6 +29,7 @@ module clima_adiabat
     
   contains
     procedure :: make_profile => WaterAdiabatClimateIR_make_profile
+    procedure :: make_column => WaterAdiabatClimateIR_make_column
     procedure :: OLR => WaterAdiabatClimateIR_OLR
     procedure :: surface_temperature => WaterAdiabatClimateIR_surface_temperature
   end type
@@ -145,6 +146,47 @@ contains
     enddo
     
   end subroutine
+
+  subroutine WaterAdiabatClimateIR_make_column(self, T_surf, N_i_surf, err)
+    use clima_adiabat_water, only: make_column_water
+    use clima_const, only: k_boltz
+    class(WaterAdiabatClimateIR), intent(inout) :: self
+    real(dp), intent(in) :: T_surf !! K
+    real(dp), intent(in) :: N_i_surf(:)
+    character(:), allocatable, intent(out) :: err
+    
+    real(dp), allocatable :: P_e(:), z_e(:), T_e(:), f_i_e(:,:)
+    real(dp), allocatable :: density(:)
+    integer :: i, j
+    
+    allocate(P_e(self%nz+1),  z_e(self%nz+1), T_e(self%nz+1))
+    allocate(f_i_e(self%nz+1,self%sp%ng))
+    allocate(density(self%nz))
+    
+    call make_column_water(T_surf, N_i_surf, &
+                           self%sp, self%nz, self%LH2O, self%planet_mass, &
+                           self%planet_radius, self%P_top, self%T_trop, &
+                           P_e, z_e, T_e, f_i_e, &
+                           err)
+    if (allocated(err)) return
+    
+    do i = 1,self%nz
+      self%P(i) = sqrt(P_e(i)*P_e(i+1))
+      self%T(i) = 0.5_dp*(T_e(i)+T_e(i+1))
+      self%z(i) = 0.5_dp*(z_e(i)+z_e(i+1))
+      self%dz(i) = z_e(i+1) - z_e(i)
+      
+      do j =1,self%sp%ng
+        self%f_i(i,j) = sqrt(f_i_e(i,j)*f_i_e(i+1,j))
+      enddo
+    enddo
+    
+    density = self%P/(k_boltz*self%T)
+    do j =1,self%sp%ng
+      self%densities(:,j) = self%f_i(:,j)*density(:)
+    enddo
+    
+  end subroutine
   
   function WaterAdiabatClimateIR_OLR(self, T_surf, P_i_surf, err) result(OLR)
     class(WaterAdiabatClimateIR), intent(inout) :: self
@@ -152,7 +194,7 @@ contains
     real(dp), target, intent(in) :: P_i_surf(:)
     character(:), allocatable, intent(out) :: err
     
-    real(dp) :: OLR, t(4)
+    real(dp) :: OLR
     
     ! make atmosphere profile
     call self%make_profile(T_surf, P_i_surf, err)
@@ -210,7 +252,6 @@ contains
       T = 10.0_dp**x(1)
       OLR_ = self%OLR(T, P_i_surf, err)
       fvec(1) = OLR - OLR_*1.0e-3_dp
-      print*,OLR, OLR_*1.0e-3_dp, T
     end subroutine
     
   end function

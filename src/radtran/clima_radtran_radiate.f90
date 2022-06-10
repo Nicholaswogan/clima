@@ -22,13 +22,13 @@ contains
   
     type(OpticalProperties), target, intent(inout) :: op !! Optical properties
   
-    real(dp), intent(in) :: surface_albedo !! Surface albedo
+    real(dp), intent(in) :: surface_albedo !! Surface albedo (Needed only for solar)
     real(dp), intent(in) :: u0 !! Cosine of solar zenith angle (Needed only for solar)
     real(dp), intent(in) :: diurnal_fac !! Diurnal averaging factor (0.5) (Needed only for solar)
     real(dp), intent(in) :: photons_sol(:) !! (nw) Average solar flux in each bin (mW/m2/Hz) (Needed only for solar)
   
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
-    real(dp), intent(in) :: T_surface
+    real(dp), intent(in) :: T_surface !! Surface Tempeature (K) (Needed only for solar)
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
                                            !! molecule in each layer (molcules/cm3)
@@ -210,7 +210,8 @@ contains
         elseif (kset%k_method == k_RandomOverlapResortRebin) then
           ! Random Overlap with Resorting and Rebinning.
           call k_rorr(op, kset, u0, surface_albedo, cols, rw, rz)
-        elseif (kset%k_method == 999) then
+        elseif (.false.) then
+        ! elseif (kset%k_method == 999) then
           ! No scattering (Only for IR)
           call k_no_scatter(op, cols, rw, rz)
           
@@ -465,12 +466,8 @@ contains
     ! mean transmision method
     do jj = 1,op%nk
       
-      
     enddo
-    
-    
-    
-    
+ 
   end subroutine
   
   subroutine interpolate_Xsection(xs, l, P, T, res)

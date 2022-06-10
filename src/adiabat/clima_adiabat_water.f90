@@ -3,6 +3,10 @@ module clima_adiabat_water
   use clima_types, only: Species
   use dop853_module, only: dop853_class
   implicit none
+
+  private
+  public :: make_profile_water
+  public :: make_column_water
   
   type :: AdiabatProfileData
     ! pointers to input data
@@ -51,12 +55,118 @@ module clima_adiabat_water
   end type
   
 contains
+
+  subroutine make_column_water(T_surf, N_i_surf, &
+                               sp, nz, LH2O, planet_mass, &
+                               planet_radius, P_top, T_trop, &
+                               P, z, T, f_i, &
+                               err)
+    use minpack_module, only: hybrd1
+    use clima_eqns, only: gravity
+    use clima_const, only: k_boltz, N_avo
+    real(dp), target, intent(in) :: T_surf !! K
+    real(dp), intent(in) :: N_i_surf(:) !! (ng) dynes/cm2
+
+    type(Species), target, intent(in) :: sp
+    integer, intent(in) :: nz
+    integer, target, intent(in) :: LH2O
+    real(dp), target, intent(in) :: planet_mass, planet_radius
+    real(dp), target, intent(in) :: P_top, T_trop
+    
+    real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
+    real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
+    character(:), allocatable, intent(out) :: err
+
+    integer :: i, j
+    real(dp) :: grav
+    real(dp), allocatable :: P_av(:), T_av(:), density_av(:), f_i_av(:,:), dz(:)
+
+    integer :: n
+    real(dp), allocatable :: x(:)
+    real(dp), allocatable :: fvec(:)
+    real(dp), parameter :: tol = 1.0e-5_dp
+    integer :: info
+    integer :: lwa
+    real(dp), allocatable :: wa(:)
+
+    n = sp%ng
+    allocate(x(n))
+    allocate(fvec(n))
+    lwa = (n*(3*n+13))/2 + 1
+    allocate(wa(lwa))
+
+    allocate(P_av(nz), T_av(nz), density_av(nz), f_i_av(nz,sp%ng), dz(nz))
+
+    ! Initial guess will be crude conversion of moles/cm2 (column) to 
+    ! to dynes/cm2 (pressure)
+    grav = gravity(planet_radius, planet_mass, 0.0_dp)
+    do i = 1,n
+      x(i) = log10(max(N_i_surf(i)*sp%g(i)%mass*grav, sqrt(tiny(1.0_dp))))
+    enddo
+
+    call hybrd1(fcn, n, x, fvec, tol, info, wa, lwa)
+    if (info /= 1) then
+      err = 'hybrd1 root solve failed.'
+      return
+    endif
+
+  contains
+    subroutine fcn(n, x, fvec, iflag)
+      integer, intent(in) :: n
+      real(dp), intent(in) :: x(n)
+      real(dp), intent(out) :: fvec(n)
+      integer, intent(inout) :: iflag
+
+      real(dp) :: N_i(n), P_i(n)
+      real(dp) :: P_H2O_ocean, N_H2O_ocean
+
+      P_i(:) = 10.0_dp**x(:)
+      call make_profile_water(T_surf, P_i, &
+                              sp, nz, LH2O, planet_mass, &
+                              planet_radius, P_top, T_trop, &
+                              P, z, T, f_i, &
+                              err)
+      if (allocated(err)) then
+       iflag = -1
+        return
+      endif 
+
+      ! Figure out the "pressure" of the ocean
+      P_H2O_ocean = P_i(LH2O) - P(1)*f_i(1,LH2O)
+      ! convert to a column (moles/cm2)
+      N_H2O_ocean = P_H2O_ocean/(sp%g(LH2O)%mass*grav)
+
+      ! compute averages
+      do i = 1,nz
+        P_av(i) = sqrt(max(P(i)*P(i+1),0.0_dp))
+        T_av(i) = 0.5_dp*(T(i)+T(i+1))
+        dz(i) = z(i+1)-z(i)
+        do j = 1,sp%ng
+          f_i_av(i,j) = sqrt(max(f_i(i,j)*f_i(i+1,j),0.0_dp))
+        enddo
+      enddo
+
+      density_av = P_av/(k_boltz*T_av)
+
+      do i = 1,sp%ng
+        N_i(i) = sum(density_av*f_i_av(:,i)*dz)/N_avo
+      enddo
+      
+      ! Add the ocean to the H2O column in the atmosphere
+      N_i(LH2O) = N_i(LH2O) + N_H2O_ocean
+
+      ! residual
+      fvec = N_i - N_i_surf
+
+    end subroutine
+
+  end subroutine
   
-  module subroutine make_profile_water(T_surf, P_i_surf, &
-                                       sp, nz, LH2O, planet_mass, &
-                                       planet_radius, P_top, T_trop, &
-                                       P, z, T, f_i, &
-                                       err)
+  subroutine make_profile_water(T_surf, P_i_surf, &
+                                sp, nz, LH2O, planet_mass, &
+                                planet_radius, P_top, T_trop, &
+                                P, z, T, f_i, &
+                                err)
     use stdlib_math, only: logspace
     
     real(dp), target, intent(in) :: T_surf !! K
@@ -204,7 +314,7 @@ contains
     ! integrate
     u = [d%T_surf, 0.0_dp]
     Pn = d%P_surf
-    call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-6_dp], iout=2, idid=idid)
+    call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-9_dp], iout=2, idid=idid)
     if (allocated(d%err)) then
       err = d%err
       return
@@ -267,7 +377,7 @@ contains
     ! integrate
     u = [d%T_surf, 0.0_dp]
     Pn = d%P_surf
-    call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-6_dp], iout=2, idid=idid)
+    call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-9_dp], iout=2, idid=idid)
     if (allocated(d%err)) then
       err = d%err
       return
@@ -314,7 +424,7 @@ contains
       
       u = [d%T_bound, d%z_bound]
       Pn = d%P_bound
-      call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-6_dp], iout=2, idid=idid)
+      call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-9_dp], iout=2, idid=idid)
       if (allocated(d%err)) then
         err = d%err
         return
@@ -356,8 +466,6 @@ contains
       endif
       
     endif
-    
-    
     
   end subroutine
   
@@ -467,6 +575,11 @@ contains
     class is (dop853_custom)
       d => self%d
     end select
+
+    if (allocated(d%err)) then
+      irtrn = -10
+      return
+    endif
     
     ! Check if the integration needs to be stopped 
     if (T_cur < d%T_trop) then
@@ -527,8 +640,6 @@ contains
       
     endif
     
-    
-    
   end subroutine
   
   subroutine rhs_dry_dop(self, P, u, du)
@@ -566,8 +677,8 @@ contains
         ! J/(mol*K)
         call heat_capacity_eval(d%sp%g(i)%thermo, T, found, tmp)
         if (.not. found) then
-          print*,'not good!'
-          stop 1
+          d%err = "Failed to compute heat capacity"
+          return
         endif
         ! J/(kg*K)
         cp = cp + d%f_i_surf(i)*tmp*(1.0_dp/(d%sp%g(i)%mass*1.0e-3_dp))
@@ -614,6 +725,11 @@ contains
     class is (dop853_custom)
       d => self%d
     end select
+
+    if (allocated(d%err)) then
+      irtrn = -10
+      return
+    endif
     
     ! Check if the integration needs to be stopped 
     if (T_cur < d%T_trop) then
@@ -713,8 +829,8 @@ contains
     f_H2O = P_H2O/P
     call heat_capacity_eval(d%sp%g(d%LH2O)%thermo, T, found, cp)
     if (.not. found) then
-      print*,'not good!'
-      stop 1
+      d%err = "Failed to compute heat capacity"
+      return
     endif
     ! convert to erg/(g*K)
     cp_H2O = cp*(1.0_dp/(d%sp%g(d%LH2O)%mass*1.0e-3_dp))*1.0e4_dp
@@ -733,8 +849,8 @@ contains
         ! J/(mol*K)
         call heat_capacity_eval(d%sp%g(i)%thermo, T, found, cp)
         if (.not. found) then
-          print*,'not good!'
-          stop 1
+          d%err = "Failed to compute heat capacity"
+          return
         endif
         ! J/(kg*K)
         cp_dry = cp_dry + d%f_i_dry(i)*cp*(1.0_dp/(d%sp%g(i)%mass*1.0e-3_dp))
