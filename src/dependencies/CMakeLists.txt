@@ -20,8 +20,9 @@ CPMAddPackage(
 # futils
 CPMAddPackage(
   NAME futils
-  VERSION 0.1.0
-  URL "https://github.com/Nicholaswogan/futils/archive/baf0c9e3dd45bc2bb8d4fa9f02cb4cfae071ad88.zip"
+  VERSION 0.1.1
+  GITHUB_REPOSITORY "Nicholaswogan/futils"
+  GIT_TAG "v0.1.1"
   EXCLUDE_FROM_ALL ON
 )
 
