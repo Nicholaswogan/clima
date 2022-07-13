@@ -28,7 +28,7 @@ if ("${CMAKE_Fortran_COMPILER_ID}" MATCHES "GNU")
     target_compile_options(clima PRIVATE -Wunused -fcheck=all,no-array-temps -fimplicit-none)
   endif()
   if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(clima PRIVATE -finline-functions -ftree-vectorize -funroll-loops -march=native)
+    target_compile_options(clima PRIVATE -finline-functions -ftree-vectorize -funroll-loops)
   endif()
 endif()
 
