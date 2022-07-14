@@ -89,7 +89,7 @@ contains
         write(1) self%c%rad%wrk_ir%fdn_n
         write(1) self%c%rad%wrk_sol%fup_n
         write(1) self%c%rad%wrk_sol%fdn_n
-        write(1) self%c%wrk%P
+        write(1) [self%c%surface_pressure, self%c%wrk%P]
         close(1)
 
         self%j = self%j + 1
@@ -122,13 +122,13 @@ contains
     integer :: idid
     logical :: status_ok
     real(dp) :: tn, tout, hcur
-    real(dp) :: yvec(self%nz)
+    real(dp) :: yvec(self%neq)
     real(dp) :: t_eval_1(size(t_eval)+1)
-    integer :: icomp(self%nz)
+    integer :: icomp(self%neq)
     type(dop853_custom) :: dop
     
     ! check dimensions
-    if (size(T_start) /= self%nz) then
+    if (size(T_start) /= self%neq) then
       err = "Input to evolve has the wrong dimension"
       return
     endif
@@ -144,16 +144,16 @@ contains
       endif
     endif
     write(1) self%nz
-    write(1) self%z
+    write(1) [0.0_dp, self%z]
     write(1) size(t_eval)
     close(1)
 
-    do i = 1,self%nz
+    do i = 1,self%neq
       icomp(i) = i
     enddo
     
     ! initialize
-    call dop%initialize(fcn=rhs_dop853, solout=solout, n=self%nz, icomp=icomp, status_ok=status_ok)
+    call dop%initialize(fcn=rhs_dop853, solout=solout, n=self%neq, icomp=icomp, status_ok=status_ok)
     if (.not. status_ok) then
       err = "failed to initialize dop853"
       return
@@ -162,12 +162,12 @@ contains
     dop%c => self
     dop%t_eval => t_eval
     dop%filename => filename
-    allocate(dop%u(self%nz), dop%du(self%nz))
+    allocate(dop%u(self%neq), dop%du(self%neq))
     
     yvec = T_start
     tn = tstart
     tout = t_eval(size(t_eval))
-    call dop%integrate(tn, yvec, tout, [1.0e-3_dp], [1.0e-6_dp], iout=3, idid=idid)
+    call dop%integrate(tn, yvec, tout, [self%rtol], [self%atol], iout=3, idid=idid)
     if (idid /= 1) then
       success = .false.
     else

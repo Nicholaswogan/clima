@@ -21,6 +21,7 @@ contains
     real(dp) :: rho(self%nz)
     real(dp) :: Fc_e(self%nz-1)
     real(dp) :: Latent_heat(self%nz)
+    real(dp) :: dTdt_l(self%nz)
     
     real(dp) :: delta_z
 
@@ -28,7 +29,8 @@ contains
     
     w => self%wrk
     
-    w%T = T_in
+    w%T(:) = T_in(2:)
+    w%T_surf = T_in(1)
     
     if (self%switch) then
       ! First, we compute P profile
@@ -48,7 +50,7 @@ contains
     rho = w%density*(1.0_dp/N_avo)*self%mubar
     
     ! Radiative transfer
-    call self%rad%radiate(w%T(1), w%T, w%P, w%densities, self%dz, err)
+    call self%rad%radiate(w%T_surf, w%T(:), w%P, w%densities, self%dz, err)
     if (allocated(err)) return
 
     ! Heat capacity in erg/(g*K)
@@ -74,7 +76,7 @@ contains
     scale_height(:) = (k_boltz*w%T(:)*N_avo)/(self%mubar(:)*self%grav(:))
     
     ! Convection
-    call convection_diffusion(w%T, self%grav, self%z, self%dz, cp, &
+    call convection_diffusion(w%T(:), self%grav, self%z, self%dz, cp, &
                               rho, adiabat_lapse, scale_height, Fc_e)
     
     ! Latent heating (ergs/(cm2 s))
@@ -90,23 +92,28 @@ contains
     !!! Right hand side (K/s) !!!
     ! center grid points
     do j = 2,self%nz-1
-      dTdt(j) = &
+      dTdt_l(j) = &
         (1.0_dp/(rho(j)*cp(j)))*(self%rad%f_total(j+1) - self%rad%f_total(j))/self%dz(j) + &
         (-1.0_dp/(rho(j)*cp(j)))*(Fc_e(j) - Fc_e(j-1))/self%dz(j) + &
         (1.0_dp/(rho(j)*cp(j)))*Latent_heat(j)
     enddo
-    ! lower boundary
+    ! lower layer
     j = 1
-    dTdt(j) = (1.0_dp/(rho(j)*cp(j)))*(self%rad%f_total(j+1) - self%rad%f_total(j))/self%dz(j) + &
+    dTdt_l(j) = (1.0_dp/(rho(j)*cp(j)))*(self%rad%f_total(j+1) - self%rad%f_total(j))/self%dz(j) + &
               (-1.0_dp/(rho(j)*cp(j)))*(Fc_e(1)/self%dz(j) - 0.0_dp) + &
               (1.0_dp/(rho(j)*cp(j)))*Latent_heat(j)
         
     ! upper boundary
     j = self%nz
-    dTdt(j) = (1.0_dp/(rho(j)*cp(j)))*(self%rad%f_total(j+1) - self%rad%f_total(j))/self%dz(j) + &
+    dTdt_l(j) = (1.0_dp/(rho(j)*cp(j)))*(self%rad%f_total(j+1) - self%rad%f_total(j))/self%dz(j) + &
               (-1.0_dp/(rho(j)*cp(j)))*(0.0_dp - Fc_e(j-1)/self%dz(j)) + &
               (1.0_dp/(rho(j)*cp(j)))*Latent_heat(j)
-      
+    
+    ! ground level
+    dTdt(1) = (1.0_dp/(1.0_dp*4.182e7_dp))*(self%rad%f_total(1))/(500.0_dp)
+
+    ! append atmosphere
+    dTdt(2:) = dTdt_l
       
   end subroutine
   

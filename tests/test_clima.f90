@@ -60,7 +60,7 @@ contains
     print*,OLR
     
     open(unit=1,file='../OLR.dat',form='unformatted',status='replace')
-    write(1) 0.5_dp*(rad%ir%freq(1:rad%ir%nw)+rad%ir%freq(2:rad%ir%nw+1))
+    write(1) rad%ir%freq
     write(1) rad%wrk_ir%fup_a(nz+1,:)
     close(1)
 
@@ -125,13 +125,20 @@ contains
     print*,rad%wrk_sol%fdn_n(nz+1)*1.0e-3_dp
 
     open(unit=1,file='../f_total.dat',form='unformatted',status='replace')
-    write(1) z
-    write(1) dz
-    write(1) rad%f_total(:)
-    write(1) rad%wrk_sol%fup_n(:)
-    write(1) rad%wrk_sol%fdn_n(:)
-    write(1) rad%wrk_ir%fup_n(:)
-    write(1) rad%wrk_ir%fdn_n(:)
+    ! write(1) z
+    ! write(1) dz
+    ! write(1) rad%f_total(:)
+    ! write(1) rad%wrk_sol%fup_n(:)
+    ! write(1) rad%wrk_sol%fdn_n(:)
+    ! write(1) rad%wrk_ir%fup_n(:)
+    ! write(1) rad%wrk_ir%fdn_n(:)
+
+    write(1) rad%ir%freq
+    write(1) rad%wrk_ir%fup_a(nz+1,:)
+    write(1) rad%sol%freq
+    write(1) rad%wrk_sol%fup_a(nz+1,:)
+    write(1) rad%photons_sol
+
     close(1)
 
   end subroutine

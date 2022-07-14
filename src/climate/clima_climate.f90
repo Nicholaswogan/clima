@@ -8,6 +8,7 @@ module clima_climate
   public :: Climate
 
   type :: ClimateWrk
+    real(dp) :: T_surf
     real(dp), allocatable :: T(:) ! (nz) K
     real(dp), allocatable :: P(:) ! (nz) bars
     real(dp), allocatable :: density(:)
@@ -25,6 +26,7 @@ module clima_climate
 
     ! radiative transfer
     integer :: nz ! number of layers, copy
+    integer :: neq ! (nz + 1)
     type(Radtran) :: rad
 
     ! planet
@@ -40,10 +42,14 @@ module clima_climate
     real(dp), allocatable :: mubar(:) ! (nz) mean molecular weight
 
     ! initial T
-    real(dp), allocatable :: T_init(:) ! (nz) K
+    real(dp), allocatable :: T_init(:) ! (neq) K
 
     ! work
     type(ClimateWrk) :: wrk
+
+    ! for the integrator
+    real(dp) :: rtol = 1.0e-4_dp 
+    real(dp) :: atol = 1.0e-6_dp 
 
   contains
     procedure :: right_hand_side
@@ -104,6 +110,7 @@ contains
 
     ! unpack settings
     c%nz = s%nz
+    c%neq = c%nz + 1
     c%planet_mass = s%planet_mass
     c%planet_radius = s%planet_radius
     c%surface_pressure = s%P_surf
@@ -128,7 +135,7 @@ contains
     allocate(c%grav(c%nz))
     allocate(c%mix(c%nz,c%sp%ng))
     allocate(c%mubar(c%nz))
-    allocate(c%T_init(c%nz))
+    allocate(c%T_init(c%neq))
     ! set up vertical grid
     call vertical_grid(s%bottom, s%top, &
                        s%nz, c%z, c%dz)
@@ -141,9 +148,12 @@ contains
       stop 1
     endif
     allocate(P_dum(c%nz))
-    call unpack_atmospherefile(atm, c%species_names, c%z, c%mix, c%T_init, P_dum, err)
+    call unpack_atmospherefile(atm, c%species_names, c%z, c%mix, c%T_init(2:), P_dum, err)
     if (allocated(err)) return
     
+    ! surface T is the T above it
+    c%T_init(1) = c%T_init(2)
+
     ! compute mean molecular weight everywhere
     do i = 1,c%nz
       c%mubar(i) = 0
