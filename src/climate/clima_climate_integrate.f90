@@ -4,6 +4,13 @@ submodule(clima_climate) clima_climate_integrate
   
   type, extends(dop853_class) :: dop853_custom
     type(Climate), pointer :: c
+
+    integer :: j
+    real(dp), pointer :: t_eval(:)
+    character(:), pointer :: filename
+    real(dp), allocatable :: u(:), du(:)
+    character(:), allocatable :: err
+
   end type
     
 contains
@@ -40,15 +47,71 @@ contains
     endif
 
   end subroutine
+
+  subroutine solout(self, nr, xold, x, y, irtrn, xout)
+    class(dop853_class),intent(inout) :: self
+    integer,intent(in)                :: nr
+    real(dp),intent(in)               :: xold
+    real(dp),intent(in)               :: x
+    real(dp),dimension(:),intent(in)  :: y
+    integer,intent(inout)             :: irtrn
+    real(dp),intent(out)              :: xout
+
+    type(dop853_custom), pointer :: dop
+
+    real(dp) :: time_old, time_cur
+    integer :: i
+
+    time_old = xold
+    time_cur = x
+
+    select type (self)
+    class is (dop853_custom)
+
+    if (nr == 1) then
+      xout = self%t_eval(1)
+      self%j = 1
+    else
+
+      do while (self%t_eval(self%j) <= x .and. self%j <= size(self%t_eval))
+        do i = 1,size(y)
+          self%u(i) = self%contd8(i, self%t_eval(self%j))
+        enddo
+
+        call self%c%right_hand_side(self%u, self%du, self%err)
+
+        open(1, file = self%filename, status='old', form="unformatted",position="append")
+        write(1) self%t_eval(self%j)
+        write(1) self%u
+
+        write(1) self%c%rad%f_total
+        write(1) self%c%rad%wrk_ir%fup_n
+        write(1) self%c%rad%wrk_ir%fdn_n
+        write(1) self%c%rad%wrk_sol%fup_n
+        write(1) self%c%rad%wrk_sol%fdn_n
+        write(1) self%c%wrk%P
+        close(1)
+
+        self%j = self%j + 1
+      enddo
+      if (self%j <= size(self%t_eval)) then
+        xout = self%t_eval(self%j)
+      endif
+
+    endif
+
+    end select
+
+  end subroutine
   
   module function evolve(self, filename, tstart, T_start, t_eval, overwrite, err) result(success)
                                    
     ! in/out
     class(Climate), target, intent(inout) :: self
-    character(*), intent(in) :: filename
+    character(*), target, intent(in) :: filename
     real(dp), intent(in) :: tstart
     real(dp), intent(in) :: T_start(:)
-    real(dp), intent(in) :: t_eval(:)
+    real(dp), target, intent(in) :: t_eval(:)
     logical, intent(in) :: overwrite
     character(:), allocatable, intent(out) :: err
 
@@ -61,6 +124,7 @@ contains
     real(dp) :: tn, tout, hcur
     real(dp) :: yvec(self%nz)
     real(dp) :: t_eval_1(size(t_eval)+1)
+    integer :: icomp(self%nz)
     type(dop853_custom) :: dop
     
     ! check dimensions
@@ -83,52 +147,33 @@ contains
     write(1) self%z
     write(1) size(t_eval)
     close(1)
+
+    do i = 1,self%nz
+      icomp(i) = i
+    enddo
     
     ! initialize
-    call dop%initialize(fcn=rhs_dop853, n=self%nz, status_ok=status_ok)
+    call dop%initialize(fcn=rhs_dop853, solout=solout, n=self%nz, icomp=icomp, status_ok=status_ok)
     if (.not. status_ok) then
       err = "failed to initialize dop853"
       return
     endif
     
     dop%c => self
+    dop%t_eval => t_eval
+    dop%filename => filename
+    allocate(dop%u(self%nz), dop%du(self%nz))
     
-    ! first integrate from tstart to t_teval(1)
     yvec = T_start
-    t_eval_1(1) = tstart
-    t_eval_1(2:) = t_eval
-
-    do ii = 2, size(t_eval_1)
-      
-      tn = t_eval_1(ii-1)
-      tout = t_eval_1(ii)
-      call dop%integrate(tn, yvec, tout, [1.0e-3_dp], [1.0e-6_dp], iout=0, idid=idid)
-      call dop%info(h=hcur)
-      call dop%initialize(fcn=rhs_dop853, n=self%nz, hinitial=hcur, status_ok=status_ok)
-      dop%c => self
-      
-      if (idid /= 1) then
-        print*,idid
-        success = .false.
-        exit
-      else
-        success = .true.
-    
-        open(1, file = filename, status='old', form="unformatted",position="append")
-        write(1) tn
-        write(1) yvec
-        write(1) self%rad%f_total
-        write(1) self%rad%wrk_ir%fup_n
-        write(1) self%rad%wrk_ir%fdn_n
-        write(1) self%rad%wrk_sol%fup_n
-        write(1) self%rad%wrk_sol%fdn_n
-        write(1) self%wrk%P
-        close(1)
-    
-      endif
-    enddo
+    tn = tstart
+    tout = t_eval(size(t_eval))
+    call dop%integrate(tn, yvec, tout, [1.0e-3_dp], [1.0e-6_dp], iout=3, idid=idid)
+    if (idid /= 1) then
+      success = .false.
+    else
+      success = .true.
+    endif
     
   end function
-  
 
 end submodule

@@ -64,10 +64,10 @@ module clima_climate
 
     module function evolve(self, filename, tstart, T_start, t_eval, overwrite, err) result(success)
       class(Climate), target, intent(inout) :: self
-      character(*), intent(in) :: filename
+      character(*), target, intent(in) :: filename
       real(dp), intent(in) :: tstart
       real(dp), intent(in) :: T_start(:)
-      real(dp), intent(in) :: t_eval(:)
+      real(dp), target, intent(in) :: t_eval(:)
       logical, intent(in) :: overwrite
       character(:), allocatable, intent(out) :: err
 
