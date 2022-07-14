@@ -363,7 +363,7 @@ contains
     
     ! Total flux at edges of layers (ergs/(cm2 s) which is the same as mW/m2).
     ! Index 1 is bottom. Index nz+1 is top edge of top layer.
-    self%f_total = (wrk_sol%fup_n - wrk_sol%fdn_n) + (wrk_ir%fup_n - wrk_ir%fdn_n)
+    self%f_total = (wrk_sol%fdn_n - wrk_sol%fup_n) + (wrk_ir%fdn_n - wrk_ir%fup_n)
 
   end subroutine
   

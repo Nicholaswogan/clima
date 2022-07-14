@@ -16,9 +16,16 @@ set(RADIATE_SOURCES
   radtran/clima_radtran.f90
 )
 
+set(CLIMATE_SOURCES
+  climate/clima_climate.f90
+  climate/clima_climate_rhs.f90
+  climate/clima_climate_integrate.f90
+)
+
 add_library(clima 
   ${BASE_SOURCES}
   ${RADIATE_SOURCES}
+  ${CLIMATE_SOURCES}
 )
 target_link_libraries(clima fortran-yaml-c finterp h5fortran futils fortran_stdlib mrgrnk dop853 minpack)
 
