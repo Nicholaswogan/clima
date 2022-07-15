@@ -156,7 +156,7 @@ contains
       
       ! absorption
       do i = 1,op%naxs
-        j = op%cia(i)%sp_ind(1)
+        j = op%axs(i)%sp_ind(1)
         do k = 1,nz
           n = nz+1-k
           rz%taua(n) = rz%taua(n) + rw%axs(k,i)*cols(k,j)
@@ -165,7 +165,7 @@ contains
       
       ! photolysis
       do i = 1,op%npxs
-        j = op%cia(i)%sp_ind(1)
+        j = op%pxs(i)%sp_ind(1)
         do k = 1,nz
           n = nz+1-k
           rz%taua(n) = rz%taua(n) + rw%pxs(k,i)*cols(k,j)

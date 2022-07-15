@@ -162,7 +162,7 @@ contains
   
   module function create_OpticalProperties(datadir, optype, species_names, sop, err) result(op)
     use fortran_yaml_c, only : parse, error_length
-    use clima_const, only: c_light
+    use clima_const, only: c_light, s_str_len
     use clima_types, only: SettingsOpacity
     character(*), intent(in) :: datadir
     integer, intent(in) :: optype
@@ -177,6 +177,9 @@ contains
     character(error_length) :: error
     class(type_node), pointer :: root
     type(type_dictionary), pointer :: root_dict
+    type(type_key_value_pair), pointer :: pair
+    character(s_str_len), allocatable :: tmp_str_list(:)
+    logical :: tmp_bool
     
     op%op_type = optype
     ! get the bins
@@ -260,16 +263,17 @@ contains
     !!!!!!!!!!!!!!!!
     !!! Rayleigh !!!
     !!!!!!!!!!!!!!!!
-    if (allocated(sop%rayleigh)) then
-      op%nray = size(sop%rayleigh)
-      allocate(op%ray(op%nray)) 
+    tmp_bool = .false.
+    if (allocated(sop%rayleigh_bool)) tmp_bool = sop%rayleigh_bool
+
+    if (allocated(sop%rayleigh) .or. tmp_bool) then
+      ! parse the yaml file
       filename = datadir//"/rayleigh/rayleigh.yaml"
       root => parse(filename, error=error)
       if (len_trim(error) /= 0) then
         err = trim(error)
         return
       end if
-
       select type(root)
       class is (type_dictionary)
         root_dict => root
@@ -279,15 +283,46 @@ contains
         deallocate(root)  
         return
       end select
+
+      if (tmp_bool) then
+        i = 0
+        pair => root_dict%first
+        do while (associated(pair))
+          ind1 = findloc(species_names, trim(pair%key), 1)
+          if (ind1 /= 0) then
+            i = i + 1
+          endif
+          pair => pair%next
+        enddo
+        allocate(tmp_str_list(i))
+        i = 1
+        pair => root_dict%first
+        do while (associated(pair))
+          ind1 = findloc(species_names, trim(pair%key), 1)
+          if (ind1 /= 0) then
+            tmp_str_list(i) = trim(pair%key)
+            i = i + 1
+          endif
+          pair => pair%next
+        enddo
+        op%nray = size(tmp_str_list)
+      else
+        op%nray = size(sop%rayleigh)
+        if (allocated(tmp_str_list)) deallocate(tmp_str_list)
+        allocate(tmp_str_list(op%nray))
+        tmp_str_list = sop%rayleigh
+      endif
+      allocate(op%ray(op%nray)) 
+
       do i = 1,op%nray
-        ind1 = findloc(species_names, trim(sop%rayleigh(i)), 1)
+        ind1 = findloc(species_names, trim(tmp_str_list(i)), 1)
         if (ind1 == 0) then
           err = 'Species "'//trim(sop%rayleigh(i))//'" in optical property '// &
                 '"rayleigh" is not in the list of species.'
           exit
         endif
         op%ray(i) = create_RayleighXsection(filename, root_dict, &
-                    trim(sop%rayleigh(i)), ind1, op%wavl, err)
+                    trim(tmp_str_list(i)), ind1, op%wavl, err)
         if (allocated(err)) exit
       enddo
       call root%finalize()
@@ -296,7 +331,7 @@ contains
     else
       op%nray = 0
     endif
-    
+
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!
     !!! Absorption Xsections !!!
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -310,9 +345,39 @@ contains
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!
     !!! Photolysis Xsections !!!
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    if (allocated(sop%photolysis_xs)) then
-      err = "sop%photolysis_xs not implemented"
-      return
+    tmp_bool = .false.
+    if (allocated(sop%photolysis_bool)) tmp_bool = sop%photolysis_bool
+    
+    if (allocated(sop%photolysis_xs) .or. tmp_bool) then
+
+
+      if (tmp_bool) then
+        ! need to go see what photolysis data is avaliable
+
+        err = 'have not implemented boolean photolysis'
+        return
+
+      else
+        op%npxs = size(sop%photolysis_xs)
+        if (allocated(tmp_str_list)) deallocate(tmp_str_list)
+        allocate(tmp_str_list(op%npxs))
+        tmp_str_list = sop%photolysis_xs
+      endif
+
+      allocate(op%pxs(op%npxs)) 
+
+      do i = 1,op%npxs
+        ind1 = findloc(species_names, trim(tmp_str_list(i)), 1)
+        if (ind1 == 0) then
+          err = 'Species "'//trim(sop%rayleigh(i))//'" in optical property '// &
+                '"photolysis-xs" is not in the list of species.'
+          exit
+        endif
+        filename = datadir//"/xsections/"//trim(tmp_str_list(i))//"/"//trim(tmp_str_list(i))//"_xs.txt"
+        op%pxs(i) = create_PhotolysisXsection(filename, trim(tmp_str_list(i)), ind1, op%wavl, err)
+        if (allocated(err)) return
+
+      enddo
     else
       op%npxs = 0
     endif
@@ -920,6 +985,107 @@ contains
     endif
     
   end subroutine
+
+  function create_PhotolysisXsection(xsfilename, sp, sp_ind, wavl, err) result(xs)
+    use clima_const, only: s_str_len, log10tiny
+    use futils, only: inter2, addpnt
+    character(*), intent(in) :: xsfilename
+    character(*), intent(in) :: sp
+    integer, intent(in) :: sp_ind
+    real(dp), intent(in) :: wavl(:)
+    character(:), allocatable, intent(out) :: err
+
+    type(Xsection) :: xs
+    
+    integer, parameter :: maxcols = 200
+    character(len=10000) :: line
+    character(len=100) :: tmp(maxcols)
+    real(dp), parameter :: rdelta = 1.0e-4_dp
+    real(dp), allocatable :: wav_f(:), log10_xs_0d(:)
+    
+    integer :: k, kk, io, ierr
+
+    xs%xs_type = PhotolysisXsection
+    allocate(xs%sp_ind(1))
+    xs%sp_ind(1) = sp_ind
+    
+    open(101, file=xsfilename,status='old',iostat=io)
+    if (io /= 0) then
+      err = 'Species "'//sp//'" does not have photolysis xsection data'
+      return
+    endif
+    read(101,*)
+
+    read(101,'(A)') line
+    do k=1,maxcols
+      read(line,*,iostat=io) tmp(1:k)
+      if (io /= 0) exit
+    enddo
+    if (k == maxcols+1) then
+      err = 'More cross section temperature data than allowed for '//sp
+      return
+    endif
+
+    if (k - 2 == 1) then
+      xs%dim = 0
+    else
+      xs%dim = 1
+    endif
+
+    if (xs%dim == 0) then
+
+      ! count lines
+      k = 0
+      io = 0
+      do while(io == 0)
+        read(101,*,iostat=io)
+        if (io == 0) k = k + 1
+      enddo
+
+      allocate(wav_f(k+4))
+      allocate(log10_xs_0d(k+4))
+      log10_xs_0d = 0.0_dp
+
+      rewind(101)
+      read(101,*)
+      read(101,*)
+      do k = 1,size(wav_f)-4
+        read(101,*,iostat=io) wav_f(k), log10_xs_0d(k)
+        if (io/=0) then
+          err = 'Problem readling "'//xsfilename//'"'
+          return
+        endif
+      enddo
+      close(101)
+
+      log10_xs_0d = log10_xs_0d + tiny(1.0_dp)
+      log10_xs_0d = log10(log10_xs_0d)
+
+      kk = size(wav_f)
+      k = size(wav_f)-4
+      call addpnt(wav_f, log10_xs_0d, kk, k, wav_f(1)*(1.0_dp-rdelta), log10tiny,ierr)
+      call addpnt(wav_f, log10_xs_0d, kk, k, 0.0_dp, log10tiny,ierr)
+      call addpnt(wav_f, log10_xs_0d, kk, k, wav_f(k)*(1.0_dp+rdelta), log10tiny,ierr)
+      call addpnt(wav_f, log10_xs_0d, kk, k, huge(rdelta),log10tiny,ierr)
+      if (ierr /= 0) then
+        err = 'Problem interpolating data in "'//trim(xsfilename)//'"'
+        return
+      endif
+      allocate(xs%xs_0d(size(wavl)-1))
+      call inter2(size(wavl), wavl, xs%xs_0d, &
+                  kk, wav_f, log10_xs_0d, ierr)
+      if (ierr /= 0) then
+        err = 'Problem interpolating data in "'//trim(xsfilename)//'"'
+        return
+      endif
+      xs%xs_0d = 10.0_dp**xs%xs_0d
+
+    elseif (xs%dim == 1) then
+      err = 'Photolysis cross sections for "'//sp//'" can not depend on T'
+      return
+    endif
+    
+  end function
   
 end submodule
 

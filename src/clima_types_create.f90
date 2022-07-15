@@ -812,16 +812,28 @@ contains
     endif
     
     ! photolysis-xs
-    tmp => opacities%get_list("photolysis-xs", required=.false., error=io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (associated(tmp)) then
-      call unpack_string_list(filename, tmp, op%photolysis_xs, err)
-      if (allocated(err)) return
-      ind = check_for_duplicates(op%photolysis_xs)
-      if (ind /= 0) then
-        err = '"'//trim(op%photolysis_xs(ind))//'" is a duplicate in '//trim(tmp%path)
+    node => opacities%get("photolysis-xs")
+    if (associated(node)) then
+      select type (node)
+      class is (type_list)
+        call unpack_string_list(filename, node, op%photolysis_xs, err)
+        if (allocated(err)) return
+        ind = check_for_duplicates(op%photolysis_xs)
+        if (ind /= 0) then
+          err = '"'//trim(op%photolysis_xs(ind))//'" is a duplicate in '//trim(node%path)
+          return
+        endif
+      class is (type_scalar)
+        allocate(op%photolysis_bool)
+        op%photolysis_bool = node%to_logical(default=.true.,success=success)
+        if (.not. success) then
+          err = 'Failed to convert "'//trim(node%path)//'" to logical'
+          return
+        endif
+      class default
+        err = '"'//trim(node%path)//'" must be a list or a scalar.'
         return
-      endif
+      end select
     endif
     
     ! continuum
