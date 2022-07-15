@@ -84,14 +84,22 @@ contains
         write(1) self%t_eval(self%j)
         write(1) self%u
 
-        write(1) self%c%rad%f_total
-        write(1) self%c%rad%wrk_ir%fup_n
-        write(1) self%c%rad%wrk_ir%fdn_n
-        write(1) self%c%rad%wrk_sol%fup_n
-        write(1) self%c%rad%wrk_sol%fdn_n
+        if (self%c%double_radiative_grid) then
+          write(1) self%c%rad%f_total(1::2)
+          write(1) self%c%rad%wrk_ir%fup_n(1::2)
+          write(1) self%c%rad%wrk_ir%fdn_n(1::2)
+          write(1) self%c%rad%wrk_sol%fup_n(1::2)
+          write(1) self%c%rad%wrk_sol%fdn_n(1::2)
+        else
+          write(1) self%c%rad%f_total
+          write(1) self%c%rad%wrk_ir%fup_n
+          write(1) self%c%rad%wrk_ir%fdn_n
+          write(1) self%c%rad%wrk_sol%fup_n
+          write(1) self%c%rad%wrk_sol%fdn_n
+        endif
         write(1) [self%c%surface_pressure, self%c%wrk%P]
         close(1)
-
+        
         self%j = self%j + 1
       enddo
       if (self%j <= size(self%t_eval)) then

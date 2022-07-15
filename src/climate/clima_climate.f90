@@ -10,9 +10,12 @@ module clima_climate
   type :: ClimateWrk
     real(dp) :: T_surf
     real(dp), allocatable :: T(:) ! (nz) K
+    real(dp), allocatable :: T_r(:)
     real(dp), allocatable :: P(:) ! (nz) bars
+    real(dp), allocatable :: P_r(:)
     real(dp), allocatable :: density(:)
     real(dp), allocatable :: densities(:,:) ! (nz,ng) molecules/cm3
+    real(dp), allocatable :: densities_r(:,:)
 
     integer :: nsteps_previous = -1
   end type
@@ -27,6 +30,9 @@ module clima_climate
     ! radiative transfer
     integer :: nz ! number of layers, copy
     integer :: neq ! (nz + 1)
+
+    logical :: double_radiative_grid = .true.
+    integer :: nz_r ! 2*nz
     type(Radtran) :: rad
 
     ! planet
@@ -36,7 +42,9 @@ module clima_climate
 
     ! atmospheric composition
     real(dp), allocatable :: z(:) ! (nz) cm
+    real(dp), allocatable :: z_r(:)
     real(dp), allocatable :: dz(:) ! (nz) cm
+    real(dp), allocatable :: dz_r(:)
     real(dp), allocatable :: grav(:)
     real(dp), allocatable :: mix(:,:) ! (nz,ng) mixing ratios
     real(dp), allocatable :: mubar(:) ! (nz) mean molecular weight
@@ -110,6 +118,11 @@ contains
 
     ! unpack settings
     c%nz = s%nz
+    if (c%double_radiative_grid) then
+      c%nz_r = 2*c%nz
+    else
+      c%nz_r = c%nz
+    endif
     c%neq = c%nz + 1
     c%planet_mass = s%planet_mass
     c%planet_radius = s%planet_radius
@@ -126,12 +139,14 @@ contains
     enddo
 
     ! create radiative transfer
-    c%rad = Radtran(datadir, c%species_names, s, star_f, s%solar_zenith, s%surface_albedo, s%nz, err)
+    c%rad = Radtran(datadir, c%species_names, s, star_f, s%solar_zenith, s%surface_albedo, c%nz_r, err)
     if (allocated(err)) return
 
     ! allocate memory
     allocate(c%z(c%nz))
+    allocate(c%z_r(c%nz_r))
     allocate(c%dz(c%nz))
+    allocate(c%dz_r(c%nz_r))
     allocate(c%grav(c%nz))
     allocate(c%mix(c%nz,c%sp%ng))
     allocate(c%mubar(c%nz))
@@ -139,6 +154,20 @@ contains
     ! set up vertical grid
     call vertical_grid(s%bottom, s%top, &
                        s%nz, c%z, c%dz)
+
+    if (c%double_radiative_grid) then
+      do i = 1,c%nz
+        c%z_r(2*(i-1)+1) = c%z(i) - 0.25_dp*c%dz(i)
+        c%z_r(2*(i-1)+2) = c%z(i) + 0.25_dp*c%dz(i)
+
+        c%dz_r(2*(i-1)+1) = 0.5_dp*c%dz(i)
+        c%dz_r(2*(i-1)+2) = 0.5_dp*c%dz(i)
+      enddo
+    else
+      c%z_r = c%z
+      c%dz_r = c%dz
+    endif
+
     call gravity_z(c%planet_radius, c%planet_mass, &
                    c%nz, c%z, c%grav)
     ! Initial atmophere
@@ -164,9 +193,12 @@ contains
 
     ! allocate work variables
     allocate(c%wrk%T(c%nz))
+    allocate(c%wrk%T_r(c%nz_r))
     allocate(c%wrk%P(c%nz))
+    allocate(c%wrk%P_r(c%nz_r))
     allocate(c%wrk%density(c%nz))
     allocate(c%wrk%densities(c%nz,c%sp%ng))
+    allocate(c%wrk%densities_r(c%nz_r,c%sp%ng))
 
   end function
 

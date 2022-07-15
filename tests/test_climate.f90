@@ -29,7 +29,7 @@ contains
     endif
 
     allocate(t_eval(100))
-    t_eval = 10.0_dp**linspace(1.0_dp,12.0_dp,100)
+    t_eval = 10.0_dp**linspace(1.0_dp,10.0_dp,200)
 
     ! c%T_init = 250.0_dp
 

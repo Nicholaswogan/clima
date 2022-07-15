@@ -22,6 +22,7 @@ contains
     real(dp) :: Fc_e(self%nz-1)
     real(dp) :: Latent_heat(self%nz)
     real(dp) :: dTdt_l(self%nz)
+    real(dp) :: dFdz(self%nz)
     
     real(dp) :: delta_z
 
@@ -47,10 +48,27 @@ contains
       w%densities(:,i) = self%mix(:,i)*w%density(:)
     enddo
     ! density (g/cm3)
-    rho = w%density*(1.0_dp/N_avo)*self%mubar
+    rho = w%density*(1.0_dp/N_avo)*self%mubar 
+
+    if (self%double_radiative_grid) then
+      do i = 1,self%nz
+        w%T_r(2*(i-1)+1) = w%T(i)
+        w%T_r(2*(i-1)+2) = w%T(i)
+
+        w%P_r(2*(i-1)+1) = w%P(i)
+        w%P_r(2*(i-1)+2) = w%P(i)
+
+        w%densities_r(2*(i-1)+1,:) = w%densities(i,:)
+        w%densities_r(2*(i-1)+2,:) = w%densities(i,:)
+      enddo
+    else
+      w%T_r = w%T
+      w%P_r = w%P
+      w%densities_r = w%densities
+    endif
     
     ! Radiative transfer
-    call self%rad%radiate(w%T_surf, w%T(:), w%P, w%densities, self%dz, err)
+    call self%rad%radiate(w%T_surf, w%T_r(:), w%P_r, w%densities_r, self%dz_r, err)
     if (allocated(err)) return
 
     ! Heat capacity in erg/(g*K)
@@ -88,24 +106,34 @@ contains
     enddo
 
     Fc_e(:) = 0.0_dp
+
+    if (self%double_radiative_grid) then
+      do i = 1,self%nz
+        dFdz(i) = (self%rad%f_total(2*(i-1)+3) - self%rad%f_total(2*(i-1)+1))/self%dz(i)
+      enddo
+    else
+      do j = 1,self%nz
+        dFdz(j) = (self%rad%f_total(j+1) - self%rad%f_total(j))/self%dz(j)
+      enddo
+    endif
     
     !!! Right hand side (K/s) !!!
     ! center grid points
     do j = 2,self%nz-1
       dTdt_l(j) = &
-        (1.0_dp/(rho(j)*cp(j)))*(self%rad%f_total(j+1) - self%rad%f_total(j))/self%dz(j) + &
+        (1.0_dp/(rho(j)*cp(j)))*dFdz(j) + &
         (-1.0_dp/(rho(j)*cp(j)))*(Fc_e(j) - Fc_e(j-1))/self%dz(j) + &
         (1.0_dp/(rho(j)*cp(j)))*Latent_heat(j)
     enddo
     ! lower layer
     j = 1
-    dTdt_l(j) = (1.0_dp/(rho(j)*cp(j)))*(self%rad%f_total(j+1) - self%rad%f_total(j))/self%dz(j) + &
+    dTdt_l(j) = (1.0_dp/(rho(j)*cp(j)))*dFdz(j) + &
               (-1.0_dp/(rho(j)*cp(j)))*(Fc_e(1)/self%dz(j) - 0.0_dp) + &
               (1.0_dp/(rho(j)*cp(j)))*Latent_heat(j)
         
     ! upper boundary
     j = self%nz
-    dTdt_l(j) = (1.0_dp/(rho(j)*cp(j)))*(self%rad%f_total(j+1) - self%rad%f_total(j))/self%dz(j) + &
+    dTdt_l(j) = (1.0_dp/(rho(j)*cp(j)))*dFdz(j) + &
               (-1.0_dp/(rho(j)*cp(j)))*(0.0_dp - Fc_e(j-1)/self%dz(j)) + &
               (1.0_dp/(rho(j)*cp(j)))*Latent_heat(j)
     
