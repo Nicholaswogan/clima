@@ -9,7 +9,7 @@ planet:
   surface-pressure: 1.013
   planet-mass: 5.972e27
   planet-radius: 6.371e8
-  surface-albedo: 0.05
+  surface-albedo: 0.3
   solar-zenith-angle: 60.0
   
 optical-properties:
