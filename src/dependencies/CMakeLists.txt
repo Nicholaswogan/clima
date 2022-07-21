@@ -35,7 +35,7 @@ CPMAddPackage(
   DOWNLOAD_ONLY ON
 )
 
-add_library(clima_finterp ${finterp_SOURCE_DIR}/src/linear_interpolation_module.F90 )
+add_library(finterp ${finterp_SOURCE_DIR}/src/linear_interpolation_module.F90 )
 
 CPMAddPackage(
   NAME fortran_stdlib
@@ -53,10 +53,10 @@ CPMAddPackage(
   DOWNLOAD_ONLY ON
 )
 
-add_library(clima_dop853 
+add_library(dop853 
   ${dop853_SOURCE_DIR}/src/dop853_constants.f90
   ${dop853_SOURCE_DIR}/src/dop853_module.f90
 )
 
 # mrgrnk is from ORDERPACK 2.0: http://www.fortran-2000.com/rank/#1.1
-add_library(clima_mrgrnk mrgrnk_mod.f90) 
+add_library(mrgrnk mrgrnk_mod.f90) 

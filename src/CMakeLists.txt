@@ -32,9 +32,9 @@ target_link_libraries(clima
   h5fortran 
   futils 
   fortran_stdlib
-  clima_finterp
-  clima_mrgrnk 
-  clima_dop853
+  finterp
+  mrgrnk 
+  dop853
 )
 
 # Add special compiler flags to Clima
