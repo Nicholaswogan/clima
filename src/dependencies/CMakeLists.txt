@@ -35,7 +35,7 @@ CPMAddPackage(
   DOWNLOAD_ONLY ON
 )
 
-add_library(finterp ${finterp_SOURCE_DIR}/src/linear_interpolation_module.F90)
+add_library(clima_finterp ${finterp_SOURCE_DIR}/src/linear_interpolation_module.F90 )
 
 CPMAddPackage(
   NAME fortran_stdlib
@@ -45,16 +45,6 @@ CPMAddPackage(
   EXCLUDE_FROM_ALL ON
 )
 
-# CPMAddPackage(
-#   NAME cvode 
-#   VERSION 5.7.0
-#   OPTIONS 
-#     "BUILD_SHARED_LIBS OFF" 
-#     "BUILD_FORTRAN_MODULE_INTERFACE ON"
-#   URL "https://github.com/LLNL/sundials/releases/download/v5.7.0/cvode-5.7.0.tar.gz"
-#   EXCLUDE_FROM_ALL ON
-# )
-
 CPMAddPackage(
   NAME dop853
   VERSION 1.2.0
@@ -63,22 +53,10 @@ CPMAddPackage(
   DOWNLOAD_ONLY ON
 )
 
-add_library(dop853 
+add_library(clima_dop853 
   ${dop853_SOURCE_DIR}/src/dop853_constants.f90
   ${dop853_SOURCE_DIR}/src/dop853_module.f90
 )
 
-CPMAddPackage(
-  NAME minpack
-  VERSION 2.0.0
-  GITHUB_REPOSITORY "fortran-lang/minpack"
-  GIT_TAG "v2.0.0-rc.1"
-  DOWNLOAD_ONLY ON
-)
-
-add_library(minpack
-  ${minpack_SOURCE_DIR}/src/minpack.f90
-)
-
 # mrgrnk is from ORDERPACK 2.0: http://www.fortran-2000.com/rank/#1.1
-add_library(mrgrnk mrgrnk_mod.f90) 
+add_library(clima_mrgrnk mrgrnk_mod.f90) 
