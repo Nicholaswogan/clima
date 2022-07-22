@@ -179,7 +179,7 @@ contains
     type(type_dictionary), pointer :: root_dict
     type(type_key_value_pair), pointer :: pair
     character(s_str_len), allocatable :: tmp_str_list(:)
-    logical :: tmp_bool
+    logical :: tmp_bool, file_exists
     
     op%op_type = optype
     ! get the bins
@@ -221,7 +221,9 @@ contains
       enddo
       
     else
-      op%nk = 0
+      err = "You must specify at least one k-distribution in the settings file."
+      return
+      ! op%nk = 0
     endif
     
     !!!!!!!!!!!
@@ -350,12 +352,27 @@ contains
     
     if (allocated(sop%photolysis_xs) .or. tmp_bool) then
 
-
       if (tmp_bool) then
         ! need to go see what photolysis data is avaliable
-
-        err = 'have not implemented boolean photolysis'
-        return
+        j = 0
+        do i = 1,size(species_names)
+          filename = datadir//"/xsections/"//trim(species_names(i))//"/"//trim(species_names(i))//"_xs.txt"
+          inquire(file=filename, exist=file_exists)
+          if (file_exists) j = j + 1
+        enddo
+        
+        if (allocated(tmp_str_list)) deallocate(tmp_str_list)
+        op%npxs = j
+        allocate(tmp_str_list(op%npxs))
+        j = 1
+        do i = 1,size(species_names)
+          filename = datadir//"/xsections/"//trim(species_names(i))//"/"//trim(species_names(i))//"_xs.txt"
+          inquire(file=filename, exist=file_exists)
+          if (file_exists) then
+            tmp_str_list(j) = species_names(i)
+            j = j + 1
+          endif
+        enddo
 
       else
         op%npxs = size(sop%photolysis_xs)

@@ -5,7 +5,6 @@ atmosphere-grid:
   number-of-layers: 50
   
 planet:
-  background-gas: N2
   surface-pressure: 1.013
   planet-mass: 5.972e27
   planet-radius: 6.371e8
@@ -20,8 +19,8 @@ optical-properties:
     opacities:
       k-distributions: [H2O, CO2, O3]
       CIA: [CO2-CO2, N2-N2, O2-O2, N2-O2]
-      rayleigh: [H2O, CO2, O2, N2]
-      photolysis-xs: [H2O, CO2, O2, N2, O3, CH4]
+      rayleigh: true
+      photolysis-xs: true
       water-continuum: MT_CKD
   solar:
     k-method: RandomOverlapResortRebin
