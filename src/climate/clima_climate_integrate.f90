@@ -57,8 +57,6 @@ contains
     integer,intent(inout)             :: irtrn
     real(dp),intent(out)              :: xout
 
-    type(dop853_custom), pointer :: dop
-
     real(dp) :: time_old, time_cur
     integer :: i
 
@@ -125,13 +123,12 @@ contains
 
     logical :: success
     
-    integer :: i, j, ii, io
+    integer :: i, io
     
     integer :: idid
     logical :: status_ok
-    real(dp) :: tn, tout, hcur
+    real(dp) :: tn, tout
     real(dp) :: yvec(self%neq)
-    real(dp) :: t_eval_1(size(t_eval)+1)
     integer :: icomp(self%neq)
     type(dop853_custom) :: dop
     

@@ -23,8 +23,6 @@ contains
     real(dp) :: Latent_heat(self%nz)
     real(dp) :: dTdt_l(self%nz)
     real(dp) :: dFdz(self%nz)
-    
-    real(dp) :: delta_z
 
     real(dp), parameter :: cp_ground = 4.182e7_dp ! H2O, erg/(g*K)
     real(dp), parameter :: rho_ground = 1.0_dp ! H2O, g/cm3

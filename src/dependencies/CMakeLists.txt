@@ -20,9 +20,9 @@ CPMAddPackage(
 # futils
 CPMAddPackage(
   NAME futils
-  VERSION 0.1.2
+  VERSION 0.1.3
   GITHUB_REPOSITORY "Nicholaswogan/futils"
-  GIT_TAG "v0.1.2"
+  GIT_TAG "v0.1.3"
   EXCLUDE_FROM_ALL ON
 )
 
@@ -36,14 +36,6 @@ CPMAddPackage(
 )
 
 add_library(finterp ${finterp_SOURCE_DIR}/src/linear_interpolation_module.F90 )
-
-CPMAddPackage(
-  NAME fortran_stdlib
-  VERSION 0.2.0
-  GITHUB_REPOSITORY "fortran-lang/stdlib"
-  GIT_TAG "v0.2.0"
-  EXCLUDE_FROM_ALL ON
-)
 
 CPMAddPackage(
   NAME dop853

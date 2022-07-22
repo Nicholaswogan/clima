@@ -137,7 +137,7 @@ contains
   function create_Ksettings(sop) result(kset)
     use clima_types, only: SettingsOpacity
     use clima_eqns, only: weights_to_bins
-    use stdlib_quadrature, only: gauss_legendre
+    use futils, only: gauss_legendre
     
     type(SettingsOpacity), intent(in) :: sop
     type(Ksettings) :: kset

@@ -8,7 +8,7 @@ contains
 
   subroutine test_Climate_evolve()
     use clima_climate, only: Climate
-    use stdlib_math, only: linspace
+    use futils, only: linspace
 
     type(Climate) :: c
     character(:), allocatable :: err
@@ -29,7 +29,8 @@ contains
     endif
 
     allocate(t_eval(100))
-    t_eval = 10.0_dp**linspace(1.0_dp,10.0_dp,100)
+    call linspace(1.0_dp,10.0_dp,t_eval)
+    t_eval = 10.0_dp**t_eval
 
     ! c%T_init = 250.0_dp
 

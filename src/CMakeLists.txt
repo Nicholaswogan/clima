@@ -31,7 +31,6 @@ target_link_libraries(clima
   fortran-yaml-c  
   h5fortran 
   futils 
-  fortran_stdlib
   finterp
   mrgrnk 
   dop853
@@ -41,9 +40,6 @@ target_link_libraries(clima
 if ("${CMAKE_Fortran_COMPILER_ID}" MATCHES "GNU")
   if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(clima PRIVATE -Wunused -fcheck=all,no-array-temps -fimplicit-none)
-  endif()
-  if (CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(clima PRIVATE -finline-functions -ftree-vectorize -funroll-loops)
   endif()
 endif()
 

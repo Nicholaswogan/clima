@@ -44,7 +44,8 @@ contains
     type(type_key_value_pair), pointer :: key_value_pair
     type(type_list_item), pointer :: item
     type(type_error), allocatable :: io_err
-
+    
+    character(:), allocatable :: tmp_str
     integer :: i, j, ind
 
     !!! atoms !!!
@@ -90,9 +91,10 @@ contains
       select type (element => item%node)
       class is (type_dictionary)
         ! name
-        sp%g(j)%name = trim(element%get_string("name",error = io_err))
+        tmp_str = element%get_string("name",error = io_err)
         if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-        
+        sp%g(j)%name = trim(tmp_str)
+
         ! composition
         dict => element%get_dictionary("composition",.true.,error = io_err)
         if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
@@ -596,14 +598,13 @@ contains
     character(:), allocatable :: tmp_str
     
     ! not required
-    tmp_str = trim(planet%get_string("background-gas", error=io_err))
+    tmp_str = planet%get_string("background-gas", error=io_err)
     if (.not. allocated(io_err)) then
-      s%back_gas_name = tmp_str
+      s%back_gas_name = trim(tmp_str)
       deallocate(tmp_str)
     else
       deallocate(io_err)
     endif
-      
     
     tmp = planet%get_real('surface-pressure',error = io_err)
     if (.not. allocated(io_err)) then
@@ -738,8 +739,9 @@ contains
     if (associated(tmp)) then
       
       ! k-distribution settings
-      op%k_method = trim(op_dict%get_string("k-method", error=io_err))
+      op%k_method = op_dict%get_string("k-method", error=io_err)
       if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+      op%k_method = trim(op%k_method)
       
       if (op%k_method == "RandomOverlapResortRebin") then
         op%nbins = op_dict%get_integer("number-of-bins", error=io_err)
@@ -839,7 +841,8 @@ contains
     ! continuum
     node => opacities%get("water-continuum")
     if (associated(node)) then
-      op%water_continuum = trim(opacities%get_string("water-continuum", error=io_err))
+      op%water_continuum = opacities%get_string("water-continuum", error=io_err)
+      op%water_continuum = trim(op%water_continuum)
     endif
     
   end subroutine
