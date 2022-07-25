@@ -96,6 +96,9 @@ contains
     allocate(rw%pxs(nz,op%npxs))
     allocate(rw%H2O(nz))
     allocate(rw%foreign(nz))
+    allocate(rw%w0(nz,op%npart))
+    allocate(rw%qext(nz,op%npart))
+    allocate(rw%gt(nz,op%npart))
     
     ! if there are k-distributions
     ! then we need to allocate some work arrays
@@ -115,14 +118,19 @@ contains
     
   end function  
   
-  module function create_RadiateZWrk(nz) result(rz)
-    integer, intent(in) :: nz
+  module function create_RadiateZWrk(nz, npart) result(rz)
+    integer, intent(in) :: nz, npart
     
     type(RadiateZWrk) :: rz
   
     allocate(rz%tausg(nz))
     allocate(rz%taua(nz))
     allocate(rz%taua_1(nz))
+
+    allocate(rz%tausp(nz))
+    allocate(rz%tausp_1(nz,npart))
+    allocate(rz%taup(nz))
+
     allocate(rz%tau(nz))
     allocate(rz%w0(nz))
     allocate(rz%gt(nz))

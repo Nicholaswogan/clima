@@ -152,6 +152,11 @@ module clima_radtran_types
     real(dp), allocatable :: axs(:,:)
     real(dp), allocatable :: pxs(:,:)
     real(dp), allocatable :: H2O(:), foreign(:)
+
+    ! logical :: interpolated_particles = .false.
+    real(dp), allocatable :: w0(:,:)
+    real(dp), allocatable :: qext(:,:)
+    real(dp), allocatable :: gt(:,:)
     
     ! work arrays that are needed only if
     ! k_method == k_RandomOverlapResortRebin
@@ -178,6 +183,11 @@ module clima_radtran_types
     real(dp), allocatable :: tausg(:)
     real(dp), allocatable :: taua(:)
     real(dp), allocatable :: taua_1(:)
+
+    real(dp), allocatable :: tausp(:)
+    real(dp), allocatable :: tausp_1(:,:)
+    real(dp), allocatable :: taup(:)
+
     real(dp), allocatable :: tau(:)
     real(dp), allocatable :: w0(:)
     real(dp), allocatable :: gt(:)
@@ -190,8 +200,8 @@ module clima_radtran_types
   end type
   
   interface
-    module function create_RadiateZWrk(nz) result(rz)
-      integer, intent(in) :: nz
+    module function create_RadiateZWrk(nz, npart) result(rz)
+      integer, intent(in) :: nz, npart
       type(RadiateZWrk) :: rz
     end function
   end interface

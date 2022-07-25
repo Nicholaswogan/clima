@@ -1,6 +1,9 @@
 module clima_radtran_radiate
   use clima_const, only: dp
   implicit none
+
+  real(dp), parameter :: max_w0 = 0.99999_dp
+  real(dp), parameter :: max_gt = 0.999999_dp
   
 contains
   
@@ -8,18 +11,18 @@ contains
   !! Does Solar or IR radiative transfer, depending on value of 
   !! `op%op_type`. `u0`, `diurnal_fac` and `photons_sol` are all
   !! only used during Solar radiative transfer.
-  subroutine radiate(op, &
+  function radiate(op, &
                      surface_albedo, u0, diurnal_fac, photons_sol, &
                      P, T_surface, T, densities, dz, &
                      pdensities, radii, &
                      rw, rz, &
-                     fup_a, fdn_a, fup_n, fdn_n)
+                     fup_a, fdn_a, fup_n, fdn_n) result(ierr)
     use clima_radtran_types, only: RadiateXSWrk, RadiateZWrk, Ksettings
     use clima_radtran_types, only: OpticalProperties, Kcoefficients
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_radtran_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
     use clima_eqns, only: planck_fcn, ten2power
-    use clima_const, only: k_boltz
+    use clima_const, only: k_boltz, pi
   
     type(OpticalProperties), target, intent(inout) :: op !! Optical properties
   
@@ -44,10 +47,12 @@ contains
                                                     !! at the edges of the vertical grid
     real(dp), intent(out) :: fup_n(:), fdn_n(:) !! (nz+1) mW/m2 at the edges of the vertical grid 
                                                 !! (integral of fup_a and fdn_a over wavelength grid)
-  
+    integer :: ierr !! if ierr /= 0 on return, then there was an error
+
     type(Ksettings), pointer :: kset
     integer :: nz, ng
     integer :: i, j, k, l, n, jj
+    integer :: ierr_0
     real(dp) :: avg_freq
     
     ! array of indexes for recursive
@@ -79,11 +84,16 @@ contains
         enddo
       enddo
     endif
+
+    ierr = 0
     
     !$omp parallel private(i, j, k, l, n, jj, &
     !$omp& iks, avg_freq, TT, log10PP, &
+    !$omp& ierr_0, &
     !$omp& rw, rz)
     
+    ierr_0 = 0
+
     !$omp do
     do l = 1,op%nw
       
@@ -137,7 +147,7 @@ contains
 
       ! particles
       do i = 1,op%npart
-        call interpolate_Particle(op%part(i), l, radii)
+        call interpolate_Particle(op%part(i), l, radii, rw%w0(:,i), rw%qext(:,i), rw%gt(:,i), ierr_0)
       enddo
       
       ! compute tau
@@ -190,6 +200,37 @@ contains
         enddo
       endif
 
+      ! particles
+      block
+      real(dp) :: taup_1
+
+      rz%tausp(:) = 0.0_dp
+      rz%taup(:) = 0.0_dp
+      do i = 1,op%npart
+        j = op%part(i)%p_ind
+        do k = 1,nz
+          n = nz+1-k
+          taup_1 = rw%qext(k,i)*pi*radii(k,j)**2.0_dp*pdensities(k,j)*dz(k)
+          rz%taup(n) = rz%taup(n) + taup_1
+          rz%tausp_1(n,i) = rw%w0(k,i)*taup_1
+          rz%tausp(n) = rz%tausp(n) + rz%tausp_1(n,i)
+        enddo
+      enddo
+
+      rz%gt(:) = 0.0_dp
+      do i = 1,op%npart
+        do k = 1,nz
+          n = nz+1-k
+          rz%gt(n) = rz%gt(n) + rw%gt(k,i)*rz%tausp_1(n,i)/(rz%tausp(n)+rz%tausg(n))
+        enddo
+      enddo
+      do k = 1,nz
+        n = nz+1-k
+        rz%gt(n) = min(rz%gt(n), max_gt)
+      enddo
+
+      end block
+
       ! plank function, only if in the IR
       ! bplanck has units [mW sr^−1 m^−2 Hz^-1]
       if (op%op_type == IROpticalProperties) then
@@ -200,9 +241,6 @@ contains
           rz%bplanck(n) = planck_fcn(avg_freq, T(j))
         enddo
       endif
-      
-      ! asymetry factor
-      rz%gt = 0.0_dp
       
       rz%fup1 = 0.0_dp
       rz%fdn1 = 0.0_dp
@@ -218,10 +256,6 @@ contains
         elseif (kset%k_method == k_RandomOverlapResortRebin) then
           ! Random Overlap with Resorting and Rebinning.
           call k_rorr(op, kset, u0, surface_albedo, cols, rw, rz)
-        elseif (.false.) then
-        ! elseif (kset%k_method == 999) then
-          ! No scattering (Only for IR)
-          call k_no_scatter(op, cols, rw, rz)
         endif
         
       else
@@ -240,6 +274,9 @@ contains
       
     enddo
     !$omp enddo
+    !$omp critical
+    ierr = ierr + ierr_0
+    !$omp end critical
     !$omp end parallel
     
     ! In Solar case, units for fup_a and fdn_a are unit-less.
@@ -265,7 +302,7 @@ contains
       enddo
     enddo
   
-  end subroutine
+  end function
   
   subroutine k_rorr(op, kset, u0, surface_albedo, cols, rw, rz)
     use futils, only: rebin
@@ -358,10 +395,10 @@ contains
       enddo
       
       ! sum all optical depths
-      ! total = gas scattering + continumm/gray opacities + k-coeff
-      rz%tau = rz%tausg + rz%taua + rz%taua_1
+      ! total = gas scattering + continumm opacities + particle absorption + particle scattering + k-coeff
+      rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%tausp(:) + rz%taua_1(:)
       do j = 1,nz
-        rz%w0(j) = min(0.99999_dp,rz%tausg(j)/rz%tau(j))
+        rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j))/rz%tau(j))
       enddo
       
       if (op%op_type == FarUVOpticalProperties .or. &
@@ -399,8 +436,6 @@ contains
     integer, intent(inout) :: iks(:)
     integer, intent(in) :: ik
     
-    real(dp), parameter :: max_w0 = 0.99999_dp
-    
     real(dp) :: gauss_weight, surf_rad
     integer :: nz
     integer :: i, j, k, n
@@ -426,9 +461,9 @@ contains
         enddo
         
         ! sum
-        rz%tau = rz%tausg + rz%taua + rz%taua_1
+        rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%tausp(:) + rz%taua_1(:)
         do j = 1,nz
-          rz%w0(j) = min(max_w0,rz%tausg(j)/rz%tau(j))
+          rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j))/rz%tau(j))
         enddo
         
         if (op%op_type == FarUVOpticalProperties .or. &
@@ -456,25 +491,6 @@ contains
       
     enddo
     
-  end subroutine
-  
-  subroutine k_no_scatter(op, cols, rw, rz)
-    use clima_radtran_types, only: OpticalProperties
-    use clima_radtran_types, only: RadiateZWrk, RadiateXSWrk
-    use clima_radtran_twostream, only: two_stream_ir
-    
-    type(OpticalProperties), intent(in) :: op
-    real(dp), intent(in) :: cols(:,:)
-    type(RadiateXSWrk), target, intent(in) :: rw
-    type(RadiateZWrk), intent(inout) :: rz
-    
-    integer :: jj
-    
-    ! mean transmision method
-    do jj = 1,op%nk
-      
-    enddo
- 
   end subroutine
   
   subroutine interpolate_Xsection(xs, l, P, T, res)
@@ -542,33 +558,36 @@ contains
     
   end subroutine
 
-  subroutine interpolate_Particle(part, l, radii)
+  subroutine interpolate_Particle(part, l, radii, w0, qext, gt, ierr)
     use clima_radtran_types, only: ParticleXsection
     type(ParticleXsection), intent(inout) :: part
     integer, intent(in) :: l
     real(dp), intent(in) :: radii(:,:)
-    ! integer :: ierr
+    real(dp), intent(out) :: w0(:)
+    real(dp), intent(out) :: qext(:)
+    real(dp), intent(out) :: gt(:)
+    integer, intent(out) :: ierr
 
     integer :: j
-    real(dp) :: val, rp
+    real(dp) :: rp
 
-    ! ierr = 0
+    ierr = 0
 
     do j = 1,size(radii,1)
       rp = radii(j,part%p_ind)
+
+      ! make sure radii is within data
       if (rp < part%r_min) then
-        ! ierr = 1
+        ierr = 1
       elseif (rp > part%r_max) then
-        ! ierr = 1
+        ierr = 1
       endif
 
-      call part%w0(l)%evaluate(rp, val)
-      call part%qext(l)%evaluate(rp, val)
-      call part%gt(l)%evaluate(rp, val)
+      call part%w0(l)%evaluate(rp, w0(j))
+      call part%qext(l)%evaluate(rp, qext(j))
+      call part%gt(l)%evaluate(rp, gt(j))
     enddo
 
-
-    stop 1
   end subroutine
   
   

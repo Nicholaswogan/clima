@@ -160,7 +160,7 @@ contains
     
     ! work arrays
     rad%wrk_ir%rx = RadiateXSWrk(rad%ir, nz)
-    rad%wrk_ir%rz = RadiateZWrk(nz)
+    rad%wrk_ir%rz = RadiateZWrk(nz,rad%ir%npart)
     allocate(rad%wrk_ir%fup_a(nz+1, rad%ir%nw))
     allocate(rad%wrk_ir%fdn_a(nz+1, rad%ir%nw))
     allocate(rad%wrk_ir%fup_n(nz+1))
@@ -180,6 +180,7 @@ contains
     real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:) !! (nz,np)
     character(:), allocatable, intent(out) :: err
     
+    integer :: ierr
     type(ClimaRadtranWrk), pointer :: wrk 
     
     wrk => self%wrk_ir  
@@ -204,12 +205,16 @@ contains
       if (allocated(err)) return
     endif
                                          
-    call radiate(self%ir, &
-                 0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
-                 P, T_surface, T, densities, dz, &
-                 pdensities, radii, &
-                 wrk%rx, wrk%rz, &
-                 wrk%fup_a, wrk%fdn_a, wrk%fup_n, wrk%fdn_n)
+    ierr = radiate(self%ir, &
+                   0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
+                   P, T_surface, T, densities, dz, &
+                   pdensities, radii, &
+                   wrk%rx, wrk%rz, &
+                   wrk%fup_a, wrk%fdn_a, wrk%fup_n, wrk%fdn_n)
+    if (ierr /= 0) then
+      err = 'Input particle radii are outside the data range.'
+      return
+    endif
     
   end subroutine
   
@@ -364,7 +369,7 @@ contains
 
     ! IR work arrays
     rad%wrk_ir%rx = RadiateXSWrk(rad%ir, nz)
-    rad%wrk_ir%rz = RadiateZWrk(nz)
+    rad%wrk_ir%rz = RadiateZWrk(nz,rad%ir%npart)
     allocate(rad%wrk_ir%fup_a(nz+1, rad%ir%nw))
     allocate(rad%wrk_ir%fdn_a(nz+1, rad%ir%nw))
     allocate(rad%wrk_ir%fup_n(nz+1))
@@ -372,7 +377,7 @@ contains
 
     ! Solar work arrays
     rad%wrk_sol%rx = RadiateXSWrk(rad%sol, nz)
-    rad%wrk_sol%rz = RadiateZWrk(nz)
+    rad%wrk_sol%rz = RadiateZWrk(nz,rad%sol%npart)
     allocate(rad%wrk_sol%fup_a(nz+1, rad%sol%nw))
     allocate(rad%wrk_sol%fdn_a(nz+1, rad%sol%nw))
     allocate(rad%wrk_sol%fup_n(nz+1))
@@ -397,6 +402,7 @@ contains
     character(:), allocatable, intent(out) :: err
     
     real(dp) :: u0
+    integer :: ierr
 
     type(ClimaRadtranWrk), pointer :: wrk_ir
     type(ClimaRadtranWrk), pointer :: wrk_sol
@@ -424,22 +430,28 @@ contains
     endif
 
     ! IR radiative transfer                                     
-    call radiate(self%ir, &
-                 0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
-                 P, T_surface, T, densities, dz, &
-                 pdensities, radii, &
-                 wrk_ir%rx, wrk_ir%rz, &
-                 wrk_ir%fup_a, wrk_ir%fdn_a, wrk_ir%fup_n, wrk_ir%fdn_n)
-    
+    ierr = radiate(self%ir, &
+                  0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
+                  P, T_surface, T, densities, dz, &
+                  pdensities, radii, &
+                  wrk_ir%rx, wrk_ir%rz, &
+                  wrk_ir%fup_a, wrk_ir%fdn_a, wrk_ir%fup_n, wrk_ir%fdn_n)
+    if (ierr /= 0) then
+      err = 'Input particle radii are outside the data range.'
+      return
+    endif
     ! Solar radiative transfer
     u0 = cos(self%solar_zenith*pi/180.0_dp)
-    call radiate(self%sol, &
-                 self%surface_albedo, u0, self%diurnal_fac, self%photons_sol, &
-                 P, T_surface, T, densities, dz, &
-                 pdensities, radii, &
-                 wrk_sol%rx, wrk_sol%rz, &
-                 wrk_sol%fup_a, wrk_sol%fdn_a, wrk_sol%fup_n, wrk_sol%fdn_n)
-    
+    ierr = radiate(self%sol, &
+                   self%surface_albedo, u0, self%diurnal_fac, self%photons_sol, &
+                   P, T_surface, T, densities, dz, &
+                   pdensities, radii, &
+                   wrk_sol%rx, wrk_sol%rz, &
+                   wrk_sol%fup_a, wrk_sol%fdn_a, wrk_sol%fup_n, wrk_sol%fdn_n)
+    if (ierr /= 0) then
+      err = 'Input particle radii are outside the data range.'
+      return
+    endif
     ! Total flux at edges of layers (ergs/(cm2 s) which is the same as mW/m2).
     ! Index 1 is bottom. Index nz+1 is top edge of top layer.
     self%f_total = (wrk_sol%fdn_n - wrk_sol%fup_n) + (wrk_ir%fdn_n - wrk_ir%fup_n)
