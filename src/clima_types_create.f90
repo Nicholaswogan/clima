@@ -681,17 +681,55 @@ contains
     type(type_list), pointer :: tmp
     type (type_error), allocatable :: io_err
     integer :: ind
-    
-    tmp => op_prop%get_list("species",required=.false., error=io_err)
+
+    ! species
+    tmp_dict => op_prop%get_dictionary("species", required=.false., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (associated(tmp)) then
-      call unpack_string_list(filename, tmp, s%species, err)
-      if (allocated(err)) return
-      ind = check_for_duplicates(s%species)
-      if (ind /= 0) then
-        err = '"'//trim(s%species(ind))//'" is a duplicate in '//trim(tmp%path)
-        return
+    if (associated(tmp_dict)) then
+
+      ! gases
+      tmp => tmp_dict%get_list("gases",required=.false., error=io_err)
+      if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+      if (associated(tmp)) then
+        call unpack_string_list(filename, tmp, s%gases, err)
+        if (allocated(err)) return
+        ind = check_for_duplicates(s%gases)
+        if (ind /= 0) then
+          err = '"'//trim(s%gases(ind))//'" is a duplicate in '//trim(tmp%path)
+          return
+        endif
       endif
+
+      ! particles
+      tmp => tmp_dict%get_list("particles",required=.false., error=io_err)
+      if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+      if (associated(tmp)) then
+        call unpack_string_list(filename, tmp, s%particles, err)
+        if (allocated(err)) return
+        ind = check_for_duplicates(s%particles)
+        if (ind /= 0) then
+          err = '"'//trim(s%particles(ind))//'" is a duplicate in '//trim(tmp%path)
+          return
+        endif
+      endif
+
+      ! Check for duplicates between gases and particles
+      if (allocated(s%gases) .and. allocated(s%particles)) then
+        block
+        character(s_str_len), allocatable :: gas_particles(:)
+        
+        allocate(gas_particles(size(s%gases)+size(s%particles)))
+        gas_particles(:size(s%gases)) = s%gases
+        gas_particles(size(s%gases)+1:) = s%particles
+        ind = check_for_duplicates(gas_particles)
+        if (ind /= 0) then
+          err = '"'//trim(gas_particles(ind))//'" is in both '// &
+                '/optical-properties/species/gases  and /optical-properties/species/particles'
+          return
+        endif
+        end block
+      endif
+
     endif
     
     ! solar

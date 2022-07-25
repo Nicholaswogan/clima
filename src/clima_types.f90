@@ -42,7 +42,8 @@ module clima_types
     real(dp), allocatable :: solar_zenith
     
     ! optical-properties
-    character(s_str_len), allocatable :: species(:)
+    character(s_str_len), allocatable :: gases(:)
+    character(s_str_len), allocatable :: particles(:)
     type(SettingsOpacity), allocatable :: sol
     type(SettingsOpacity), allocatable :: ir
     

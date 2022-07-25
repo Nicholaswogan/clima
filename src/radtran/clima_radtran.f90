@@ -107,12 +107,12 @@ contains
     s = ClimaSettings(settings_f, err)
     if (allocated(err)) return
     
-    if (.not. allocated(s%species)) then
-      err = '"'//settings_f//'/optical-properties/species" does not exist'
+    if (.not. allocated(s%gases)) then
+      err = '"'//settings_f//'/optical-properties/species/gases" does not exist'
       return
     endif
     
-    rad = create_RadtranIR_2(datadir, s%species, s, nz, err)
+    rad = create_RadtranIR_2(datadir, s%gases, s, nz, err)
     if (allocated(err)) return
     
   end function
@@ -247,12 +247,12 @@ contains
     s = ClimaSettings(settings_f, err)
     if (allocated(err)) return
     
-    if (.not. allocated(s%species)) then
-      err = '"'//settings_f//'/optical-properties/species" does not exist'
+    if (.not. allocated(s%gases)) then
+      err = '"'//settings_f//'/optical-properties/gases" does not exist'
       return
     endif
     
-    rad = create_Radtran_2(datadir, s%species, s, star_f, solar_zenith, surface_albedo, nz, err)
+    rad = create_Radtran_2(datadir, s%gases, s, star_f, solar_zenith, surface_albedo, nz, err)
     if (allocated(err)) return
     
   end function

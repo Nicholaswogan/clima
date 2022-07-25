@@ -12,7 +12,8 @@ planet:
   solar-zenith-angle: 60.0
   
 optical-properties:
-  species: [H2O, CO2, O2, N2, O3, CH4]
+  species: 
+    gases: [H2O, CO2, O2, N2, O3, CH4]
   ir:
     k-method: RandomOverlapResortRebin
     number-of-bins: 8
