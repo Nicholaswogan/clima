@@ -882,6 +882,51 @@ contains
       op%water_continuum = opacities%get_string("water-continuum", error=io_err)
       op%water_continuum = trim(op%water_continuum)
     endif
+
+    ! particle-xs
+    tmp => opacities%get_list("particle-xs", required=.false., error=io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (associated(tmp)) then
+    block 
+      type(type_list_item), pointer :: item
+      character(s_str_len), allocatable :: pnames(:)
+      integer :: i
+
+      allocate(op%particle_xs(tmp%size()))
+      i = 1
+      item => tmp%first
+      do while(associated(item))
+
+        select type (it => item%node)
+        class is (type_dictionary)
+          op%particle_xs(i)%name = it%get_string("name", error = io_err)
+          if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+          op%particle_xs(i)%name = trim(op%particle_xs(i)%name)
+
+          op%particle_xs(i)%dat = it%get_string("data", error = io_err)
+          if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+          op%particle_xs(i)%dat = trim(op%particle_xs(i)%dat)
+        class default
+          err = '"'//trim(it%path)//'" must be a dictionary.'
+          return
+        end select
+
+        i = i + 1
+        item => item%next
+      enddo
+
+      allocate(pnames(size(op%particle_xs)))
+      do i = 1,size(op%particle_xs)
+        pnames(i) = op%particle_xs(i)%name
+      enddo
+      ind = check_for_duplicates(pnames)
+      if (ind /= 0) then
+        err = '"'//trim(pnames(ind))//'" is a duplicate in '//trim(tmp%path)
+        return
+      endif
+
+    end block
+    endif
     
   end subroutine
   

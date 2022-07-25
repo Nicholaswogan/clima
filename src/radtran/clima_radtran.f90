@@ -32,6 +32,9 @@ module clima_radtran
   
     integer :: ng
     character(s_str_len), allocatable :: species_names(:) ! (ng) copy of species names
+
+    integer :: np
+    character(s_str_len), allocatable :: particle_names(:)
   
     ! number of layers
     integer :: nz
@@ -60,6 +63,9 @@ module clima_radtran
 
     integer :: ng
     character(s_str_len), allocatable :: species_names(:) ! (ng) copy of species names
+
+    integer :: np
+    character(s_str_len), allocatable :: particle_names(:)
   
     ! number of layers
     integer :: nz
@@ -111,18 +117,21 @@ contains
       err = '"'//settings_f//'/optical-properties/species/gases" does not exist'
       return
     endif
+
+    if (.not. allocated(s%particles)) allocate(s%particles(0))
     
-    rad = create_RadtranIR_2(datadir, s%gases, s, nz, err)
+    rad = create_RadtranIR_2(datadir, s%gases, s%particles, s, nz, err)
     if (allocated(err)) return
     
   end function
   
-  function create_RadtranIR_2(datadir, species_names, s, nz, err) result(rad)
+  function create_RadtranIR_2(datadir, species_names, particle_names, s, nz, err) result(rad)
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_types, only: ClimaSettings
     
     character(*), intent(in) :: datadir
     character(*), intent(in) :: species_names(:)
+    character(*), intent(in) :: particle_names(:)
     type(ClimaSettings), intent(in) :: s
     integer, intent(in) :: nz
     character(:), allocatable, intent(out) :: err
@@ -136,13 +145,17 @@ contains
     
     rad%ng = size(species_names)
     rad%species_names = species_names
+    rad%np = size(particle_names)
+    if (rad%np > 0) then
+      rad%particle_names = particle_names
+    endif
     rad%nz = nz
     
     if (.not. allocated(s%ir)) then
       err = '"'//s%filename//'/optical-properties/ir" does not exist.'
       return
     endif
-    rad%ir = OpticalProperties(datadir, IROpticalProperties, species_names, s%ir, err)
+    rad%ir = OpticalProperties(datadir, IROpticalProperties, species_names, particle_names, s%ir, err)
     if (allocated(err)) return
     
     ! work arrays
@@ -155,7 +168,7 @@ contains
 
   end function
   
-  subroutine RadtranIR_radiate(self, T_surface, T, P, densities, dz, err)
+  subroutine RadtranIR_radiate(self, T_surface, T, P, densities, dz, pdensities, radii, err)
     use clima_radtran_radiate, only: radiate
     class(RadtranIR), target, intent(inout) :: self
     real(dp), intent(in) :: T_surface
@@ -164,23 +177,43 @@ contains
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
                                            !! molecule in each layer (molcules/cm3)
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
+    real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:) !! (nz,np)
     character(:), allocatable, intent(out) :: err
     
     type(ClimaRadtranWrk), pointer :: wrk 
     
-    wrk => self%wrk_ir                                           
+    wrk => self%wrk_ir  
+    
+    ! Check optional arguments
+    if ((present(pdensities) .and. .not. present(radii)) &
+      .or.(present(radii) .and. .not. present(pdensities))) then
+      err = 'Both pdensities and radii must be arguments.'
+      return
+    endif
+    if (self%np > 0) then
+      if (.not. present(radii)) then
+        err = 'The model contains particles but "pdensities" and "radii" are not arguments.'
+        return
+      endif
+    endif
+    
     call check_dimensions(self%nz, self%ng, T, P, densities, dz, err)
     if (allocated(err)) return
+    if (present(radii)) then
+      call check_dimensions_p(self%nz, self%np, pdensities, radii, err)
+      if (allocated(err)) return
+    endif
                                          
     call radiate(self%ir, &
                  0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
                  P, T_surface, T, densities, dz, &
+                 pdensities, radii, &
                  wrk%rx, wrk%rz, &
                  wrk%fup_a, wrk%fdn_a, wrk%fup_n, wrk%fdn_n)
     
   end subroutine
   
-  function RadtranIR_OLR(self, T_surface, T, P, densities, dz, err) result(res)
+  function RadtranIR_OLR(self, T_surface, T, P, densities, dz, pdensities, radii, err) result(res)
     class(RadtranIR), target, intent(inout) :: self
     real(dp), intent(in) :: T_surface
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
@@ -188,15 +221,34 @@ contains
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
                                            !! molecule in each layer (molcules/cm3)
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
+    real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:) !! (nz,np)
     character(:), allocatable, intent(out) :: err
     
     real(dp) :: res
     
-    call RadtranIR_radiate(self, T_surface, T, P, densities, dz, err)
+    call RadtranIR_radiate(self, T_surface, T, P, densities, dz, pdensities, radii, err)
     if (allocated(err)) return
     res = self%wrk_ir%fup_n(self%nz+1)
     
   end function
+
+  subroutine check_dimensions_p(nz, np, pdensities, radii, err)
+    integer, intent(in) :: nz, np
+    real(dp), intent(in) :: pdensities(:,:)
+    real(dp), intent(in) :: radii(:,:)
+    character(:), allocatable, intent(out) :: err
+
+    if (size(pdensities,1) /= nz .or. size(pdensities,2) /= np) then
+      err = '"pdensities" has the wrong input dimension.'
+      return
+    endif
+
+    if (size(radii,1) /= nz .or. size(radii,2) /= np) then
+      err = '"radii" has the wrong input dimension.'
+      return
+    endif
+
+  end subroutine
   
   subroutine check_dimensions(nz, ng, T, P, densities, dz, err)
     integer, intent(in) :: nz, ng
@@ -251,19 +303,22 @@ contains
       err = '"'//settings_f//'/optical-properties/gases" does not exist'
       return
     endif
+
+    if (.not. allocated(s%particles)) allocate(s%particles(0))
     
-    rad = create_Radtran_2(datadir, s%gases, s, star_f, solar_zenith, surface_albedo, nz, err)
+    rad = create_Radtran_2(datadir, s%gases, s%particles, s, star_f, solar_zenith, surface_albedo, nz, err)
     if (allocated(err)) return
     
   end function
   
-  function create_Radtran_2(datadir, species_names, s, star_f, solar_zenith, surface_albedo, nz, err) result(rad)
+  function create_Radtran_2(datadir, species_names, particle_names, s, star_f, solar_zenith, surface_albedo, nz, err) result(rad)
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties, &
                                    read_stellar_flux
     use clima_types, only: ClimaSettings
     
     character(*), intent(in) :: datadir
     character(*), intent(in) :: species_names(:)
+    character(*), intent(in) :: particle_names(:)
     type(ClimaSettings), intent(in) :: s
     character(*), intent(in) :: star_f
     real(dp), intent(in) :: solar_zenith, surface_albedo
@@ -279,6 +334,10 @@ contains
     
     rad%ng = size(species_names)
     rad%species_names = species_names
+    rad%np = size(particle_names)
+    if (rad%np > 0) then
+      rad%particle_names = particle_names
+    endif
     rad%nz = nz
 
     rad%solar_zenith = solar_zenith
@@ -288,14 +347,14 @@ contains
       err = '"'//s%filename//'/optical-properties/ir" does not exist.'
       return
     endif
-    rad%ir = OpticalProperties(datadir, IROpticalProperties, species_names, s%ir, err)
+    rad%ir = OpticalProperties(datadir, IROpticalProperties, species_names, particle_names, s%ir, err)
     if (allocated(err)) return
 
     if (.not. allocated(s%sol)) then
       err = '"'//s%filename//'/optical-properties/solar" does not exist.'
       return
     endif
-    rad%sol = OpticalProperties(datadir, SolarOpticalProperties, species_names, s%sol, err)
+    rad%sol = OpticalProperties(datadir, SolarOpticalProperties, species_names, particle_names, s%sol, err)
     if (allocated(err)) return
 
     ! photons hitting the planet
@@ -324,7 +383,7 @@ contains
 
   end function
 
-  subroutine Radtran_radiate(self, T_surface, T, P, densities, dz, err)
+  subroutine Radtran_radiate(self, T_surface, T, P, densities, dz, pdensities, radii , err)
     use clima_radtran_radiate, only: radiate
     use clima_const, only: pi
     class(Radtran), target, intent(inout) :: self
@@ -333,6 +392,7 @@ contains
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
                                            !! molecule in each layer (molcules/cm3)
+    real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:)
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
     character(:), allocatable, intent(out) :: err
     
@@ -340,16 +400,34 @@ contains
 
     type(ClimaRadtranWrk), pointer :: wrk_ir
     type(ClimaRadtranWrk), pointer :: wrk_sol
+
+    ! Check optional arguments
+    if ((present(pdensities) .and. .not. present(radii)) &
+      .or.(present(radii) .and. .not. present(pdensities))) then
+      err = 'Both pdensities and radii must be arguments.'
+      return
+    endif
+    if (self%np > 0) then
+      if (.not. present(radii)) then
+        err = 'The model contains particles but "pdensities" and "radii" are not arguments.'
+        return
+      endif
+    endif
     
     wrk_ir => self%wrk_ir
     wrk_sol => self%wrk_sol                                        
     call check_dimensions(self%nz, self%ng, T, P, densities, dz, err)
     if (allocated(err)) return
+    if (present(radii)) then
+      call check_dimensions_p(self%nz, self%np, pdensities, radii, err)
+      if (allocated(err)) return
+    endif
 
     ! IR radiative transfer                                     
     call radiate(self%ir, &
                  0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
                  P, T_surface, T, densities, dz, &
+                 pdensities, radii, &
                  wrk_ir%rx, wrk_ir%rz, &
                  wrk_ir%fup_a, wrk_ir%fdn_a, wrk_ir%fup_n, wrk_ir%fdn_n)
     
@@ -358,6 +436,7 @@ contains
     call radiate(self%sol, &
                  self%surface_albedo, u0, self%diurnal_fac, self%photons_sol, &
                  P, T_surface, T, densities, dz, &
+                 pdensities, radii, &
                  wrk_sol%rx, wrk_sol%rz, &
                  wrk_sol%fup_a, wrk_sol%fdn_a, wrk_sol%fup_n, wrk_sol%fdn_n)
     

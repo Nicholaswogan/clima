@@ -70,7 +70,7 @@ contains
     endif
     
     ! Radiative transfer
-    call self%rad%radiate(w%T_surf, w%T_r(:), w%P_r, w%densities_r, self%dz_r, err)
+    call self%rad%radiate(w%T_surf, w%T_r(:), w%P_r, w%densities_r, self%dz_r, err=err)
     if (allocated(err)) return
 
     ! Heat capacity in erg/(g*K)

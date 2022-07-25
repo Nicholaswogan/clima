@@ -49,6 +49,16 @@ module clima_radtran_types
     real(dp), allocatable :: xs_0d(:) ! (nw) 
     type(linear_interp_1d), allocatable :: log10_xs_1d(:) ! (nw) 
   end type
+
+  type :: ParticleXsection
+    integer :: p_ind
+    integer :: nrad
+    real(dp), allocatable :: radii(:) ! cm
+    real(dp) :: r_min, r_max
+    type(linear_interp_1d), allocatable :: w0(:) ! (nw)
+    type(linear_interp_1d), allocatable :: qext(:) ! (nw)
+    type(linear_interp_1d), allocatable :: gt(:) ! (nw)
+  end type
   
   type :: WaterContinuum
     integer :: LH2O ! index of H2O
@@ -102,6 +112,10 @@ module clima_radtran_types
     ! Photolysis cross sections (e.g. O3 photolysis)
     integer :: npxs
     type(Xsection), allocatable :: pxs(:)
+
+    ! Particles
+    integer :: npart
+    type(ParticleXsection), allocatable :: part(:)
     
     ! Water Continuum absorption. Can only be a thing if H2O is a species
     ! and if there are other gases in the atmosphere.
@@ -110,11 +124,12 @@ module clima_radtran_types
   end type
   
   interface
-    module function create_OpticalProperties(datadir, optype, species_names, sop, err) result(op)
+    module function create_OpticalProperties(datadir, optype, species_names, particle_names, sop, err) result(op)
       use clima_types, only: SettingsOpacity
       character(*), intent(in) :: datadir
       integer, intent(in) :: optype
       character(*), intent(in) :: species_names(:)
+      character(*), intent(in) :: particle_names(:)
       type(SettingsOpacity), intent(in) :: sop
       character(:), allocatable, intent(out) :: err
       type(OpticalProperties) :: op

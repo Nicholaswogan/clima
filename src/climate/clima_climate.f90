@@ -107,6 +107,7 @@ contains
     type(ClimaSettings) :: s
     type(AtmosphereFile) :: atm
     real(dp), allocatable :: P_dum(:)
+    character(s_str_len) :: particle_names(0)
 
     ! create settings
     s = ClimaSettings(settings_f, err)
@@ -139,7 +140,7 @@ contains
     enddo
 
     ! create radiative transfer
-    c%rad = Radtran(datadir, c%species_names, s, star_f, s%solar_zenith, s%surface_albedo, c%nz_r, err)
+    c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, s%solar_zenith, s%surface_albedo, c%nz_r, err)
     if (allocated(err)) return
 
     ! allocate memory

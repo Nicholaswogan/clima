@@ -14,6 +14,7 @@ planet:
 optical-properties:
   species: 
     gases: [H2O, CO2, O2, N2, O3, CH4]
+    # particles: [HCaer1]
   ir:
     k-method: RandomOverlapResortRebin
     number-of-bins: 8
@@ -23,6 +24,8 @@ optical-properties:
       rayleigh: true
       photolysis-xs: true
       water-continuum: MT_CKD
+      # particle-xs:
+        # - {name: HCaer1, data: khare1984}
   solar:
     k-method: RandomOverlapResortRebin
     number-of-bins: 8

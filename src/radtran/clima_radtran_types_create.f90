@@ -160,13 +160,14 @@ contains
     
   end function
   
-  module function create_OpticalProperties(datadir, optype, species_names, sop, err) result(op)
+  module function create_OpticalProperties(datadir, optype, species_names, particle_names, sop, err) result(op)
     use fortran_yaml_c, only : parse, error_length
     use clima_const, only: c_light, s_str_len
     use clima_types, only: SettingsOpacity
     character(*), intent(in) :: datadir
     integer, intent(in) :: optype
     character(*), intent(in) :: species_names(:)
+    character(*), intent(in) :: particle_names(:)
     type(SettingsOpacity), intent(in) :: sop
     character(:), allocatable, intent(out) :: err
     
@@ -398,6 +399,31 @@ contains
     else
       op%npxs = 0
     endif
+
+    !!!!!!!!!!!!!!!!!
+    !!! Particles !!!
+    !!!!!!!!!!!!!!!!!
+    if (allocated(sop%particle_xs)) then
+      op%npart = size(sop%particle_xs)
+      allocate(op%part(op%npart))
+
+      do i = 1,op%npart
+
+        ind1 = findloc(particle_names, sop%particle_xs(i)%name, 1)
+        if (ind1 == 0) then
+          err = 'Species "'//sop%particle_xs(i)%name//'" in optical property '// &
+                '"particle-xs" is not in the list of particles.'
+          return
+        endif
+        
+        filename = datadir//"/aerosol_xsections/"//sop%particle_xs(i)%dat//"/mie_"//sop%particle_xs(i)%dat//'.dat'
+        op%part(i) = create_ParticleXsection(filename, ind1, op%wavl, err)
+        if (allocated(err)) return
+        
+      enddo
+    else
+      op%npart = 0
+    endif
     
     !!!!!!!!!!!!!!!!!
     !!! Continuum !!!
@@ -451,6 +477,190 @@ contains
     call h%close()
     
   end subroutine
+
+  function create_ParticleXsection(filename, p_ind, wavl, err) result(part)
+    use futils, only: addpnt, inter2
+    character(*), intent(in) :: filename
+    integer, intent(in) :: p_ind
+    real(dp), intent(in) :: wavl(:)
+    character(:), allocatable, intent(out) :: err
+
+    type(ParticleXsection) :: part
+
+    real(dp), allocatable :: wavl_tmp(:)
+    real(dp), allocatable :: w0_tmp(:,:), qext_tmp(:,:), g_tmp(:,:)
+    real(dp), allocatable :: w0_file(:,:), qext_file(:,:), g_file(:,:)
+    real(dp), allocatable :: temp_data(:), temp_wavelength(:)
+    
+    integer :: nw_tmp
+    real(dp) :: dum
+    integer :: i, j, io, ierr
+
+    part%p_ind = p_ind
+    
+    open(2,file=filename,form="unformatted",status='old',iostat=io)
+    if (io /= 0) then
+      err = "Was unable to open mie data file "//trim(filename)
+      close(2)
+      return
+    endif
+    
+    read(2, iostat=io) nw_tmp
+    if (io /= 0) then
+      err = "Problem reading mie data file "//trim(filename)
+      close(2)
+      return
+    endif
+    allocate(wavl_tmp(nw_tmp))
+    read(2, iostat=io) wavl_tmp
+    if (io /= 0) then
+      err = "Problem reading mie data file "//trim(filename)
+      close(2)
+      return
+    endif
+    
+    read(2, iostat=io) part%nrad
+    if (io /= 0) then
+      err = "Problem reading mie data file "//trim(filename)
+      close(2)
+      return
+    endif
+    allocate(part%radii(part%nrad))
+    read(2, iostat=io) part%radii
+    if (io /= 0) then
+      err = "Problem reading mie data file "//trim(filename)
+      close(2)
+      return
+    endif
+    ! convert from micron to cm
+    part%radii = part%radii/1.0e4_dp
+    part%r_min = minval(part%radii)
+    part%r_max = maxval(part%radii)
+    
+    allocate(w0_tmp(nw_tmp,part%nrad))
+    allocate(qext_tmp(nw_tmp,part%nrad))
+    allocate(g_tmp(nw_tmp,part%nrad))
+    
+    read(2, iostat=io) w0_tmp
+    if (io /= 0) then
+      err = "Problem reading mie data file "//trim(filename)
+      close(2)
+      return
+    endif
+    read(2, iostat=io) qext_tmp
+    if (io /= 0) then
+      err = "Problem reading mie data file "//trim(filename)
+      close(2)
+      return
+    endif
+    read(2, iostat=io) g_tmp
+    if (io /= 0) then
+      err = "Problem reading mie data file "//trim(filename)
+      close(2)
+      return
+    endif
+    
+    ! this next read should be usuccessful
+    read(2, iostat=io) dum
+    if (io == 0) then
+      err = "Problem reading mie data file "//trim(filename)// &
+            ". Should have reached the end of the file, but did not."
+      close(2)
+      return
+    endif
+    close(2)
+    
+    ! now lets interpolate a bunch
+    allocate(w0_file(part%nrad,size(wavl)-1))
+    allocate(qext_file(part%nrad,size(wavl)-1))
+    allocate(g_file(part%nrad,size(wavl)-1))
+    
+    allocate(temp_data(nw_tmp+2)) ! for interpolation
+    allocate(temp_wavelength(nw_tmp+2))
+    
+    do i = 1, part%nrad
+      
+      ! w0 (single scattering albedo)
+      temp_data(1:nw_tmp) = w0_tmp(1:nw_tmp,i)
+      temp_wavelength(1:nw_tmp) =  wavl_tmp(1:nw_tmp)
+      j = nw_tmp
+      call addpnt(temp_wavelength, temp_data, nw_tmp+2, j, 0.0_dp, w0_tmp(1,i), ierr)
+      call addpnt(temp_wavelength, temp_data, nw_tmp+2, j, huge(1.0_dp), w0_tmp(nw_tmp,i), ierr)
+      if (ierr /= 0) then
+        err = "Problems interpolating mie data from file "//trim(filename)// &
+              " to the wavelength grid"
+        return
+      endif
+      call inter2(size(wavl), wavl, w0_file(i,:), &
+                  nw_tmp+2, temp_wavelength, temp_data, ierr)
+      if (ierr /= 0) then
+        err = "Problems interpolating mie data from file "//trim(filename)// &
+              " to the wavelength grid"
+        return
+      endif
+
+      ! qext (The extinction efficiency)
+      temp_data(1:nw_tmp) = qext_tmp(1:nw_tmp,i)
+      temp_wavelength(1:nw_tmp) =  wavl_tmp(1:nw_tmp)
+      j = nw_tmp
+      call addpnt(temp_wavelength, temp_data, nw_tmp+2, j, 0.0_dp, qext_tmp(1,i), ierr)
+      call addpnt(temp_wavelength, temp_data, nw_tmp+2, j, huge(1.0_dp), qext_tmp(nw_tmp,i), ierr)
+      if (ierr /= 0) then
+        err = "Problems interpolating mie data from file "//trim(filename)// &
+              " to the wavelength grid"
+        return
+      endif
+      call inter2(size(wavl), wavl, qext_file(i,:), &
+                  nw_tmp+2, temp_wavelength, temp_data, ierr)
+      if (ierr /= 0) then
+        err = "Problems interpolating mie data from file "//trim(filename)// &
+              " to the wavelength grid"
+        return
+      endif
+      
+      ! g (The scattering anisotropy or asymmetry factor)
+      temp_data(1:nw_tmp) = g_tmp(1:nw_tmp,i)
+      temp_wavelength(1:nw_tmp) =  wavl_tmp(1:nw_tmp)
+      j = nw_tmp
+      call addpnt(temp_wavelength, temp_data, nw_tmp+2, j, 0.0_dp, g_tmp(1,i), ierr)
+      call addpnt(temp_wavelength, temp_data, nw_tmp+2, j, huge(1.0_dp), g_tmp(nw_tmp,i), ierr)
+      if (ierr /= 0) then
+        err = "Problems interpolating mie data from file "//trim(filename)// &
+              " to the wavelength grid"
+        return
+      endif
+      call inter2(size(wavl), wavl, g_file(i,:), &
+                  nw_tmp+2, temp_wavelength, temp_data, ierr)
+      if (ierr /= 0) then
+        err = "Problems interpolating mie data from file "//trim(filename)// &
+              " to the wavelength grid"
+        return
+      endif
+      
+    enddo
+
+    allocate(part%w0(size(wavl) - 1))
+    allocate(part%qext(size(wavl) - 1))
+    allocate(part%gt(size(wavl) - 1))
+    do i = 1,size(wavl)-1
+      call part%w0(i)%initialize(part%radii, w0_file(:,i), ierr)
+      if (ierr /= 0) then
+        err = 'Failed to initialize interpolator for "'//filename//'"'
+        return
+      endif
+      call part%qext(i)%initialize(part%radii, qext_file(:,i), ierr)
+      if (ierr /= 0) then
+        err = 'Failed to initialize interpolator for "'//filename//'"'
+        return
+      endif
+      call part%gt(i)%initialize(part%radii, g_file(:,i), ierr)
+      if (ierr /= 0) then
+        err = 'Failed to initialize interpolator for "'//filename//'"'
+        return
+      endif
+    enddo
+
+  end function
   
   function create_WaterContinuum(model, filename, species_names, wavl, err) result(cont)
     use clima_const, only: log10tiny

@@ -21,6 +21,7 @@ contains
     integer :: nz, i
     real(dp) :: OLR
     real(dp), allocatable :: T(:), P(:), densities(:,:), mix(:,:), dz(:), z(:), density(:)
+    real(dp), allocatable :: pdensities(:,:), radii(:,:)
     
     atm = AtmosphereFile("../atmosphere.txt", err)
     if (allocated(err)) then
@@ -38,7 +39,8 @@ contains
     
     ! step up the atmosphere
     allocate(T(nz), P(nz), densities(nz,rad%ng), mix(nz,rad%ng), dz(nz), z(nz), density(nz))
-    
+    allocate(pdensities(nz,rad%np), radii(nz,rad%np))
+
     call vertical_grid(0.0_dp, 1.0e7_dp, nz, z, dz)
     call unpack_atmospherefile(atm, rad%species_names, z, mix, T, P, err)
     if (allocated(err)) then
@@ -50,8 +52,11 @@ contains
     do i = 1,rad%ng
       densities(:,i) = mix(:,i)*density
     enddo
+
+    pdensities(:,:) = 100.0_dp
+    radii(:,:) = 1.0e-4_dp
     
-    OLR = rad%OLR(289.0_dp, T, P, densities, dz, err)
+    OLR = rad%OLR(289.0_dp, T, P, densities, dz, pdensities, radii, err)
     if (allocated(err)) then
       print*,err
       stop 1
@@ -116,7 +121,7 @@ contains
       densities(:,i) = mix(:,i)*density
     enddo
     
-    call rad%radiate(T(1), T, P, densities, dz, err)
+    call rad%radiate(T(1), T, P, densities, dz, err=err)
     if (allocated(err)) then
       print*,err
       stop 1

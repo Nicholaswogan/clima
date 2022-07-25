@@ -11,6 +11,7 @@ contains
   subroutine radiate(op, &
                      surface_albedo, u0, diurnal_fac, photons_sol, &
                      P, T_surface, T, densities, dz, &
+                     pdensities, radii, &
                      rw, rz, &
                      fup_a, fdn_a, fup_n, fdn_n)
     use clima_radtran_types, only: RadiateXSWrk, RadiateZWrk, Ksettings
@@ -32,6 +33,8 @@ contains
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
                                            !! molecule in each layer (molcules/cm3)
+    real(dp), optional, intent(in) :: pdensities(:,:) !! (nz,np) particles/cm3
+    real(dp), optional, intent(in) :: radii(:,:) !! (nz,np) cm
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
     
     type(RadiateXSWrk), intent(inout) :: rw !! work arrays
@@ -131,6 +134,11 @@ contains
       if (allocated(op%cont)) then
         call interpolate_WaterContinuum(op%cont, l, T, rw%H2O, rw%foreign)
       endif
+
+      ! particles
+      do i = 1,op%npart
+        call interpolate_Particle(op%part(i), l, radii)
+      enddo
       
       ! compute tau
       ! rayleigh scattering
@@ -532,6 +540,35 @@ contains
       foreign(j) = ten2power(val)
     enddo
     
+  end subroutine
+
+  subroutine interpolate_Particle(part, l, radii)
+    use clima_radtran_types, only: ParticleXsection
+    type(ParticleXsection), intent(inout) :: part
+    integer, intent(in) :: l
+    real(dp), intent(in) :: radii(:,:)
+    ! integer :: ierr
+
+    integer :: j
+    real(dp) :: val, rp
+
+    ! ierr = 0
+
+    do j = 1,size(radii,1)
+      rp = radii(j,part%p_ind)
+      if (rp < part%r_min) then
+        ! ierr = 1
+      elseif (rp > part%r_max) then
+        ! ierr = 1
+      endif
+
+      call part%w0(l)%evaluate(rp, val)
+      call part%qext(l)%evaluate(rp, val)
+      call part%gt(l)%evaluate(rp, val)
+    enddo
+
+
+    stop 1
   end subroutine
   
   

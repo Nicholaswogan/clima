@@ -7,6 +7,11 @@ module clima_types
   !!!!!!!!!!!!!!!!
   !!! Settings !!!
   !!!!!!!!!!!!!!!!
+
+  type :: SettingsParticleOpacity
+    character(:), allocatable :: name
+    character(:), allocatable :: dat
+  end type
   
   type :: SettingsOpacity
     character(:), allocatable :: k_method
@@ -17,9 +22,10 @@ module clima_types
     character(s_str_len), allocatable :: rayleigh(:)
     logical, allocatable :: rayleigh_bool
     character(s_str_len), allocatable :: absorption_xs(:)
-    character(s_str_len), allocatable :: photolysis_xs(:)
     logical, allocatable :: photolysis_bool
+    character(s_str_len), allocatable :: photolysis_xs(:)
     character(:), allocatable :: water_continuum
+    type(SettingsParticleOpacity), allocatable :: particle_xs(:)
   end type
   
   type :: ClimaSettings  
