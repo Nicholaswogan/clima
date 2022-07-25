@@ -1,10 +1,6 @@
 name: test
 
-on:
-  push:
-    branches: [ "main", "dev"]
-  pull_request:
-    branches: [ "main" ]
+on: push
 
 env:
   BUILD_TYPE: Debug
@@ -16,13 +12,14 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - uses: awvwgk/setup-fortran@main
+    - name: Set up Fortran
+      uses: awvwgk/setup-fortran@main
       id: setup-fortran
       with:
         compiler: gcc
         version: 11
 
-    - name: Set up Python 3.8
+    - name: Set up Python
       uses: actions/setup-python@v2
       with:
         python-version: 3.8
@@ -31,20 +28,18 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install fypp
-
-    - name: install valgrind
-      run: sudo apt-get install valgrind
+        pip install h5py
+        sudo apt-get install valgrind
+        sudo apt-get install libhdf5-dev
 
     - name: configure cmake
       run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
-    - name: build fortran
+    - name: build
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
-    - name: test_clima
+    - name: test
       working-directory: ${{github.workspace}}/build
-      run: ./tests/test_clima
-
-    - name: valgrind test_clima
-      working-directory: ${{github.workspace}}/build
-      run: valgrind --error-exitcode=1 --leak-check=full ./tests/test_clima
+      run: |
+        ./tests/test_clima
+        valgrind --error-exitcode=1 --leak-check=full ./tests/test_clima
