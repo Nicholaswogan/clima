@@ -36,6 +36,9 @@ target_link_libraries(clima
   dop853
 )
 
+# This is important for making Python wrapper
+set_property(TARGET clima PROPERTY POSITION_INDEPENDENT_CODE ON)
+
 # Add special compiler flags to Clima
 if ("${CMAKE_Fortran_COMPILER_ID}" MATCHES "GNU")
   if (CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -51,5 +54,5 @@ if (BUILD_WITH_OPENMP)
     target_link_options(clima PUBLIC ${OpenMP_Fortran_FLAGS})
   endif()
 endif()
-message (STATUS "Building with OpenMP multi-threading = ${BUILD_WITH_OPENMP}")
+message (STATUS "Building clima with OpenMP multi-threading = ${BUILD_WITH_OPENMP}")
 
