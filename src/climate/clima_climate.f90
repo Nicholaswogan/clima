@@ -172,7 +172,7 @@ contains
     call gravity_z(c%planet_radius, c%planet_mass, &
                    c%nz, c%z, c%grav)
     ! Initial atmophere
-    atm = AtmosphereFile("../atmosphere.txt", err)
+    atm = AtmosphereFile(atmosphere_f, err)
     if (allocated(err)) then
       print*,err
       stop 1

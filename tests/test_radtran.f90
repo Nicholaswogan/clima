@@ -1,5 +1,5 @@
 
-program test_clima
+program test
   implicit none
 
   call test_RadtranIR()
@@ -23,7 +23,7 @@ contains
     real(dp), allocatable :: T(:), P(:), densities(:,:), mix(:,:), dz(:), z(:), density(:)
     real(dp), allocatable :: pdensities(:,:), radii(:,:)
     
-    atm = AtmosphereFile("../atmosphere.txt", err)
+    atm = AtmosphereFile("../templates/ModernEarth/atmosphere.txt", err)
     if (allocated(err)) then
       print*,err
       stop 1
@@ -31,7 +31,7 @@ contains
   
     nz = size(atm%columns(1,:))
     
-    rad = RadtranIR("../data","../settings.yaml",nz, err)
+    rad = RadtranIR("../data","../templates/ModernEarth/settings.yaml",nz, err)
     if (allocated(err)) then
       print*,err
       stop 1
@@ -64,7 +64,7 @@ contains
     
     print*,OLR
     
-    open(unit=1,file='../ModernEarthIR.dat',form='unformatted',status='replace')
+    open(unit=1,file='ModernEarthIR.dat',form='unformatted',status='replace')
     write(1) rad%ir%freq
     write(1) rad%wrk_ir%fup_a(nz+1,:)
     close(1)
@@ -87,7 +87,7 @@ contains
     real(dp), allocatable :: T(:), P(:), densities(:,:), mix(:,:), dz(:), z(:), density(:)
     real(dp), allocatable :: pdensities(:,:), radii(:,:)
     
-    atm = AtmosphereFile("../atmosphere.txt", err)
+    atm = AtmosphereFile("../templates/ModernEarth/atmosphere.txt", err)
     if (allocated(err)) then
       print*,err
       stop 1
@@ -97,7 +97,8 @@ contains
 
     solar_zenith = 60.0_dp
     surface_albedo = 0.15_dp
-    rad = Radtran("../data","../settings.yaml","../Sun_now.txt", solar_zenith, surface_albedo, nz, err)
+    rad = Radtran("../data","../templates/ModernEarth/settings.yaml",&
+    "../templates/ModernEarth/Sun_now.txt", solar_zenith, surface_albedo, nz, err)
     if (allocated(err)) then
       print*,err
       stop 1
@@ -134,7 +135,7 @@ contains
 
     print*,rad%wrk_sol%fdn_n(nz+1)*1.0e-3_dp
 
-    open(unit=1,file='../ModernEarth.dat',form='unformatted',status='replace')
+    open(unit=1,file='ModernEarth.dat',form='unformatted',status='replace')
     write(1) rad%ir%freq
     write(1) rad%wrk_ir%fup_a(nz+1,:)
     write(1) rad%sol%freq

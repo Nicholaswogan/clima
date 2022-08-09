@@ -1,4 +1,4 @@
-program test_climate
+program test
   use clima_const, only: dp
   implicit none
 
@@ -15,13 +15,12 @@ contains
     logical :: success
     real(dp), allocatable :: t_eval(:)
 
-
     c = Climate( &
     "../data", &
-    "../species.yaml", &
-    "../settings.yaml", &
-    "../Sun_now.txt", &
-    "../atmosphere.txt", &
+    "../templates/ModernEarth/species.yaml", &
+    "../templates/ModernEarth/settings.yaml", &
+    "../templates/ModernEarth/Sun_now.txt", &
+    "../templates/ModernEarth/atmosphere.txt", &
     err)
     if (allocated(err)) then
       print*,err
@@ -34,7 +33,7 @@ contains
 
     ! c%T_init = 250.0_dp
 
-    success = c%evolve("../test1.dat", 0.0_dp, c%T_init, t_eval, .true., err) 
+    success = c%evolve("ModernEarthClimate.dat", 0.0_dp, c%T_init, t_eval, .true., err) 
     if (allocated(err)) then
       print*,err
       stop 1

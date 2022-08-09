@@ -1,4 +1,4 @@
-program test_adiabat
+program test
   use clima_const, only: dp
   use clima_adiabat, only: WaterAdiabatClimateIR
   implicit none

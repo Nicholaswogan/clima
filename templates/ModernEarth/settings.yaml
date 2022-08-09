@@ -24,8 +24,8 @@ optical-properties:
       rayleigh: true
       photolysis-xs: true
       water-continuum: MT_CKD
-      particle-xs:
-        - {name: HCaer1, data: khare1984}
+      # particle-xs:
+      #   - {name: HCaer1, data: khare1984}
   solar:
     k-method: RandomOverlapResortRebin
     number-of-bins: 8
