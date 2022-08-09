@@ -8,7 +8,7 @@ program test
   real(dp) :: T
   integer :: i
   
-  c = WaterAdiabatClimate('../data', &
+  c = WaterAdiabatClimate('../clima/data', &
                           '../templates/runaway_greenhouse/species.yaml', &
                           '../templates/runaway_greenhouse/settings.yaml', &
                           '../templates/ModernEarth/Sun_now.txt', &
@@ -17,8 +17,6 @@ program test
     print*,err
     stop 1
   endif
-  
-  c%T_trop = 200.0_dp
     
   T = c%surface_temperature( &
       [270.0e6_dp, 400e-6_dp*1.0e6_dp, 1.0e6_dp], &

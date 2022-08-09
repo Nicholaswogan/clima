@@ -133,6 +133,11 @@ contains
     real(dp), allocatable :: P_e(:), z_e(:), T_e(:), f_i_e(:,:)
     real(dp), allocatable :: density(:)
     integer :: i, j
+
+    if (size(P_i_surf) /= self%sp%ng) then
+      err = "P_i_surf has the wrong dimension"
+      return
+    endif
     
     allocate(P_e(self%nz+1),  z_e(self%nz+1), T_e(self%nz+1))
     allocate(f_i_e(self%nz+1,self%sp%ng))
@@ -174,6 +179,11 @@ contains
     real(dp), allocatable :: P_e(:), z_e(:), T_e(:), f_i_e(:,:)
     real(dp), allocatable :: density(:)
     integer :: i, j
+
+    if (size(N_i_surf) /= self%sp%ng) then
+      err = "N_i_surf has the wrong dimension"
+      return
+    endif
     
     allocate(P_e(self%nz+1),  z_e(self%nz+1), T_e(self%nz+1))
     allocate(f_i_e(self%nz+1,self%sp%ng))
@@ -211,11 +221,16 @@ contains
     character(:), allocatable, intent(out) :: err
     
     real(dp) :: OLR
+
+    if (size(P_i_surf) /= self%sp%ng) then
+      err = "P_i_surf has the wrong dimension"
+      return
+    endif
     
     ! make atmosphere profile
     call self%make_profile(T_surf, P_i_surf, err)
     if (allocated(err)) return
-
+    
     ! Do radiative transfer
     ! MUST CONVERT P TO BARS
     OLR = self%rad%OLR(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, err=err)
@@ -230,6 +245,11 @@ contains
     character(:), allocatable, intent(out) :: err
     
     real(dp) :: TOA
+
+    if (size(P_i_surf) /= self%sp%ng) then
+      err = "P_i_surf has the wrong dimension"
+      return
+    endif
     
     ! make atmosphere profile
     call self%make_profile(T_surf, P_i_surf, err)
@@ -267,6 +287,11 @@ contains
       T_guess_ = T_guess
     else
       T_guess_ = 300.0_dp
+    endif
+
+    if (size(P_i_surf) /= self%sp%ng) then
+      err = "P_i_surf has the wrong dimension"
+      return
     endif
     
     x(1) = log10(T_guess_)
@@ -316,6 +341,11 @@ contains
     integer :: info
     integer, parameter :: lwa = (n*(3*n+13))/2 + 1
     real(dp) :: wa(lwa)
+
+    if (size(N_i_surf) /= self%sp%ng) then
+      err = "N_i_surf has the wrong dimension"
+      return
+    endif
     
     if (present(T_guess)) then
       T_guess_ = T_guess
