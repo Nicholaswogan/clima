@@ -2,6 +2,7 @@ module clima_adiabat_water
   use clima_const, only: dp
   use clima_types, only: Species
   use dop853_module, only: dop853_class
+  use futils, only: brent_class
   use clima_eqns, only: sat_pressure_H2O
   implicit none
 
@@ -41,7 +42,7 @@ module clima_adiabat_water
     character(:), allocatable :: err
     
   end type
-  
+
   ! stopping_reason
   enum, bind(c)
     enumerator :: ReachedPtop, ReachedTropopause, ReachedMoistAdiabat
@@ -82,11 +83,13 @@ contains
     integer :: i, j
     real(dp) :: grav
     real(dp), allocatable :: P_av(:), T_av(:), density_av(:), f_i_av(:,:), dz(:)
+    real(dp) :: N_i(sp%ng), P_i(sp%ng)
+    real(dp) :: P_H2O_ocean, N_H2O_ocean
 
     integer :: n
     real(dp), allocatable :: x(:)
     real(dp), allocatable :: fvec(:)
-    real(dp), parameter :: tol = 1.0e-5_dp
+    real(dp), parameter :: tol = 1.0e-8_dp
     integer :: info
     integer :: lwa
     real(dp), allocatable :: wa(:)
@@ -112,24 +115,24 @@ contains
       return
     endif
 
+    ! call one more time with solution
+    call fcn(n, x, fvec, info)
+
   contains
-    subroutine fcn(n, x, fvec, iflag)
-      integer, intent(in) :: n
-      real(dp), intent(in) :: x(n)
-      real(dp), intent(out) :: fvec(n)
-      integer, intent(inout) :: iflag
+    subroutine fcn(n_, x_, fvec_, iflag_)
+      integer, intent(in) :: n_
+      real(dp), intent(in) :: x_(n_)
+      real(dp), intent(out) :: fvec_(n_)
+      integer, intent(inout) :: iflag_
 
-      real(dp) :: N_i(n), P_i(n)
-      real(dp) :: P_H2O_ocean, N_H2O_ocean
-
-      P_i(:) = 10.0_dp**x(:)
+      P_i(:) = 10.0_dp**x_(:)
       call make_profile_water(T_surf, P_i, &
                               sp, nz, LH2O, planet_mass, &
                               planet_radius, P_top, T_trop, RH, &
                               P, z, T, f_i, &
                               err)
       if (allocated(err)) then
-       iflag = -1
+        iflag_ = -1
         return
       endif 
 
@@ -138,7 +141,7 @@ contains
       ! convert to a column (moles/cm2)
       N_H2O_ocean = P_H2O_ocean/(sp%g(LH2O)%mass*grav)
 
-      ! compute averages
+      ! Compute the columns by splitting grid into cells
       do i = 1,nz
         P_av(i) = sqrt(max(P(i)*P(i+1),0.0_dp))
         T_av(i) = 0.5_dp*(T(i)+T(i+1))
@@ -158,7 +161,7 @@ contains
       N_i(LH2O) = N_i(LH2O) + N_H2O_ocean
 
       ! residual
-      fvec = N_i - N_i_surf
+      fvec_(:) = N_i - N_i_surf
 
     end subroutine
 
@@ -474,81 +477,65 @@ contains
   end subroutine
   
   subroutine find_tropopause(dop, d, P_cur, P_old)
-    use minpack_module, only: lmdif1
-    
     class(dop853_class),intent(inout) :: dop
     type(AdiabatProfileData), intent(inout) :: d
     real(dp), intent(in) :: P_cur, P_old
-    
-    integer, parameter :: n = 1, m = 1
-    real(dp) :: x(1)
-    real(dp) :: fvec(1)
+
     real(dp), parameter :: tol = 1.0e-8_dp
+    real(dp) :: xzero, fzero
     integer :: info
-    integer :: iwa(n)
-    integer, parameter :: lwa = (n*(3*n+13))/2 + 1
-    real(dp) :: wa(lwa)
-    
-    x(1) = log10(0.5_dp*(P_cur+P_old))
-    call lmdif1(fcn, m, n, x, fvec, tol, info, iwa, wa, lwa)
-    if (info < 1 .or. info > 4) then
-      d%err = 'lmdif1 root solve failed'
+
+    type(brent_class) :: brent
+    call brent%set_function(fcn)
+    call brent%find_zero(P_old, P_cur, tol, xzero, fzero, info)
+    if (info /= 0) then
+      d%err = 'brent failed in "find_tropopause"'
+      return
     endif
+
     allocate(d%P_trop)
-    d%P_trop = 10.0_dp**x(1)
+    d%P_trop = xzero
     
   contains
-    subroutine fcn(m, n, x, fvec, iflag)
-      integer, intent(in) :: m
-      integer, intent(in) :: n
-      real(dp), intent(in) :: x(n)
-      real(dp), intent(out) :: fvec(n)
-      integer, intent(inout) :: iflag
-      real(dp) :: T, P
-      P = 10.0_dp**x(1)
-      T = dop%contd8(1, P)
-      fvec(1) = d%T_trop - T
-    end subroutine
-    
+    function fcn(me, x) result(f)
+      class(brent_class), intent(inout) :: me
+      real(dp), intent(in) :: x
+      real(dp) :: f
+      f = d%T_trop - dop%contd8(1, x)
+    end function
   end subroutine
   
   subroutine find_dry_moist_boundary(dop, d, P_cur, P_old)
-    use minpack_module, only: lmdif1
-    
     class(dop853_class),intent(inout) :: dop
     type(AdiabatProfileData), intent(inout) :: d
     real(dp), intent(in) :: P_cur, P_old
       
-    integer, parameter :: n = 1, m = 1
-    real(dp) :: x(1)
-    real(dp) :: fvec(1)
     real(dp), parameter :: tol = 1.0e-8_dp
+    real(dp) :: xzero, fzero
     integer :: info
-    integer :: iwa(n)
-    integer, parameter :: lwa = (n*(3*n+13))/2 + 1
-    real(dp) :: wa(lwa)
     
-    x(1) = log10(0.5_dp*(P_cur+P_old))
-    call lmdif1(fcn, m, n, x, fvec, tol, info, iwa, wa, lwa)
-    if (info < 1 .or. info > 4) then
-      d%err = 'lmdif1 root solve failed'
+    type(brent_class) :: brent
+    call brent%set_function(fcn)
+    call brent%find_zero(P_old, P_cur, tol, xzero, fzero, info)
+    if (info /= 0) then
+      d%err = 'brent failed in "find_dry_moist_boundary"'
+      return
     endif
+
     allocate(d%P_bound)
-    d%P_bound = 10.0_dp**x(1)
-    
+    d%P_bound = xzero
+
   contains
-    subroutine fcn(m, n, x, fvec, iflag)
-      integer, intent(in) :: m !! the number of variables.
-      integer, intent(in) :: n !! the number of variables.
-      real(dp), intent(in) :: x(n) !! independent variable vector
-      real(dp), intent(out) :: fvec(n) !! value of function at `x`
-      integer, intent(inout) :: iflag !! set to <0 to terminate execution
+    function fcn(me, x) result(f)
+      class(brent_class), intent(inout) :: me
+      real(dp), intent(in) :: x
+      real(dp) :: f
       real(dp) :: T, P, p_H2O_sat
-      P = 10.0_dp**x(1)
+      P = x
       T = dop%contd8(1, P)
       p_H2O_sat = d%RH*sat_pressure_H2O(T)
-      fvec(1) = p_H2O_sat - P*d%f_i_surf(d%LH2O)
-    end subroutine
+      f = p_H2O_sat - P*d%f_i_surf(d%LH2O)
+    end function
   end subroutine
   
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!

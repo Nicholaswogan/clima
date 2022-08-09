@@ -270,24 +270,27 @@ contains
     
     x(1) = log10(T_guess_)
     call hybrd1(fcn, n, x, fvec, tol, info, wa, lwa)
-    if (info < 1 .or. info > 4) then
+    if (info == 0 .or. info > 4) then
       err = 'hybrd1 root solve failed'
+      return
+    elseif (info < 0) then
+      ! err already set
       return
     endif
     
     T_surf = 10.0_dp**x(1)
     
   contains
-    subroutine fcn(n, x, fvec, iflag)
-      integer, intent(in) :: n
-      real(dp), intent(in) :: x(n)
-      real(dp), intent(out) :: fvec(n)
-      integer, intent(inout) :: iflag
+    subroutine fcn(n_, x_, fvec_, iflag_)
+      integer, intent(in) :: n_
+      real(dp), intent(in) :: x_(n_)
+      real(dp), intent(out) :: fvec_(n_)
+      integer, intent(inout) :: iflag_
       real(dp) :: T
-      T = 10.0_dp**x(1)
-      fvec(1) = self%net_TOA_flux(T, P_i_surf, err)
+      T = 10.0_dp**x_(1)
+      fvec_(1) = self%net_TOA_flux(T, P_i_surf, err)
       if (allocated(err)) then
-        iflag = -1
+        iflag_ = -1
       endif
     end subroutine
     
