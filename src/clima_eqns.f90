@@ -199,21 +199,4 @@ contains
             (1.0_dp/(lambda*1.0e-3_dp)**4.0_dp)
   end function
 
-  pure function sat_pressure_H2O(T) result(p_H2O)
-    real(dp), intent(in) :: T ! temperature in K
-    real(dp) :: p_H2O ! dynes/cm2
-    
-    real(dp) :: Tc ! temperature in C
-
-    ! From Ackerman and Marley 2001, Equation A2a and A2b
-
-    Tc = T - 273.15_dp
-    
-    if (T < 273.15) then
-      p_H2O = 6111.5_dp*exp((23.036_dp*Tc - Tc**2.0_dp/333.7_dp)/(Tc + 279.82_dp))
-    else
-      p_H2O = 6111.5_dp*exp((18.729_dp*Tc - Tc**2.0_dp/227.3_dp)/(Tc + 257.87_dp))
-    endif
-  end function
-
 end module

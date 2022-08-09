@@ -5,7 +5,7 @@ program test
   
   type(WaterAdiabatClimate) :: c
   character(:), allocatable :: err
-  real(dp) :: T
+  real(dp) :: T, OLR
   integer :: i
   
   c = WaterAdiabatClimate('../clima/data', &

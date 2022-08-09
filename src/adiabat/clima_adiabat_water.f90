@@ -3,7 +3,6 @@ module clima_adiabat_water
   use clima_types, only: Species
   use dop853_module, only: dop853_class
   use futils, only: brent_class
-  use clima_eqns, only: sat_pressure_H2O
   implicit none
 
   private
@@ -227,7 +226,7 @@ contains
       P_H2O_start = P_i_surf(LH2O)
     else
       ! Below critical point
-      P_H2O_sat_surf = RH*sat_pressure_H2O(T_surf)
+      P_H2O_sat_surf = RH*sat_pressure_H2O(T_surf, sp%g(LH2O)%mass)
       if (P_H2O_sat_surf > P_i_surf(LH2O)) then
         ! All water on surface is vaporized
         moist_start = .false.
@@ -283,7 +282,7 @@ contains
     d%z => z
     d%T => T
     d%f_i => f_i
-    
+
     if (moist_start) then
       call integrate_moist_start(d, err)
       if (allocated(err)) return
@@ -533,7 +532,7 @@ contains
       real(dp) :: T, P, p_H2O_sat
       P = x
       T = dop%contd8(1, P)
-      p_H2O_sat = d%RH*sat_pressure_H2O(T)
+      p_H2O_sat = d%RH*sat_pressure_H2O(T, d%sp%g(d%LH2O)%mass)
       f = p_H2O_sat - P*d%f_i_surf(d%LH2O)
     end function
   end subroutine
@@ -588,7 +587,7 @@ contains
       irtrn = -1
       
     elseif (d%T_trop <= T_cur .and. T_cur < T_crit_H2O) then
-      p_H2O_sat = d%RH*sat_pressure_H2O(T_cur)
+      p_H2O_sat = d%RH*sat_pressure_H2O(T_cur, d%sp%g(d%LH2O)%mass)
       if (d%f_i_surf(d%LH2O)*P_cur > p_H2O_sat) then
         ! Entered the moist adiabat regime.
         
@@ -768,8 +767,7 @@ contains
     real(dp) :: f_H2O, f_dry
     integer :: i
     
-    f_H2O = d%RH*sat_pressure_H2O(T)/P
-    
+    f_H2O = d%RH*sat_pressure_H2O(T, d%sp%g(d%LH2O)%mass)/P
     f_dry = 1.0_dp - f_H2O
     
     f_i_layer(d%LH2O) = f_H2O
@@ -814,7 +812,7 @@ contains
     
     ! Water
     mu_H2O = d%sp%g(d%LH2O)%mass
-    P_H2O = d%RH*sat_pressure_H2O(T)
+    P_H2O = d%RH*sat_pressure_H2O(T, mu_H2O)
     f_H2O = P_H2O/P
     call heat_capacity_eval(d%sp%g(d%LH2O)%thermo, T, found, cp)
     if (.not. found) then
@@ -882,6 +880,16 @@ contains
     z = ((N_avo*k_boltz*T)/(G_grav_cgs*planet_mass*mubar)*log(P/P0) &
         + 1/(planet_radius + z0))**(-1.0_dp) - planet_radius
 
+  end function
+
+  function sat_pressure_H2O(T, mu_H2O) result(p_H2O_sat)
+    use clima_const, only: Rgas
+    real(dp), intent(in) :: T !! Temperature (K)
+    real(dp), intent(in) :: mu_H2O !! g/mol
+    real(dp) :: p_H2O_sat !! Saturation pressure (dynes/cm2)
+    
+    p_H2O_sat = 1.0e6_dp*exp((L_H2O*mu_H2O)/(Rgas)*(1.0_dp/373.0_dp - 1.0_dp/T))
+    
   end function
   
 end module
