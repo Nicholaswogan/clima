@@ -1,10 +1,13 @@
 module clima_adiabat
   use clima_const, only: dp, s_str_len
   use clima_types, only: Species
-  use clima_radtran, only: RadtranIR
+  use clima_radtran, only: Radtran
   implicit none
+  private
 
-  type :: WaterAdiabatClimateIR
+  public :: WaterAdiabatClimate
+
+  type :: WaterAdiabatClimate
 
     ! settings and free parameters
     integer :: nz
@@ -22,33 +25,35 @@ module clima_adiabat
     type(Species) :: sp
     
     ! Radiative transfer
-    type(RadtranIR) :: rad
+    type(Radtran) :: rad
     
     ! work variables
     real(dp), allocatable :: P(:), T(:), f_i(:,:), z(:), dz(:)
     real(dp), allocatable :: densities(:,:)
     
   contains
-    procedure :: make_profile => WaterAdiabatClimateIR_make_profile
-    procedure :: make_column => WaterAdiabatClimateIR_make_column
-    procedure :: OLR => WaterAdiabatClimateIR_OLR
-    procedure :: surface_temperature => WaterAdiabatClimateIR_surface_temperature
+    procedure :: make_profile => WaterAdiabatClimate_make_profile
+    procedure :: make_column => WaterAdiabatClimate_make_column
+    procedure :: OLR => WaterAdiabatClimate_OLR
+    procedure :: net_TOA_flux => WaterAdiabatClimate_net_TOA_flux
+    procedure :: surface_temperature => WaterAdiabatClimate_surface_temperature
   end type
   
-  interface WaterAdiabatClimateIR
-    module procedure :: create_WaterAdiabatClimateIR
+  interface WaterAdiabatClimate
+    module procedure :: create_WaterAdiabatClimate
   end interface
   
 contains
   
-  function create_WaterAdiabatClimateIR(datadir, species_f, settings_f, err) result(c)
+  function create_WaterAdiabatClimate(datadir, species_f, settings_f, star_f, err) result(c)
     use clima_types, only: ClimaSettings 
     character(*), intent(in) :: datadir
     character(*), intent(in) :: species_f
     character(*), intent(in) :: settings_f
+    character(*), intent(in) :: star_f
     character(:), allocatable, intent(out) :: err
     
-    type(WaterAdiabatClimateIR) :: c
+    type(WaterAdiabatClimate) :: c
     
     type(ClimaSettings) :: s
     integer :: i, ind
@@ -92,6 +97,14 @@ contains
     if (s%planet_is_present) then
       c%planet_mass = s%planet_mass
       c%planet_radius = s%planet_radius
+      if (.not.allocated(s%solar_zenith)) then
+        err = '"solar-zenith-angle" is missing from file "'//settings_f//'"'
+        return
+      endif
+      if (.not.allocated(s%surface_albedo)) then
+        err = '"surface-albedo" is missing from file "'//settings_f//'"'
+        return
+      endif
     else
       err = '"planet" is missing from file "'//settings_f//'"'
       return
@@ -99,7 +112,7 @@ contains
     
     ! make IR radiative transfer with list of species, from species file
     ! and the optical-properties from the settings file
-    c%rad = RadtranIR(datadir, c%species_names, particle_names, s, c%nz, err)
+    c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, s%solar_zenith, s%surface_albedo, c%nz, err)
     if (allocated(err)) return
 
     ! allocate work variables
@@ -108,10 +121,10 @@ contains
     
   end function
   
-  subroutine WaterAdiabatClimateIR_make_profile(self, T_surf, P_i_surf, err)
+  subroutine WaterAdiabatClimate_make_profile(self, T_surf, P_i_surf, err)
     use clima_adiabat_water, only: make_profile_water
     use clima_const, only: k_boltz
-    class(WaterAdiabatClimateIR), intent(inout) :: self
+    class(WaterAdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: T_surf !! K
     real(dp), intent(in) :: P_i_surf(:)
     character(:), allocatable, intent(out) :: err
@@ -149,10 +162,10 @@ contains
     
   end subroutine
 
-  subroutine WaterAdiabatClimateIR_make_column(self, T_surf, N_i_surf, err)
+  subroutine WaterAdiabatClimate_make_column(self, T_surf, N_i_surf, err)
     use clima_adiabat_water, only: make_column_water
     use clima_const, only: k_boltz
-    class(WaterAdiabatClimateIR), intent(inout) :: self
+    class(WaterAdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: T_surf !! K
     real(dp), intent(in) :: N_i_surf(:)
     character(:), allocatable, intent(out) :: err
@@ -190,8 +203,8 @@ contains
     
   end subroutine
   
-  function WaterAdiabatClimateIR_OLR(self, T_surf, P_i_surf, err) result(OLR)
-    class(WaterAdiabatClimateIR), intent(inout) :: self
+  function WaterAdiabatClimate_OLR(self, T_surf, P_i_surf, err) result(OLR)
+    class(WaterAdiabatClimate), intent(inout) :: self
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), target, intent(in) :: P_i_surf(:)
     character(:), allocatable, intent(out) :: err
@@ -208,11 +221,31 @@ contains
     if (allocated(err)) return
     
   end function
+
+  function WaterAdiabatClimate_net_TOA_flux(self, T_surf, P_i_surf, err) result(TOA)
+    class(WaterAdiabatClimate), intent(inout) :: self
+    real(dp), target, intent(in) :: T_surf !! K
+    real(dp), target, intent(in) :: P_i_surf(:)
+    character(:), allocatable, intent(out) :: err
+    
+    real(dp) :: TOA
+    
+    ! make atmosphere profile
+    call self%make_profile(T_surf, P_i_surf, err)
+    if (allocated(err)) return
+
+    ! Do radiative transfer
+    ! MUST CONVERT P TO BARS
+    call self%rad%radiate(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, err=err)
+    if (allocated(err)) return
+
+    TOA = self%rad%f_total(size(self%rad%f_total))
+    
+  end function
   
-  function WaterAdiabatClimateIR_surface_temperature(self, OLR, P_i_surf, T_guess, err) result(T_surf)
+  function WaterAdiabatClimate_surface_temperature(self, P_i_surf, T_guess, err) result(T_surf)
     use minpack_module, only: hybrd1
-    class(WaterAdiabatClimateIR), intent(inout) :: self
-    real(dp), intent(in) :: OLR !! K
+    class(WaterAdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
     real(dp), optional, intent(in) :: T_guess
     character(:), allocatable, intent(out) :: err
@@ -250,10 +283,12 @@ contains
       real(dp), intent(in) :: x(n)
       real(dp), intent(out) :: fvec(n)
       integer, intent(inout) :: iflag
-      real(dp) :: T, OLR_
+      real(dp) :: T
       T = 10.0_dp**x(1)
-      OLR_ = self%OLR(T, P_i_surf, err)
-      fvec(1) = OLR - OLR_*1.0e-3_dp
+      fvec(1) = self%net_TOA_flux(T, P_i_surf, err)
+      if (allocated(err)) then
+        iflag = -1
+      endif
     end subroutine
     
   end function

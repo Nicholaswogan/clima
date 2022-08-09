@@ -5,9 +5,19 @@ atmosphere-grid:
 planet:
   planet-mass: 5.972e27
   planet-radius: 6.371e8
+  solar-zenith-angle: 60
+  surface-albedo: 0.2
   
 optical-properties:
   ir:
+    k-method: RandomOverlapResortRebin
+    number-of-bins: 16
+    opacities:
+      k-distributions: [H2O, CO2]
+      CIA: [CO2-CO2, N2-N2]
+      rayleigh: [H2O, CO2, N2]
+      water-continuum: MT_CKD
+  solar:
     k-method: RandomOverlapResortRebin
     number-of-bins: 16
     opacities:

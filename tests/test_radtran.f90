@@ -8,7 +8,7 @@ program test
 contains
 
   subroutine test_RadtranIR()
-    use clima_radtran, only: RadtranIR
+    use clima, only: RadtranIR
     use clima_types, only: AtmosphereFile, unpack_atmospherefile
     use clima_eqns, only: vertical_grid
     use clima_const, only: k_boltz, dp
@@ -72,7 +72,7 @@ contains
   end subroutine
 
   subroutine test_Radtran()
-    use clima_radtran, only: Radtran
+    use clima, only: Radtran
     use clima_types, only: AtmosphereFile, unpack_atmospherefile
     use clima_eqns, only: vertical_grid
     use clima_const, only: k_boltz, dp

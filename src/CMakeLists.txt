@@ -32,6 +32,7 @@ add_library(clima
   ${RADIATE_SOURCES}
   ${CLIMATE_SOURCES}
   ${ADIABAT_SOURCES}
+  clima.f90
 )
 target_link_libraries(clima 
   fortran-yaml-c  

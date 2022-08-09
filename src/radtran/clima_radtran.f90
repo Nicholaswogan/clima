@@ -84,7 +84,8 @@ module clima_radtran
     real(dp), allocatable :: f_total(:)
     
   contains
-    procedure :: radiate =>Radtran_radiate
+    procedure :: radiate => Radtran_radiate
+    procedure :: OLR => Radtran_OLR
   end type
 
   interface Radtran
@@ -185,25 +186,8 @@ contains
     
     wrk => self%wrk_ir  
     
-    ! Check optional arguments
-    if ((present(pdensities) .and. .not. present(radii)) &
-      .or.(present(radii) .and. .not. present(pdensities))) then
-      err = 'Both pdensities and radii must be arguments.'
-      return
-    endif
-    if (self%np > 0) then
-      if (.not. present(radii)) then
-        err = 'The model contains particles but "pdensities" and "radii" are not arguments.'
-        return
-      endif
-    endif
-    
-    call check_dimensions(self%nz, self%ng, T, P, densities, dz, err)
+    call check_inputs(self%nz, self%ng, self%np, T, P, densities, dz, pdensities, radii, err)
     if (allocated(err)) return
-    if (present(radii)) then
-      call check_dimensions_p(self%nz, self%np, pdensities, radii, err)
-      if (allocated(err)) return
-    endif
                                          
     ierr = radiate(self%ir, &
                    0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
@@ -236,52 +220,6 @@ contains
     res = self%wrk_ir%fup_n(self%nz+1)
     
   end function
-
-  subroutine check_dimensions_p(nz, np, pdensities, radii, err)
-    integer, intent(in) :: nz, np
-    real(dp), intent(in) :: pdensities(:,:)
-    real(dp), intent(in) :: radii(:,:)
-    character(:), allocatable, intent(out) :: err
-
-    if (size(pdensities,1) /= nz .or. size(pdensities,2) /= np) then
-      err = '"pdensities" has the wrong input dimension.'
-      return
-    endif
-
-    if (size(radii,1) /= nz .or. size(radii,2) /= np) then
-      err = '"radii" has the wrong input dimension.'
-      return
-    endif
-
-  end subroutine
-  
-  subroutine check_dimensions(nz, ng, T, P, densities, dz, err)
-    integer, intent(in) :: nz, ng
-    real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
-    real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
-    real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
-                                           !! molecule in each layer (molcules/cm3)
-    real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
-    character(:), allocatable, intent(out) :: err
-    
-    if (size(T) /= nz) then
-      err = '"T" has the wrong input dimension.'
-      return
-    endif
-    if (size(P) /= nz) then
-      err = '"P" has the wrong input dimension.'
-      return
-    endif
-    if (size(densities,1) /= nz .or. size(densities,2) /= ng) then
-      err = '"densities" has the wrong input dimension.'
-      return
-    endif
-    if (size(dz) /= nz) then
-      err = '"dz" has the wrong input dimension.'
-      return
-    endif
-    
-  end subroutine
 
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   !!! IR and Solar Radiative Transfer !!!
@@ -406,28 +344,12 @@ contains
 
     type(ClimaRadtranWrk), pointer :: wrk_ir
     type(ClimaRadtranWrk), pointer :: wrk_sol
-
-    ! Check optional arguments
-    if ((present(pdensities) .and. .not. present(radii)) &
-      .or.(present(radii) .and. .not. present(pdensities))) then
-      err = 'Both pdensities and radii must be arguments.'
-      return
-    endif
-    if (self%np > 0) then
-      if (.not. present(radii)) then
-        err = 'The model contains particles but "pdensities" and "radii" are not arguments.'
-        return
-      endif
-    endif
     
     wrk_ir => self%wrk_ir
     wrk_sol => self%wrk_sol                                        
-    call check_dimensions(self%nz, self%ng, T, P, densities, dz, err)
+    
+    call check_inputs(self%nz, self%ng, self%np, T, P, densities, dz, pdensities, radii, err)
     if (allocated(err)) return
-    if (present(radii)) then
-      call check_dimensions_p(self%nz, self%np, pdensities, radii, err)
-      if (allocated(err)) return
-    endif
 
     ! IR radiative transfer                                     
     ierr = radiate(self%ir, &
@@ -456,6 +378,124 @@ contains
     ! Index 1 is bottom. Index nz+1 is top edge of top layer.
     self%f_total = (wrk_sol%fdn_n - wrk_sol%fup_n) + (wrk_ir%fdn_n - wrk_ir%fup_n)
 
+  end subroutine
+
+  function Radtran_OLR(self, T_surface, T, P, densities, dz, pdensities, radii, err) result(res)
+    use clima_radtran_radiate, only: radiate
+    class(Radtran), target, intent(inout) :: self
+    real(dp), intent(in) :: T_surface
+    real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
+    real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
+    real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
+                                           !! molecule in each layer (molcules/cm3)
+    real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
+    real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:) !! (nz,np)
+    character(:), allocatable, intent(out) :: err
+    real(dp) :: res
+    
+    integer :: ierr
+
+    type(ClimaRadtranWrk), pointer :: wrk_ir
+    
+    wrk_ir => self%wrk_ir                                      
+    
+    call check_inputs(self%nz, self%ng, self%np, T, P, densities, dz, pdensities, radii, err)
+    if (allocated(err)) return
+
+    ! IR radiative transfer                                     
+    ierr = radiate(self%ir, &
+                  0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
+                  P, T_surface, T, densities, dz, &
+                  pdensities, radii, &
+                  wrk_ir%rx, wrk_ir%rz, &
+                  wrk_ir%fup_a, wrk_ir%fdn_a, wrk_ir%fup_n, wrk_ir%fdn_n)
+    if (ierr /= 0) then
+      err = 'Input particle radii are outside the data range.'
+      return
+    endif
+    
+    res = wrk_ir%fup_n(self%nz+1)
+    
+  end function
+
+  !!!!!!!!!!!!!!!!!
+  !!! Utilities !!!
+  !!!!!!!!!!!!!!!!!
+
+  subroutine check_inputs(nz, ng, np, T, P, densities, dz, pdensities, radii, err)
+    integer, intent(in) :: nz, ng, np
+    real(dp), intent(in) :: T(:)
+    real(dp), intent(in) :: P(:)
+    real(dp), intent(in) :: densities(:,:)
+    real(dp), intent(in) :: dz(:)
+    real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:)
+    character(:), allocatable, intent(out) :: err
+
+    if ((present(pdensities) .and. .not. present(radii)) &
+      .or.(present(radii) .and. .not. present(pdensities))) then
+      err = 'Both pdensities and radii must be arguments.'
+      return
+    endif
+    if (np > 0) then
+      if (.not. present(radii)) then
+        err = 'The model contains particles but "pdensities" and "radii" are not arguments.'
+        return
+      endif
+    endif
+    
+    call check_dimensions(nz, ng, T, P, densities, dz, err)
+    if (allocated(err)) return
+    if (present(radii)) then
+      call check_dimensions_p(nz, np, pdensities, radii, err)
+      if (allocated(err)) return
+    endif
+
+  end subroutine
+
+  subroutine check_dimensions_p(nz, np, pdensities, radii, err)
+    integer, intent(in) :: nz, np
+    real(dp), intent(in) :: pdensities(:,:)
+    real(dp), intent(in) :: radii(:,:)
+    character(:), allocatable, intent(out) :: err
+
+    if (size(pdensities,1) /= nz .or. size(pdensities,2) /= np) then
+      err = '"pdensities" has the wrong input dimension.'
+      return
+    endif
+
+    if (size(radii,1) /= nz .or. size(radii,2) /= np) then
+      err = '"radii" has the wrong input dimension.'
+      return
+    endif
+
+  end subroutine
+  
+  subroutine check_dimensions(nz, ng, T, P, densities, dz, err)
+    integer, intent(in) :: nz, ng
+    real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
+    real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
+    real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
+                                           !! molecule in each layer (molcules/cm3)
+    real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
+    character(:), allocatable, intent(out) :: err
+    
+    if (size(T) /= nz) then
+      err = '"T" has the wrong input dimension.'
+      return
+    endif
+    if (size(P) /= nz) then
+      err = '"P" has the wrong input dimension.'
+      return
+    endif
+    if (size(densities,1) /= nz .or. size(densities,2) /= ng) then
+      err = '"densities" has the wrong input dimension.'
+      return
+    endif
+    if (size(dz) /= nz) then
+      err = '"dz" has the wrong input dimension.'
+      return
+    endif
+    
   end subroutine
   
 end module

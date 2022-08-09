@@ -1,16 +1,17 @@
 program test
-  use clima_const, only: dp
-  use clima_adiabat, only: WaterAdiabatClimateIR
+  use clima, only: dp
+  use clima, only: WaterAdiabatClimate
   implicit none
   
-  type(WaterAdiabatClimateIR) :: c
+  type(WaterAdiabatClimate) :: c
   character(:), allocatable :: err
   real(dp) :: T
   integer :: i
   
-  c = WaterAdiabatClimateIR('../data', &
+  c = WaterAdiabatClimate('../data', &
                           '../templates/runaway_greenhouse/species.yaml', &
                           '../templates/runaway_greenhouse/settings.yaml', &
+                          '../templates/ModernEarth/Sun_now.txt', &
                           err)
   if (allocated(err)) then
     print*,err
@@ -19,9 +20,9 @@ program test
   
   c%T_trop = 200.0_dp
     
-  T = c%surface_temperature(260.0_dp, &
+  T = c%surface_temperature( &
       [270.0e6_dp, 400e-6_dp*1.0e6_dp, 1.0e6_dp], &
-      T_guess = 300.0_dp, err=err)
+      T_guess = 280.0_dp, err=err)
   if (allocated(err)) then
     print*,err
     stop 1

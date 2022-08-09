@@ -1,5 +1,5 @@
 program test
-  use clima_const, only: dp
+  use clima, only: dp
   implicit none
 
   call test_Climate_evolve()
@@ -7,7 +7,7 @@ program test
 contains
 
   subroutine test_Climate_evolve()
-    use clima_climate, only: Climate
+    use clima, only: Climate
     use futils, only: linspace
 
     type(Climate) :: c
