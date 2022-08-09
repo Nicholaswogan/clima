@@ -60,6 +60,78 @@ cdef class WaterAdiabatClimate:
       raise ClimaException(err.decode("utf-8").strip())
     return T_surf
 
+  property P_top:
+    def __get__(self):
+      cdef double val
+      wa_pxd.wateradiabatclimate_p_top_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.wateradiabatclimate_p_top_set(&self._ptr, &val)
+
+  property T_trop:
+    def __get__(self):
+      cdef double val
+      wa_pxd.wateradiabatclimate_t_trop_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.wateradiabatclimate_t_trop_set(&self._ptr, &val)
+
+  property RH:
+    def __get__(self):
+      cdef double val
+      wa_pxd.wateradiabatclimate_rh_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.wateradiabatclimate_rh_set(&self._ptr, &val)
+
+  property P:
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.wateradiabatclimate_p_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.wateradiabatclimate_p_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+
+  property T:
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.wateradiabatclimate_t_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.wateradiabatclimate_t_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+
+  property f_i:
+    def __get__(self):
+      cdef int dim1, dim2
+      wa_pxd.wateradiabatclimate_f_i_get_size(&self._ptr, &dim1, &dim2)
+      cdef ndarray arr = np.empty((dim1, dim2), np.double, order="F")
+      wa_pxd.wateradiabatclimate_f_i_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
+      return arr
+
+  property z:
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.wateradiabatclimate_z_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.wateradiabatclimate_z_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+
+  property dz:
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.wateradiabatclimate_dz_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.wateradiabatclimate_dz_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+
+  property densities:
+    def __get__(self):
+      cdef int dim1, dim2
+      wa_pxd.wateradiabatclimate_densities_get_size(&self._ptr, &dim1, &dim2)
+      cdef ndarray arr = np.empty((dim1, dim2), np.double, order="F")
+      wa_pxd.wateradiabatclimate_densities_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
+      return arr
+
 
 
 

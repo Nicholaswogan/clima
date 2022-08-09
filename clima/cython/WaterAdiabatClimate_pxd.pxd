@@ -18,3 +18,32 @@ cdef extern void wateradiabatclimate_surface_temperature_wrapper(void *ptr, int 
 cdef extern void wateradiabatclimate_surface_temperature_column_wrapper(void *ptr, int *ng, 
                                       double *N_i_surf, double *T_guess, double *T_surf, char *err)
 
+
+cdef extern void wateradiabatclimate_p_top_get(void *ptr, double *val)
+cdef extern void wateradiabatclimate_p_top_set(void *ptr, double *val)
+
+cdef extern void wateradiabatclimate_t_trop_get(void *ptr, double *val)
+cdef extern void wateradiabatclimate_t_trop_set(void *ptr, double *val)
+
+cdef extern void wateradiabatclimate_rh_get(void *ptr, double *val)
+cdef extern void wateradiabatclimate_rh_set(void *ptr, double *val)
+
+cdef extern void wateradiabatclimate_p_get_size(void *ptr, int *dim1)
+cdef extern void wateradiabatclimate_p_get(void *ptr, int *dim1, double *arr)
+
+cdef extern void wateradiabatclimate_t_get_size(void *ptr, int *dim1)
+cdef extern void wateradiabatclimate_t_get(void *ptr, int *dim1, double *arr)
+
+cdef extern void wateradiabatclimate_f_i_get_size(void *ptr, int *dim1, int *dim2)
+cdef extern void wateradiabatclimate_f_i_get(void *ptr, int *dim1, int *dim2, double *arr)
+
+cdef extern void wateradiabatclimate_z_get_size(void *ptr, int *dim1)
+cdef extern void wateradiabatclimate_z_get(void *ptr, int *dim1, double *arr)
+
+cdef extern void wateradiabatclimate_dz_get_size(void *ptr, int *dim1)
+cdef extern void wateradiabatclimate_dz_get(void *ptr, int *dim1, double *arr)
+
+cdef extern void wateradiabatclimate_densities_get_size(void *ptr, int *dim1, int *dim2)
+cdef extern void wateradiabatclimate_densities_get(void *ptr, int *dim1, int *dim2, double *arr)
+
+

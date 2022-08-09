@@ -11,7 +11,7 @@ module clima_adiabat
 
     ! settings and free parameters
     integer :: nz
-    real(dp) :: P_top = 1.0_dp ! (dynes/cm2)
+    real(dp) :: P_top = 1.0e-2_dp ! (dynes/cm2)
     real(dp) :: T_trop = 180.0_dp ! (T)
     real(dp) :: RH = 1.0_dp ! relative humidity
     
@@ -149,15 +149,16 @@ contains
                             P_e, z_e, T_e, f_i_e, &
                             err)
     if (allocated(err)) return
+
     
     do i = 1,self%nz
-      self%P(i) = sqrt(P_e(i)*P_e(i+1))
-      self%T(i) = 0.5_dp*(T_e(i)+T_e(i+1))
+      self%P(i) = P_e(i)
+      self%T(i) = T_e(i)
       self%z(i) = 0.5_dp*(z_e(i)+z_e(i+1))
       self%dz(i) = z_e(i+1) - z_e(i)
       
       do j =1,self%sp%ng
-        self%f_i(i,j) = sqrt(f_i_e(i,j)*f_i_e(i+1,j))
+        self%f_i(i,j) = f_i_e(i,j)
       enddo
     enddo
     
@@ -197,13 +198,13 @@ contains
     if (allocated(err)) return
     
     do i = 1,self%nz
-      self%P(i) = sqrt(P_e(i)*P_e(i+1))
-      self%T(i) = 0.5_dp*(T_e(i)+T_e(i+1))
+      self%P(i) = P_e(i)
+      self%T(i) = T_e(i)
       self%z(i) = 0.5_dp*(z_e(i)+z_e(i+1))
       self%dz(i) = z_e(i+1) - z_e(i)
       
       do j =1,self%sp%ng
-        self%f_i(i,j) = sqrt(f_i_e(i,j)*f_i_e(i+1,j))
+        self%f_i(i,j) = f_i_e(i,j)
       enddo
     enddo
     

@@ -135,4 +135,160 @@ contains
 
   end subroutine
 
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !!! getters and setters !!!
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  subroutine wateradiabatclimate_p_top_get(ptr, val) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    real(c_double), intent(out) :: val
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    val = c%P_top
+  end subroutine
+  
+  subroutine wateradiabatclimate_p_top_set(ptr, val) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    real(c_double), intent(in) :: val
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    c%P_top = val
+  end subroutine
+
+  subroutine wateradiabatclimate_t_trop_get(ptr, val) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    real(c_double), intent(out) :: val
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    val = c%T_trop
+  end subroutine
+  
+  subroutine wateradiabatclimate_t_trop_set(ptr, val) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    real(c_double), intent(in) :: val
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    c%T_trop = val
+  end subroutine
+
+  subroutine wateradiabatclimate_rh_get(ptr, val) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    real(c_double), intent(out) :: val
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    val = c%RH
+  end subroutine
+  
+  subroutine wateradiabatclimate_rh_set(ptr, val) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    real(c_double), intent(in) :: val
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    c%RH = val
+  end subroutine
+
+  subroutine wateradiabatclimate_p_get_size(ptr, dim1) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(out) :: dim1
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    dim1 = size(c%P,1)
+  end subroutine
+  
+  subroutine wateradiabatclimate_p_get(ptr, dim1, arr) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(in) :: dim1
+    real(c_double), intent(out) :: arr(dim1)
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    arr = c%P
+  end subroutine
+
+  subroutine wateradiabatclimate_t_get_size(ptr, dim1) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(out) :: dim1
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    dim1 = size(c%T,1)
+  end subroutine
+  
+  subroutine wateradiabatclimate_t_get(ptr, dim1, arr) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(in) :: dim1
+    real(c_double), intent(out) :: arr(dim1)
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    arr = c%T
+  end subroutine
+
+  subroutine wateradiabatclimate_f_i_get_size(ptr, dim1, dim2) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(out) :: dim1, dim2
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    dim1 = size(c%f_i,1)
+    dim2 = size(c%f_i,2)
+  end subroutine
+  
+  subroutine wateradiabatclimate_f_i_get(ptr, dim1, dim2, arr) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(in) :: dim1, dim2
+    real(c_double), intent(out) :: arr(dim1,dim2)
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    arr = c%f_i
+  end subroutine
+
+  subroutine wateradiabatclimate_z_get_size(ptr, dim1) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(out) :: dim1
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    dim1 = size(c%z,1)
+  end subroutine
+  
+  subroutine wateradiabatclimate_z_get(ptr, dim1, arr) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(in) :: dim1
+    real(c_double), intent(out) :: arr(dim1)
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    arr = c%z
+  end subroutine
+
+  subroutine wateradiabatclimate_dz_get_size(ptr, dim1) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(out) :: dim1
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    dim1 = size(c%dz,1)
+  end subroutine
+  
+  subroutine wateradiabatclimate_dz_get(ptr, dim1, arr) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(in) :: dim1
+    real(c_double), intent(out) :: arr(dim1)
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    arr = c%dz
+  end subroutine
+
+  subroutine wateradiabatclimate_densities_get_size(ptr, dim1, dim2) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(out) :: dim1, dim2
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    dim1 = size(c%densities,1)
+    dim2 = size(c%densities,2)
+  end subroutine
+  
+  subroutine wateradiabatclimate_densities_get(ptr, dim1, dim2, arr) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(in) :: dim1, dim2
+    real(c_double), intent(out) :: arr(dim1,dim2)
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    arr = c%densities
+  end subroutine
+
 end module

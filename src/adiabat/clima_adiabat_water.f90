@@ -142,11 +142,11 @@ contains
 
       ! Compute the columns by splitting grid into cells
       do i = 1,nz
-        P_av(i) = sqrt(max(P(i)*P(i+1),0.0_dp))
-        T_av(i) = 0.5_dp*(T(i)+T(i+1))
+        P_av(i) = P(i)
+        T_av(i) = T(i)
         dz(i) = z(i+1)-z(i)
         do j = 1,sp%ng
-          f_i_av(i,j) = sqrt(max(f_i(i,j)*f_i(i+1,j),0.0_dp))
+          f_i_av(i,j) = f_i(i,j)
         enddo
       enddo
 
@@ -578,6 +578,10 @@ contains
       ! Solve for the exact pressure of
       ! the tropopause.
       call find_tropopause(self, d, P_cur, P_old)
+      if (allocated(d%err)) then
+        irtrn = -1
+        return
+      endif
       
       ! altitude of tropopause
       allocate(d%z_trop)
@@ -594,6 +598,10 @@ contains
         ! Solve for the exact P where we entered the
         ! moist regime.
         call find_dry_moist_boundary(self, d, P_cur, P_old)
+        if (allocated(d%err)) then
+          irtrn = -1
+          return
+        endif
         
         allocate(d%T_bound, d%z_bound)
         d%T_bound = self%contd8(1, d%P_bound)
@@ -727,6 +735,10 @@ contains
       ! Solve for the exact pressure of
       ! the tropopause.
       call find_tropopause(self, d, P_cur, P_old)
+      if (allocated(d%err)) then
+        irtrn = -1
+        return
+      endif
       
       ! altitude of tropopause
       allocate(d%z_trop)
