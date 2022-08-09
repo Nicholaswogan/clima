@@ -280,6 +280,7 @@ contains
     endif
     
     T_surf = 10.0_dp**x(1)
+    call fcn(n, x, fvec, info)
     
   contains
     subroutine fcn(n_, x_, fvec_, iflag_)
@@ -333,6 +334,7 @@ contains
     endif
     
     T_surf = 10.0_dp**x(1)
+    call fcn(n, x, fvec, info)
     
   contains
     subroutine fcn(n_, x_, fvec_, iflag_)
