@@ -44,3 +44,5 @@ jobs:
       run: |
         ./tests/test_clima
         valgrind --error-exitcode=1 --leak-check=full ./tests/test_clima
+        ./tests/test_adiabat
+        valgrind --error-exitcode=1 --leak-check=full ./tests/test_adiabat
