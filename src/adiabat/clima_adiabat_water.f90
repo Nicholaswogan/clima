@@ -2,6 +2,7 @@ module clima_adiabat_water
   use clima_const, only: dp
   use clima_types, only: Species
   use dop853_module, only: dop853_class
+  use clima_eqns, only: sat_pressure_H2O
   implicit none
 
   private
@@ -16,6 +17,7 @@ module clima_adiabat_water
     real(dp), pointer :: planet_radius
     real(dp), pointer :: P_top
     real(dp), pointer :: T_trop
+    real(dp), pointer :: RH
     ! pointers to input variables
     real(dp), pointer :: T_surf
     
@@ -58,7 +60,7 @@ contains
 
   subroutine make_column_water(T_surf, N_i_surf, &
                                sp, nz, LH2O, planet_mass, &
-                               planet_radius, P_top, T_trop, &
+                               planet_radius, P_top, T_trop, RH, &
                                P, z, T, f_i, &
                                err)
     use minpack_module, only: hybrd1
@@ -71,7 +73,7 @@ contains
     integer, intent(in) :: nz
     integer, target, intent(in) :: LH2O
     real(dp), target, intent(in) :: planet_mass, planet_radius
-    real(dp), target, intent(in) :: P_top, T_trop
+    real(dp), target, intent(in) :: P_top, T_trop, RH
     
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
@@ -123,7 +125,7 @@ contains
       P_i(:) = 10.0_dp**x(:)
       call make_profile_water(T_surf, P_i, &
                               sp, nz, LH2O, planet_mass, &
-                              planet_radius, P_top, T_trop, &
+                              planet_radius, P_top, T_trop, RH, &
                               P, z, T, f_i, &
                               err)
       if (allocated(err)) then
@@ -164,7 +166,7 @@ contains
   
   subroutine make_profile_water(T_surf, P_i_surf, &
                                 sp, nz, LH2O, planet_mass, &
-                                planet_radius, P_top, T_trop, &
+                                planet_radius, P_top, T_trop, RH, &
                                 P, z, T, f_i, &
                                 err)
     use futils, only: linspace
@@ -176,7 +178,7 @@ contains
     integer, intent(in) :: nz
     integer, target, intent(in) :: LH2O
     real(dp), target, intent(in) :: planet_mass, planet_radius
-    real(dp), target, intent(in) :: P_top, T_trop
+    real(dp), target, intent(in) :: P_top, T_trop, RH
     
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
@@ -222,7 +224,7 @@ contains
       P_H2O_start = P_i_surf(LH2O)
     else
       ! Below critical point
-      P_H2O_sat_surf = sat_pressure_H2O(T_surf, sp%g(LH2O)%mass)
+      P_H2O_sat_surf = RH*sat_pressure_H2O(T_surf)
       if (P_H2O_sat_surf > P_i_surf(LH2O)) then
         ! All water on surface is vaporized
         moist_start = .false.
@@ -271,6 +273,7 @@ contains
     d%planet_radius => planet_radius
     d%P_top => P_top
     d%T_trop => T_trop
+    d%RH => RH
     ! associate d with inputs
     d%T_surf => T_surf
     d%P => P
@@ -543,7 +546,7 @@ contains
       real(dp) :: T, P, p_H2O_sat
       P = 10.0_dp**x(1)
       T = dop%contd8(1, P)
-      p_H2O_sat = sat_pressure_H2O(T, d%sp%g(d%LH2O)%mass)
+      p_H2O_sat = d%RH*sat_pressure_H2O(T)
       fvec(1) = p_H2O_sat - P*d%f_i_surf(d%LH2O)
     end subroutine
   end subroutine
@@ -565,7 +568,7 @@ contains
     
     real(dp) :: T_cur, z_cur, P_cur, P_old
     real(dp) :: PP
-    real(dp) :: mu_H2O, p_H2O_sat
+    real(dp) :: p_H2O_sat
     
     P_old = xold
     P_cur = x
@@ -598,8 +601,7 @@ contains
       irtrn = -1
       
     elseif (d%T_trop <= T_cur .and. T_cur < T_crit_H2O) then
-      mu_H2O = d%sp%g(d%LH2O)%mass
-      p_H2O_sat = sat_pressure_H2O(T_cur, mu_H2O)
+      p_H2O_sat = d%RH*sat_pressure_H2O(T_cur)
       if (d%f_i_surf(d%LH2O)*P_cur > p_H2O_sat) then
         ! Entered the moist adiabat regime.
         
@@ -776,11 +778,10 @@ contains
     real(dp) :: P, T
     real(dp) :: f_i_layer(:)
     
-    real(dp) :: mu_H2O, f_H2O, f_dry
+    real(dp) :: f_H2O, f_dry
     integer :: i
     
-    mu_H2O = d%sp%g(d%LH2O)%mass
-    f_H2O = sat_pressure_H2O(T, mu_H2O)/P
+    f_H2O = d%RH*sat_pressure_H2O(T)/P
     
     f_dry = 1.0_dp - f_H2O
     
@@ -826,7 +827,7 @@ contains
     
     ! Water
     mu_H2O = d%sp%g(d%LH2O)%mass
-    P_H2O = sat_pressure_H2O(T, mu_H2O)
+    P_H2O = d%RH*sat_pressure_H2O(T)
     f_H2O = P_H2O/P
     call heat_capacity_eval(d%sp%g(d%LH2O)%thermo, T, found, cp)
     if (.not. found) then
@@ -894,16 +895,6 @@ contains
     z = ((N_avo*k_boltz*T)/(G_grav_cgs*planet_mass*mubar)*log(P/P0) &
         + 1/(planet_radius + z0))**(-1.0_dp) - planet_radius
 
-  end function
-  
-  function sat_pressure_H2O(T, mu_H2O) result(p_H2O_sat)
-    use clima_const, only: Rgas
-    real(dp), intent(in) :: T !! Temperature (K)
-    real(dp), intent(in) :: mu_H2O !! g/mol
-    real(dp) :: p_H2O_sat !! Saturation pressure (dynes/cm2)
-    
-    p_H2O_sat = 1.0e6_dp*exp((L_H2O*mu_H2O)/(Rgas)*(1.0_dp/373.0_dp - 1.0_dp/T))
-    
   end function
   
 end module

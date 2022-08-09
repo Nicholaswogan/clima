@@ -17,9 +17,9 @@ program test
     stop 1
   endif
   
-  c%T_trop = 180.0_dp
+  c%T_trop = 200.0_dp
     
-  T = c%surface_temperature(235.0_dp, &
+  T = c%surface_temperature(260.0_dp, &
       [270.0e6_dp, 400e-6_dp*1.0e6_dp, 1.0e6_dp], &
       T_guess = 300.0_dp, err=err)
   if (allocated(err)) then
