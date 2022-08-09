@@ -37,6 +37,7 @@ module clima_adiabat
     procedure :: OLR => WaterAdiabatClimate_OLR
     procedure :: net_TOA_flux => WaterAdiabatClimate_net_TOA_flux
     procedure :: surface_temperature => WaterAdiabatClimate_surface_temperature
+    procedure :: surface_temperature_column => WaterAdiabatClimate_surface_temperature_column
   end type
   
   interface WaterAdiabatClimate
@@ -254,7 +255,7 @@ contains
     
     real(dp) :: T_guess_
     
-    integer, parameter :: n = 1, m = 1
+    integer, parameter :: n = 1
     real(dp) :: x(1)
     real(dp) :: fvec(1)
     real(dp), parameter :: tol = 1.0e-8_dp
@@ -292,6 +293,68 @@ contains
       if (allocated(err)) then
         iflag_ = -1
       endif
+    end subroutine
+    
+  end function
+
+  function WaterAdiabatClimate_surface_temperature_column(self, N_i_surf, T_guess, err) result(T_surf)
+    use minpack_module, only: hybrd1
+    class(WaterAdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: N_i_surf(:)
+    real(dp), optional, intent(in) :: T_guess
+    character(:), allocatable, intent(out) :: err
+    
+    real(dp) :: T_surf
+    
+    real(dp) :: T_guess_
+    
+    integer, parameter :: n = 1
+    real(dp) :: x(1)
+    real(dp) :: fvec(1)
+    real(dp), parameter :: tol = 1.0e-8_dp
+    integer :: info
+    integer, parameter :: lwa = (n*(3*n+13))/2 + 1
+    real(dp) :: wa(lwa)
+    
+    if (present(T_guess)) then
+      T_guess_ = T_guess
+    else
+      T_guess_ = 300.0_dp
+    endif
+    
+    x(1) = log10(T_guess_)
+    call hybrd1(fcn, n, x, fvec, tol, info, wa, lwa)
+    if (info == 0 .or. info > 4) then
+      err = 'hybrd1 root solve failed'
+      return
+    elseif (info < 0) then
+      ! err already set
+      return
+    endif
+    
+    T_surf = 10.0_dp**x(1)
+    
+  contains
+    subroutine fcn(n_, x_, fvec_, iflag_)
+      integer, intent(in) :: n_
+      real(dp), intent(in) :: x_(n_)
+      real(dp), intent(out) :: fvec_(n_)
+      integer, intent(inout) :: iflag_
+      real(dp) :: T
+      T = 10.0_dp**x_(1)
+      call self%make_column(T, N_i_surf, err)
+      if (allocated(err)) then
+        iflag_ = -1
+        return
+      endif
+
+      call self%rad%radiate(T, self%T, self%P/1.0e6_dp, self%densities, self%dz, err=err)
+      if (allocated(err)) then
+        iflag_ = -1
+        return
+      endif
+  
+      fvec_(1) = self%rad%f_total(size(self%rad%f_total))
     end subroutine
     
   end function

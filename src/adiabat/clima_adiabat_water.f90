@@ -89,7 +89,7 @@ contains
     integer :: n
     real(dp), allocatable :: x(:)
     real(dp), allocatable :: fvec(:)
-    real(dp), parameter :: tol = 1.0e-8_dp
+    real(dp), parameter :: tol = 1.0e-5_dp
     integer :: info
     integer :: lwa
     real(dp), allocatable :: wa(:)

@@ -30,6 +30,16 @@ program test
 
   print*,T
 
+  T = c%surface_temperature_column( &
+      [15.0e3_dp, 400e-6_dp*23.0_dp, 1.0*36.0_dp], &
+      T_guess = 280.0_dp, err=err)
+  if (allocated(err)) then
+    print*,err
+    stop 1
+  endif
+
+  print*,T
+
   call c%make_column(280.0_dp, &
                     [15.0e3_dp, 0.0*23.0_dp, 1.0*36.0_dp], &
                     err)
