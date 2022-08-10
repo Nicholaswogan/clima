@@ -380,7 +380,7 @@ contains
 
   end subroutine
 
-  function Radtran_TOA_fluxes(self, T_surface, T, P, densities, dz, pdensities, radii, err) result(TOA)
+  subroutine Radtran_TOA_fluxes(self, T_surface, T, P, densities, dz, pdensities, radii, ISR, OLR, err)
     use clima_radtran_radiate, only: radiate
     class(Radtran), target, intent(inout) :: self
     real(dp), intent(in) :: T_surface
@@ -390,17 +390,17 @@ contains
                                            !! molecule in each layer (molcules/cm3)
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
     real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:) !! (nz,np)
-    real(dp) :: TOA(2)
+    real(dp), intent(out) :: ISR, OLR
     character(:), allocatable, intent(out) :: err
     real(dp) :: res
       
     call self%radiate(T_surface, T, P, densities, dz, pdensities, radii , err)
     if (allocated(err)) return
     
-    TOA(1) = (self%wrk_sol%fdn_n(self%nz+1) - self%wrk_sol%fup_n(self%nz+1)) ! Incoming short wave
-    TOA(2) = - (self%wrk_ir%fdn_n(self%nz+1) - self%wrk_ir%fup_n(self%nz+1)) ! Outgoing long wave
+    ISR = (self%wrk_sol%fdn_n(self%nz+1) - self%wrk_sol%fup_n(self%nz+1)) ! Incoming short wave
+    OLR = - (self%wrk_ir%fdn_n(self%nz+1) - self%wrk_ir%fup_n(self%nz+1)) ! Outgoing long wave
 
-  end function
+  end subroutine
 
   !!!!!!!!!!!!!!!!!
   !!! Utilities !!!

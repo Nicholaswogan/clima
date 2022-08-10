@@ -16,10 +16,10 @@ cdef extern void wateradiabatclimate_make_column_wrapper(void *ptr, double *T_su
                                       double *N_i_surf, char *err)
 
 cdef extern void wateradiabatclimate_toa_fluxes_wrapper(void *ptr, double *T_surf, int *ng, 
-                                     double *P_i_surf, double *TOA, char *err)
+                                     double *P_i_surf, double *ISR, double *OLR, char *err)
 
 cdef extern void wateradiabatclimate_toa_fluxes_column_wrapper(void *ptr, double *T_surf, int *ng, 
-                                     double *P_i_surf, double *TOA, char *err)
+                                     double *P_i_surf, double *ISR, double *OLR, char *err)
 
 cdef extern void wateradiabatclimate_surface_temperature_wrapper(void *ptr, int *ng, 
                                       double *P_i_surf, double *T_guess, double *T_surf, char *err)

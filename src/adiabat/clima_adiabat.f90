@@ -215,12 +215,12 @@ contains
     
   end subroutine
   
-  function WaterAdiabatClimate_TOA_fluxes(self, T_surf, P_i_surf, err) result(TOA)
+  subroutine WaterAdiabatClimate_TOA_fluxes(self, T_surf, P_i_surf, ISR, OLR, err)
     class(WaterAdiabatClimate), intent(inout) :: self
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), target, intent(in) :: P_i_surf(:)
+    real(dp), intent(out) :: ISR, OLR
     character(:), allocatable, intent(out) :: err
-    real(dp) :: TOA(2)
 
     if (size(P_i_surf) /= self%sp%ng) then
       err = "P_i_surf has the wrong dimension"
@@ -233,17 +233,17 @@ contains
     
     ! Do radiative transfer
     ! MUST CONVERT P TO BARS
-    TOA = self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, err=err)
+    call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
     
-  end function
+  end subroutine
 
-  function WaterAdiabatClimate_TOA_fluxes_column(self, T_surf, N_i_surf, err) result(TOA)
+  subroutine WaterAdiabatClimate_TOA_fluxes_column(self, T_surf, N_i_surf, ISR, OLR, err)
     class(WaterAdiabatClimate), intent(inout) :: self
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), target, intent(in) :: N_i_surf(:)
     character(:), allocatable, intent(out) :: err    
-    real(dp) :: TOA(2)
+    real(dp), intent(out) :: ISR, OLR
 
     if (size(N_i_surf) /= self%sp%ng) then
       err = "N_i_surf has the wrong dimension"
@@ -256,10 +256,10 @@ contains
     
     ! Do radiative transfer
     ! MUST CONVERT P TO BARS
-    TOA = self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, err=err)
+    call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
-    
-  end function
+
+  end subroutine
   
   function WaterAdiabatClimate_surface_temperature(self, P_i_surf, T_guess, err) result(T_surf)
     use minpack_module, only: hybrd1
@@ -283,7 +283,7 @@ contains
     if (present(T_guess)) then
       T_guess_ = T_guess
     else
-      T_guess_ = 300.0_dp
+      T_guess_ = 280.0_dp
     endif
 
     if (size(P_i_surf) /= self%sp%ng) then
@@ -298,6 +298,7 @@ contains
       return
     elseif (info < 0) then
       ! err already set
+      err = 'hybrd1 root solve failed: '//err
       return
     endif
     
@@ -310,13 +311,13 @@ contains
       real(dp), intent(in) :: x_(n_)
       real(dp), intent(out) :: fvec_(n_)
       integer, intent(inout) :: iflag_
-      real(dp) :: T, TOA(2)
+      real(dp) :: T, ISR, OLR
       T = 10.0_dp**x_(1)
-      TOA = self%TOA_fluxes(T, P_i_surf, err)
+      call self%TOA_fluxes(T, P_i_surf, ISR, OLR, err)
       if (allocated(err)) then
         iflag_ = -1
       endif
-      fvec_(1) = TOA(1) - TOA(2)
+      fvec_(1) = ISR - OLR
     end subroutine
     
   end function
@@ -348,7 +349,7 @@ contains
     if (present(T_guess)) then
       T_guess_ = T_guess
     else
-      T_guess_ = 300.0_dp
+      T_guess_ = 280.0_dp
     endif
     
     x(1) = log10(T_guess_)
@@ -358,6 +359,7 @@ contains
       return
     elseif (info < 0) then
       ! err already set
+      err = 'hybrd1 root solve failed: '//err
       return
     endif
     
@@ -370,14 +372,14 @@ contains
       real(dp), intent(in) :: x_(n_)
       real(dp), intent(out) :: fvec_(n_)
       integer, intent(inout) :: iflag_
-      real(dp) :: T, TOA(2)
+      real(dp) :: T, ISR, OLR
       T = 10.0_dp**x_(1)
-      TOA = self%TOA_fluxes_column(T, N_i_surf, err)
+      call self%TOA_fluxes_column(T, N_i_surf, ISR, OLR, err)
       if (allocated(err)) then
         iflag_ = -1
         return
       endif
-      fvec_(1) = TOA(1) - TOA(2)
+      fvec_(1) = ISR - OLR
     end subroutine
     
   end function

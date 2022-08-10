@@ -49,24 +49,24 @@ cdef class WaterAdiabatClimate:
   def TOA_fluxes(self, double T_surf, ndarray[double, ndim=1] P_i_surf):
     cdef int ng = P_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
-    cdef ndarray TOA = np.empty(2, np.double)
+    cdef double ISR, OLR;
     wa_pxd.wateradiabatclimate_toa_fluxes_wrapper(&self._ptr, &T_surf,
-    &ng, <double *>P_i_surf.data, <double *>TOA.data, err)
+    &ng, <double *>P_i_surf.data, &ISR, &OLR, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
-    return TOA
+    return ISR, OLR
 
   def TOA_fluxes_column(self, double T_surf, ndarray[double, ndim=1] N_i_surf):
     cdef int ng = N_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
-    cdef ndarray TOA = np.empty(2, np.double)
+    cdef double ISR, OLR;
     wa_pxd.wateradiabatclimate_toa_fluxes_column_wrapper(&self._ptr, &T_surf,
-    &ng, <double *>N_i_surf.data, <double *>TOA.data, err)
+    &ng, <double *>N_i_surf.data, &ISR, &OLR, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
-    return TOA
+    return ISR, OLR
   
-  def surface_temperature(self, ndarray[double, ndim=1] P_i_surf, double T_guess = 300):
+  def surface_temperature(self, ndarray[double, ndim=1] P_i_surf, double T_guess = 280):
     cdef int ng = P_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
     cdef double T_surf;
@@ -76,7 +76,7 @@ cdef class WaterAdiabatClimate:
       raise ClimaException(err.decode("utf-8").strip())
     return T_surf
 
-  def surface_temperature_column(self, ndarray[double, ndim=1] N_i_surf, double T_guess = 300):
+  def surface_temperature_column(self, ndarray[double, ndim=1] N_i_surf, double T_guess = 280):
     cdef int ng = N_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
     cdef double T_surf;

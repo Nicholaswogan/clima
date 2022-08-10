@@ -109,8 +109,11 @@ contains
     enddo
 
     call hybrd1(fcn, n, x, fvec, tol, info, wa, lwa)
-    if (info /= 1) then
-      err = 'hybrd1 root solve failed.'
+    if (info == 0 .or. info > 1) then
+      err = 'hybrd1 root solve failed in make_column_water.'
+      return
+    elseif (info < 0) then
+      err = 'hybrd1 root solve failed in make_column_water: '//err
       return
     endif
 
@@ -216,6 +219,10 @@ contains
     endif
     if (size(f_i, 1) /= nz+1 .or. size(f_i, 2) /= sp%ng) then
       err = 'make_profile: Input "f_i" has the wrong shape'
+      return
+    endif
+    if (T_surf < T_trop) then
+      err = 'T_surf is less than T_trop'
       return
     endif
     
@@ -517,7 +524,7 @@ contains
     call brent%set_function(fcn)
     call brent%find_zero(P_old, P_cur, tol, xzero, fzero, info)
     if (info /= 0) then
-      d%err = 'brent failed in "find_dry_moist_boundary"'
+      d%err = 'brent failed in find_dry_moist_boundary'
       return
     endif
 
@@ -599,6 +606,8 @@ contains
         ! moist regime.
         call find_dry_moist_boundary(self, d, P_cur, P_old)
         if (allocated(d%err)) then
+          deallocate(d%err)
+          d%err = 'Failed to cross the dry-moist boundary.'
           irtrn = -1
           return
         endif

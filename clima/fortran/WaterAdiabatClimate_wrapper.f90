@@ -111,12 +111,12 @@ contains
 
   end subroutine
 
-  subroutine wateradiabatclimate_toa_fluxes_wrapper(ptr, T_surf, ng, P_i_surf, TOA, err) bind(c)
+  subroutine wateradiabatclimate_toa_fluxes_wrapper(ptr, T_surf, ng, P_i_surf, ISR, OLR, err) bind(c)
     type(c_ptr), intent(in) :: ptr
     real(c_double), intent(in) :: T_surf
     integer(c_int), intent(in) :: ng
     real(c_double), intent(in) :: P_i_surf(ng)
-    real(c_double), intent(out) :: TOA(2)
+    real(c_double), intent(out) :: ISR, OLR
     character(c_char), intent(out) :: err(err_len+1)
 
     character(:), allocatable :: err_f
@@ -124,7 +124,7 @@ contains
 
     call c_f_pointer(ptr, c)
 
-    TOA = c%TOA_fluxes(T_surf, P_i_surf, err_f)
+    call c%TOA_fluxes(T_surf, P_i_surf, ISR, OLR, err_f)
 
     err(1) = c_null_char
     if (allocated(err_f)) then
@@ -133,12 +133,12 @@ contains
 
   end subroutine
 
-  subroutine wateradiabatclimate_toa_fluxes_column_wrapper(ptr, T_surf, ng, N_i_surf, TOA, err) bind(c)
+  subroutine wateradiabatclimate_toa_fluxes_column_wrapper(ptr, T_surf, ng, N_i_surf, ISR, OLR, err) bind(c)
     type(c_ptr), intent(in) :: ptr
     real(c_double), intent(in) :: T_surf
     integer(c_int), intent(in) :: ng
     real(c_double), intent(in) :: N_i_surf(ng)
-    real(c_double), intent(out) :: TOA(2)
+    real(c_double), intent(out) :: ISR, OLR
     character(c_char), intent(out) :: err(err_len+1)
 
     character(:), allocatable :: err_f
@@ -146,7 +146,7 @@ contains
 
     call c_f_pointer(ptr, c)
 
-    TOA = c%TOA_fluxes(T_surf, N_i_surf, err_f)
+    call c%TOA_fluxes_column(T_surf, N_i_surf, ISR, OLR, err_f)
 
     err(1) = c_null_char
     if (allocated(err_f)) then
