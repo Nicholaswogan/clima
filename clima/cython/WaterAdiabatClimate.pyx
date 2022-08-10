@@ -30,15 +30,41 @@ cdef class WaterAdiabatClimate:
   def __dealloc__(self):
     wa_pxd.deallocate_wateradiabatclimate(&self._ptr);
 
-  def OLR(self, double T_surf, ndarray[double, ndim=1] P_i_surf):
+  def make_profile(self, double T_surf, ndarray[double, ndim=1] P_i_surf):
     cdef int ng = P_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
-    cdef double OLR
-    wa_pxd.wateradiabatclimate_olr_wrapper(&self._ptr, &T_surf,
-    &ng, <double *>P_i_surf.data, &OLR, err)
+    wa_pxd.wateradiabatclimate_make_profile_wrapper(&self._ptr, &T_surf,
+    &ng, <double *>P_i_surf.data, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
-    return OLR
+    
+  def make_column(self, double T_surf, ndarray[double, ndim=1] N_i_surf):
+    cdef int ng = N_i_surf.shape[0]
+    cdef char err[ERR_LEN+1]
+    wa_pxd.wateradiabatclimate_make_column_wrapper(&self._ptr, &T_surf,
+    &ng, <double *>N_i_surf.data, err)
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
+
+  def TOA_fluxes(self, double T_surf, ndarray[double, ndim=1] P_i_surf):
+    cdef int ng = P_i_surf.shape[0]
+    cdef char err[ERR_LEN+1]
+    cdef ndarray TOA = np.empty(2, np.double)
+    wa_pxd.wateradiabatclimate_toa_fluxes_wrapper(&self._ptr, &T_surf,
+    &ng, <double *>P_i_surf.data, <double *>TOA.data, err)
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
+    return TOA
+
+  def TOA_fluxes_column(self, double T_surf, ndarray[double, ndim=1] N_i_surf):
+    cdef int ng = N_i_surf.shape[0]
+    cdef char err[ERR_LEN+1]
+    cdef ndarray TOA = np.empty(2, np.double)
+    wa_pxd.wateradiabatclimate_toa_fluxes_column_wrapper(&self._ptr, &T_surf,
+    &ng, <double *>N_i_surf.data, <double *>TOA.data, err)
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
+    return TOA
   
   def surface_temperature(self, ndarray[double, ndim=1] P_i_surf, double T_guess = 300):
     cdef int ng = P_i_surf.shape[0]

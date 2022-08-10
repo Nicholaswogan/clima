@@ -69,12 +69,11 @@ contains
     endif
   end subroutine
 
-  subroutine wateradiabatclimate_olr_wrapper(ptr, T_surf, ng, P_i_surf, OLR, err) bind(c)
+  subroutine wateradiabatclimate_make_profile_wrapper(ptr, T_surf, ng, P_i_surf, err) bind(c)
     type(c_ptr), intent(in) :: ptr
     real(c_double), intent(in) :: T_surf
     integer(c_int), intent(in) :: ng
     real(c_double), intent(in) :: P_i_surf(ng)
-    real(c_double), intent(out) :: OLR
     character(c_char), intent(out) :: err(err_len+1)
 
     character(:), allocatable :: err_f
@@ -82,7 +81,72 @@ contains
 
     call c_f_pointer(ptr, c)
 
-    OLR = c%OLR(T_surf, P_i_surf, err_f)
+    call c%make_profile(T_surf, P_i_surf, err_f)
+
+    err(1) = c_null_char
+    if (allocated(err_f)) then
+      call copy_string_ftoc(err_f, err)
+    endif
+
+  end subroutine
+
+  subroutine wateradiabatclimate_make_column_wrapper(ptr, T_surf, ng, N_i_surf, err) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    real(c_double), intent(in) :: T_surf
+    integer(c_int), intent(in) :: ng
+    real(c_double), intent(in) :: N_i_surf(ng)
+    character(c_char), intent(out) :: err(err_len+1)
+
+    character(:), allocatable :: err_f
+    type(WaterAdiabatClimate), pointer :: c
+
+    call c_f_pointer(ptr, c)
+
+    call c%make_column(T_surf, N_i_surf, err_f)
+
+    err(1) = c_null_char
+    if (allocated(err_f)) then
+      call copy_string_ftoc(err_f, err)
+    endif
+
+  end subroutine
+
+  subroutine wateradiabatclimate_toa_fluxes_wrapper(ptr, T_surf, ng, P_i_surf, TOA, err) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    real(c_double), intent(in) :: T_surf
+    integer(c_int), intent(in) :: ng
+    real(c_double), intent(in) :: P_i_surf(ng)
+    real(c_double), intent(out) :: TOA(2)
+    character(c_char), intent(out) :: err(err_len+1)
+
+    character(:), allocatable :: err_f
+    type(WaterAdiabatClimate), pointer :: c
+
+    call c_f_pointer(ptr, c)
+
+    TOA = c%TOA_fluxes(T_surf, P_i_surf, err_f)
+
+    err(1) = c_null_char
+    if (allocated(err_f)) then
+      call copy_string_ftoc(err_f, err)
+    endif
+
+  end subroutine
+
+  subroutine wateradiabatclimate_toa_fluxes_column_wrapper(ptr, T_surf, ng, N_i_surf, TOA, err) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    real(c_double), intent(in) :: T_surf
+    integer(c_int), intent(in) :: ng
+    real(c_double), intent(in) :: N_i_surf(ng)
+    real(c_double), intent(out) :: TOA(2)
+    character(c_char), intent(out) :: err(err_len+1)
+
+    character(:), allocatable :: err_f
+    type(WaterAdiabatClimate), pointer :: c
+
+    call c_f_pointer(ptr, c)
+
+    TOA = c%TOA_fluxes(T_surf, N_i_surf, err_f)
 
     err(1) = c_null_char
     if (allocated(err_f)) then

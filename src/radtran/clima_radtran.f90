@@ -85,7 +85,7 @@ module clima_radtran
     
   contains
     procedure :: radiate => Radtran_radiate
-    procedure :: OLR => Radtran_OLR
+    procedure :: TOA_fluxes => Radtran_TOA_fluxes
   end type
 
   interface Radtran
@@ -380,7 +380,7 @@ contains
 
   end subroutine
 
-  function Radtran_OLR(self, T_surface, T, P, densities, dz, pdensities, radii, err) result(res)
+  function Radtran_TOA_fluxes(self, T_surface, T, P, densities, dz, pdensities, radii, err) result(TOA)
     use clima_radtran_radiate, only: radiate
     class(Radtran), target, intent(inout) :: self
     real(dp), intent(in) :: T_surface
@@ -390,31 +390,15 @@ contains
                                            !! molecule in each layer (molcules/cm3)
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
     real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:) !! (nz,np)
+    real(dp) :: TOA(2)
     character(:), allocatable, intent(out) :: err
     real(dp) :: res
-    
-    integer :: ierr
-
-    type(ClimaRadtranWrk), pointer :: wrk_ir
-    
-    wrk_ir => self%wrk_ir                                      
-    
-    call check_inputs(self%nz, self%ng, self%np, T, P, densities, dz, pdensities, radii, err)
+      
+    call self%radiate(T_surface, T, P, densities, dz, pdensities, radii , err)
     if (allocated(err)) return
-
-    ! IR radiative transfer                                     
-    ierr = radiate(self%ir, &
-                  0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
-                  P, T_surface, T, densities, dz, &
-                  pdensities, radii, &
-                  wrk_ir%rx, wrk_ir%rz, &
-                  wrk_ir%fup_a, wrk_ir%fdn_a, wrk_ir%fup_n, wrk_ir%fdn_n)
-    if (ierr /= 0) then
-      err = 'Input particle radii are outside the data range.'
-      return
-    endif
     
-    res = wrk_ir%fup_n(self%nz+1)
+    TOA(1) = (self%wrk_sol%fdn_n(self%nz+1) - self%wrk_sol%fup_n(self%nz+1)) ! Incoming short wave
+    TOA(2) = - (self%wrk_ir%fdn_n(self%nz+1) - self%wrk_ir%fup_n(self%nz+1)) ! Outgoing long wave
 
   end function
 

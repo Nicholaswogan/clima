@@ -34,8 +34,8 @@ module clima_adiabat
   contains
     procedure :: make_profile => WaterAdiabatClimate_make_profile
     procedure :: make_column => WaterAdiabatClimate_make_column
-    procedure :: OLR => WaterAdiabatClimate_OLR
-    procedure :: net_TOA_flux => WaterAdiabatClimate_net_TOA_flux
+    procedure :: TOA_fluxes => WaterAdiabatClimate_TOA_fluxes
+    procedure :: TOA_fluxes_column => WaterAdiabatClimate_TOA_fluxes_column
     procedure :: surface_temperature => WaterAdiabatClimate_surface_temperature
     procedure :: surface_temperature_column => WaterAdiabatClimate_surface_temperature_column
   end type
@@ -215,13 +215,12 @@ contains
     
   end subroutine
   
-  function WaterAdiabatClimate_OLR(self, T_surf, P_i_surf, err) result(OLR)
+  function WaterAdiabatClimate_TOA_fluxes(self, T_surf, P_i_surf, err) result(TOA)
     class(WaterAdiabatClimate), intent(inout) :: self
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), target, intent(in) :: P_i_surf(:)
     character(:), allocatable, intent(out) :: err
-    
-    real(dp) :: OLR
+    real(dp) :: TOA(2)
 
     if (size(P_i_surf) /= self%sp%ng) then
       err = "P_i_surf has the wrong dimension"
@@ -234,34 +233,31 @@ contains
     
     ! Do radiative transfer
     ! MUST CONVERT P TO BARS
-    OLR = self%rad%OLR(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, err=err)
+    TOA = self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, err=err)
     if (allocated(err)) return
     
   end function
 
-  function WaterAdiabatClimate_net_TOA_flux(self, T_surf, P_i_surf, err) result(TOA)
+  function WaterAdiabatClimate_TOA_fluxes_column(self, T_surf, N_i_surf, err) result(TOA)
     class(WaterAdiabatClimate), intent(inout) :: self
     real(dp), target, intent(in) :: T_surf !! K
-    real(dp), target, intent(in) :: P_i_surf(:)
-    character(:), allocatable, intent(out) :: err
-    
-    real(dp) :: TOA
+    real(dp), target, intent(in) :: N_i_surf(:)
+    character(:), allocatable, intent(out) :: err    
+    real(dp) :: TOA(2)
 
-    if (size(P_i_surf) /= self%sp%ng) then
-      err = "P_i_surf has the wrong dimension"
+    if (size(N_i_surf) /= self%sp%ng) then
+      err = "N_i_surf has the wrong dimension"
       return
     endif
     
     ! make atmosphere profile
-    call self%make_profile(T_surf, P_i_surf, err)
+    call self%make_column(T_surf, N_i_surf, err)
     if (allocated(err)) return
-
+    
     ! Do radiative transfer
     ! MUST CONVERT P TO BARS
-    call self%rad%radiate(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, err=err)
+    TOA = self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, err=err)
     if (allocated(err)) return
-
-    TOA = self%rad%f_total(size(self%rad%f_total))
     
   end function
   
@@ -314,12 +310,13 @@ contains
       real(dp), intent(in) :: x_(n_)
       real(dp), intent(out) :: fvec_(n_)
       integer, intent(inout) :: iflag_
-      real(dp) :: T
+      real(dp) :: T, TOA(2)
       T = 10.0_dp**x_(1)
-      fvec_(1) = self%net_TOA_flux(T, P_i_surf, err)
+      TOA = self%TOA_fluxes(T, P_i_surf, err)
       if (allocated(err)) then
         iflag_ = -1
       endif
+      fvec_(1) = TOA(1) - TOA(2)
     end subroutine
     
   end function
@@ -373,21 +370,14 @@ contains
       real(dp), intent(in) :: x_(n_)
       real(dp), intent(out) :: fvec_(n_)
       integer, intent(inout) :: iflag_
-      real(dp) :: T
+      real(dp) :: T, TOA(2)
       T = 10.0_dp**x_(1)
-      call self%make_column(T, N_i_surf, err)
+      TOA = self%TOA_fluxes_column(T, N_i_surf, err)
       if (allocated(err)) then
         iflag_ = -1
         return
       endif
-
-      call self%rad%radiate(T, self%T, self%P/1.0e6_dp, self%densities, self%dz, err=err)
-      if (allocated(err)) then
-        iflag_ = -1
-        return
-      endif
-  
-      fvec_(1) = self%rad%f_total(size(self%rad%f_total))
+      fvec_(1) = TOA(1) - TOA(2)
     end subroutine
     
   end function
