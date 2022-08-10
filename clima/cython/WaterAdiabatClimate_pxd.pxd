@@ -27,6 +27,9 @@ cdef extern void wateradiabatclimate_surface_temperature_wrapper(void *ptr, int 
 cdef extern void wateradiabatclimate_surface_temperature_column_wrapper(void *ptr, int *ng, 
                                       double *N_i_surf, double *T_guess, double *T_surf, char *err)
 
+cdef extern void wateradiabatclimate_to_regular_grid_wrapper(void *ptr, char *err)
+
+cdef extern void wateradiabatclimate_out2atmosphere_txt_wrapper(void *ptr, char *filename, int *nz, double *eddy, bool *overwrite, bool *clip, char *err)
 
 cdef extern void wateradiabatclimate_p_top_get(void *ptr, double *val)
 cdef extern void wateradiabatclimate_p_top_set(void *ptr, double *val)
@@ -36,6 +39,9 @@ cdef extern void wateradiabatclimate_t_trop_set(void *ptr, double *val)
 
 cdef extern void wateradiabatclimate_rh_get(void *ptr, double *val)
 cdef extern void wateradiabatclimate_rh_set(void *ptr, double *val)
+
+cdef extern void wateradiabatclimate_species_names_get_size(void *ptr, int *dim1)
+cdef extern void wateradiabatclimate_species_names_get(void *ptr, int *dim1, char* species_names)
 
 cdef extern void wateradiabatclimate_p_get_size(void *ptr, int *dim1)
 cdef extern void wateradiabatclimate_p_get(void *ptr, int *dim1, double *arr)

@@ -14,5 +14,9 @@ cdef pystring2cstring(str pystring):
   cdef bytes cstring = (pystring+'\0').encode('utf-8')
   return cstring
 
+cdef c2stringarr(ndarray c_str_arr, int str_len, int arr_len):  
+  bs = c_str_arr[:-1].tobytes()
+  return [bs[i:i+str_len].decode().strip() for i in range(0, str_len*arr_len, str_len)]
+
 class ClimaException(Exception):
     pass

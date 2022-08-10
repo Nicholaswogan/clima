@@ -1,5 +1,6 @@
 module WaterAdiabatClimate_wrapper
   use clima, only: WaterAdiabatClimate
+  use clima_const, only: s_str_len
   use wrapper_utils, only: copy_string_ftoc, copy_string_ctof, len_cstring, err_len
   use iso_c_binding
   implicit none
@@ -199,6 +200,52 @@ contains
 
   end subroutine
 
+  subroutine wateradiabatclimate_to_regular_grid_wrapper(ptr, err) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    character(c_char), intent(out) :: err(err_len+1)
+
+    character(:), allocatable :: err_f
+    type(WaterAdiabatClimate), pointer :: c
+
+    call c_f_pointer(ptr, c)
+
+    call c%to_regular_grid(err_f)
+
+    err(1) = c_null_char
+    if (allocated(err_f)) then
+      call copy_string_ftoc(err_f, err)
+    endif
+
+  end subroutine
+
+  subroutine wateradiabatclimate_out2atmosphere_txt_wrapper(ptr, filename, nz, eddy, overwrite, clip, err) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    character(kind=c_char), intent(in) :: filename(*)
+    integer(c_int), intent(in) :: nz
+    real(c_double), intent(in) :: eddy(nz)
+    logical(c_bool), intent(in) :: overwrite, clip
+    character(kind=c_char), intent(out) :: err(err_len+1)
+    
+    character(len=:), allocatable :: filename_f
+    logical :: overwrite_f, clip_f
+    character(:), allocatable :: err_f
+    type(WaterAdiabatClimate), pointer :: c
+    
+    call c_f_pointer(ptr, c)
+    
+    allocate(character(len=len_cstring(filename))::filename_f)
+    call copy_string_ctof(filename, filename_f)
+    overwrite_f = overwrite
+    clip_f = clip
+    
+    call c%out2atmosphere_txt(filename_f, eddy, overwrite_f, clip_f, err_f)
+    err(1) = c_null_char
+    if (allocated(err_f)) then
+      call copy_string_ftoc(err_f, err)
+    endif
+    
+  end subroutine
+
   !!!!!!!!!!!!!!!!!!!!!!!!!!!
   !!! getters and setters !!!
   !!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -249,6 +296,33 @@ contains
     type(WaterAdiabatClimate), pointer :: c
     call c_f_pointer(ptr, c)
     c%RH = val
+  end subroutine
+
+  subroutine wateradiabatclimate_species_names_get_size(ptr, dim1) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(out) :: dim1
+    type(WaterAdiabatClimate), pointer :: c
+    call c_f_pointer(ptr, c)
+    dim1 = size(c%species_names)
+  end subroutine
+  
+  subroutine wateradiabatclimate_species_names_get(ptr, dim1, species_names) bind(c)
+    type(c_ptr), intent(in) :: ptr
+    integer(c_int), intent(in) :: dim1
+    character(kind=c_char), intent(out) :: species_names(dim1*s_str_len+1)
+    type(WaterAdiabatClimate), pointer :: c
+    
+    integer :: i, j, k
+    
+    call c_f_pointer(ptr, c)
+    do i = 1,dim1
+      do j = 1,s_str_len
+        k = j + (i - 1) * s_str_len
+        species_names(k) = c%species_names(i)(j:j)
+      enddo
+    enddo
+    species_names(dim1*s_str_len+1) = c_null_char
+    
   end subroutine
 
   subroutine wateradiabatclimate_p_get_size(ptr, dim1) bind(c)

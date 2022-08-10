@@ -309,6 +309,7 @@ contains
     logical :: status_ok
     integer :: idid, i, j
     real(dp) :: u(2), Pn, mubar
+    character(6) :: tmp_char
     
     call dop%initialize(fcn=rhs_moist_dop, solout=solout_moist, n=2, &
                         iprint=0, icomp=[1,2], status_ok=status_ok)
@@ -333,7 +334,8 @@ contains
       return
     endif
     if (idid < 0) then
-      err = 'dop853 integration failed'
+      write(tmp_char,'(i6)') idid
+      err = 'dop853 integration failed: '//trim(tmp_char)
       return
     endif
     
@@ -373,6 +375,7 @@ contains
     integer :: idid, i, j, ind
     real(dp) :: u(2), Pn
     real(dp) :: mubar
+    character(6) :: tmp_char
     
     call dop%initialize(fcn=rhs_dry_dop, solout=solout_dry, n=2, &
                         iprint=0, icomp=[1,2], status_ok=status_ok)
@@ -396,7 +399,8 @@ contains
       return
     endif
     if (idid < 0) then
-      err = 'dop853 integration failed'
+      write(tmp_char,'(i6)') idid
+      err = 'dop853 integration failed: '//trim(tmp_char)
       return
     endif
     
@@ -443,7 +447,8 @@ contains
         return
       endif
       if (idid < 0) then
-        err = 'dop853 integration failed'
+        write(tmp_char,'(i6)') idid
+        err = 'dop853 integration failed: '//trim(tmp_char)
         return
       endif
       

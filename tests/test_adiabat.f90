@@ -46,4 +46,10 @@ program test
     stop 1
   endif
 
+  call c%to_regular_grid(err)
+  if (allocated(err)) then
+    print*,err
+    stop 1
+  endif
+
 end program

@@ -38,6 +38,8 @@ module clima_adiabat
     procedure :: TOA_fluxes_column => WaterAdiabatClimate_TOA_fluxes_column
     procedure :: surface_temperature => WaterAdiabatClimate_surface_temperature
     procedure :: surface_temperature_column => WaterAdiabatClimate_surface_temperature_column
+    procedure :: to_regular_grid => WaterAdiabatClimate_to_regular_grid
+    procedure :: out2atmosphere_txt => WaterAdiabatClimate_out2atmosphere_txt
   end type
   
   interface WaterAdiabatClimate
@@ -383,5 +385,144 @@ contains
     end subroutine
     
   end function
+
+  subroutine WaterAdiabatClimate_to_regular_grid(self, err)
+    use futils, only: rebin, interp
+    use clima_eqns, only: vertical_grid
+    use clima_const, only: k_boltz
+    class(WaterAdiabatClimate), intent(inout) :: self
+    character(:), allocatable, intent(out) :: err
+
+    real(dp), allocatable :: ze(:), ze_new(:)
+    real(dp), allocatable :: z_new(:), dz_new(:)
+    real(dp), allocatable :: densities_new(:,:)
+    real(dp), allocatable :: f_i_new(:,:)
+    real(dp), allocatable :: T_new(:)
+    real(dp), allocatable :: density_new(:)
+    real(dp), allocatable :: P_new(:)
+
+    integer :: i, j, ierr
+
+    allocate(z_new(self%nz), dz_new(self%nz))
+
+    ! compute the new grid
+    call vertical_grid(0.0_dp, self%z(self%nz)+0.5_dp*self%dz(self%nz), &
+                       self%nz, z_new, dz_new)
+
+    ! rebin of the densities
+    allocate(ze(self%nz+1), ze_new(self%nz+1))
+    ze_new(1) = z_new(1) - 0.5_dp*dz_new(1)
+    do i = 1,self%nz
+      ze_new(i+1) = z_new(i) + 0.5_dp*dz_new(i)
+    enddo
+    ze(1) = self%z(1) - 0.5_dp*self%dz(1)
+    do i = 1,self%nz
+      ze(i+1) = self%z(i) + 0.5_dp*self%dz(i)
+    enddo
+
+    allocate(densities_new(self%nz, self%sp%ng))
+    do i = 1,self%sp%ng
+      call rebin(ze, self%densities(:,i), ze_new, densities_new(:,i), ierr)
+      if (ierr /= 0) then
+        err = 'subroutine conserving_rebin returned an error'
+        return
+      endif
+    enddo
+
+    allocate(T_new(self%nz))
+    call interp(self%nz, self%nz, z_new, self%z, self%T, T_new, ierr)
+    if (ierr /= 0) then
+      err = 'Subroutine interp returned an error.'
+      return
+    endif
+
+    allocate(density_new(self%nz))
+    allocate(f_i_new(self%nz,self%sp%ng))
+    do i = 1,self%nz
+      density_new(i) = sum(densities_new(i,:))
+      do j = 1,self%sp%ng
+        f_i_new(i,j) = densities_new(i,j)/density_new(i)
+      enddo
+    enddo
+    allocate(P_new(self%nz))
+    P_new = density_new(:)*k_boltz*T_new(:)
+
+    self%P(:) = P_new(:)
+    self%T(:) = T_new(:)
+    self%f_i(:,:) = f_i_new(:,:)
+    self%z(:) = z_new(:)
+    self%dz(:) = dz_new(:)
+    self%densities(:,:) = densities_new(:,:)
+
+  end subroutine
+
+
+  subroutine WaterAdiabatClimate_out2atmosphere_txt(self, filename, eddy, overwrite, clip, err)
+    class(WaterAdiabatClimate), target, intent(inout) :: self
+    character(len=*), intent(in) :: filename
+    real(dp), intent(in) :: eddy(:)
+    logical, intent(in) :: overwrite, clip
+    character(:), allocatable, intent(out) :: err
+    
+    logical :: overwrite_, clip_
+    character(len=100) :: tmp
+    integer :: io, i, j
+
+    call self%to_regular_grid(err)
+    if (allocated(err)) return
+
+    if (size(eddy,1) /= self%nz) then
+      err = '"eddy" has the wrong size'
+      return
+    endif
+    
+    if (overwrite) then
+      open(2, file=filename, form='formatted', status='replace', iostat=io)
+      if (io /= 0) then
+        err = "Unable to overwrite file "//trim(filename)
+        return
+      endif
+    else
+      open(2, file=filename, form='formatted', status='new', iostat=io)
+      if (io /= 0) then
+        err = "Unable to create file "//trim(filename)//" because it already exists"
+        return
+      endif
+    endif
+    
+    tmp = 'alt'
+    write(unit=2,fmt="(3x,a27)",advance='no') tmp
+    tmp = 'press'
+    write(unit=2,fmt="(a27)",advance='no') tmp
+    tmp = 'den'
+    write(unit=2,fmt="(a27)",advance='no') tmp
+    tmp = 'temp'
+    write(unit=2,fmt="(a27)",advance='no') tmp
+    tmp = 'eddy'
+    write(unit=2,fmt="(a27)",advance='no') tmp
+    do j = 1,self%sp%ng
+      tmp = self%species_names(j)
+      write(unit=2,fmt="(a27)",advance='no') tmp
+    enddo
+    
+    do i = 1,self%nz
+      write(2,*)
+      write(unit=2,fmt="(es27.17e3)",advance='no') self%z(i)/1.e5_dp
+      write(unit=2,fmt="(es27.17e3)",advance='no') self%P(i)/1.e6_dp
+      write(unit=2,fmt="(es27.17e3)",advance='no') sum(self%densities(i,:))
+      write(unit=2,fmt="(es27.17e3)",advance='no') self%T(i)
+      write(unit=2,fmt="(es27.17e3)",advance='no') eddy(i)
+      do j = 1,self%sp%ng
+        if (clip) then
+          write(unit=2,fmt="(es27.17e3)",advance='no') max(self%f_i(i,j),1.0e-40_dp)
+        else
+          write(unit=2,fmt="(es27.17e3)",advance='no') self%f_i(i,j)
+        endif
+      enddo
+    enddo
+    
+    close(2)
+    
+  end subroutine
   
 end module

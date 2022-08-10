@@ -86,6 +86,21 @@ cdef class WaterAdiabatClimate:
       raise ClimaException(err.decode("utf-8").strip())
     return T_surf
 
+  def to_regular_grid(self):
+    cdef char err[ERR_LEN+1]
+    wa_pxd.wateradiabatclimate_to_regular_grid_wrapper(&self._ptr, err)
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
+
+  def out2atmosphere_txt(self, filename, ndarray[double, ndim=1] eddy, bool overwrite = False, bool clip = True):
+    cdef int nz = eddy.shape[0]
+    cdef bytes filename_b = pystring2cstring(filename)
+    cdef char *filename_c = filename_b
+    cdef char err[ERR_LEN+1]
+    wa_pxd.wateradiabatclimate_out2atmosphere_txt_wrapper(&self._ptr, filename_c, &nz, <double *>eddy.data, &overwrite, &clip, err)  
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
+
   property P_top:
     def __get__(self):
       cdef double val
@@ -109,6 +124,14 @@ cdef class WaterAdiabatClimate:
       return val
     def __set__(self, double val):
       wa_pxd.wateradiabatclimate_rh_set(&self._ptr, &val)
+
+  property species_names:
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.wateradiabatclimate_species_names_get_size(&self._ptr, &dim1)
+      cdef ndarray species_names_c = np.empty(dim1*S_STR_LEN + 1, 'S1')
+      wa_pxd.wateradiabatclimate_species_names_get(&self._ptr, &dim1, <char *>species_names_c.data)
+      return c2stringarr(species_names_c, S_STR_LEN, dim1)
 
   property P:
     def __get__(self):
