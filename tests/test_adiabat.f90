@@ -28,8 +28,6 @@ program test
 
   print*,T
 
-  stop
-
   T = c%surface_temperature_column( &
       [15.0e3_dp, 400e-6_dp*23.0_dp, 1.0*36.0_dp], &
       T_guess = 280.0_dp, err=err)
