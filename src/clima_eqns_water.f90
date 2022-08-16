@@ -10,10 +10,11 @@ module clima_eqns_water
 
   public :: latent_heat_H2O, latent_heat_H2O_vap, latent_heat_H2O_sub
   public :: sat_pressure_H2O, sat_pressure_H2O_vap, sat_pressure_H2O_sub
-  public :: T_freeze
+  public :: T_freeze, mu_H2O, Rgas
 
-  ! real(dp), parameter :: Rgas = 8.31446261815324e7_dp ! Ideal gas constant (erg/(mol*K))
-  ! real(dp), parameter :: mu_H2O = 18.01534_dp ! H2O molar mass (g/mol)
+  ! Here are the exact Rgas and mu_H2O that I used to fit the data.
+  real(dp), parameter :: Rgas = 8.31446261815324e7_dp ! Ideal gas constant (erg/(mol*K))
+  real(dp), parameter :: mu_H2O = 18.01534_dp ! H2O molar mass (g/mol)
 
   ! Latent heat fit parameters (no units)
   real(dp), parameter :: A_v = -3413485157036.1396_dp
@@ -33,18 +34,21 @@ module clima_eqns_water
 
 contains
 
+  !> Latent heat of vaporization of H2O
   function latent_heat_H2O_vap(T) result(L)
     real(dp), intent(in) :: T !! K
     real(dp) :: L !! erg/g
     L = A_v*exp(B_v*T)+C_v
   end function
 
+  !> Latent heat of sublimation of H2O
   function latent_heat_H2O_sub(T) result(L)
     real(dp), intent(in) :: T !! K
     real(dp) :: L !! erg/g
     L = A_s*exp(B_s*T)+C_s
   end function
 
+  !> Latent heat of vaporization or sublimation of H2O
   function latent_heat_H2O(T) result(L)
     real(dp), intent(in) :: T !! K
     real(dp) :: L !! erg/g
@@ -55,6 +59,7 @@ contains
     endif
   end function
 
+  !> This is $\int L/T^2 dT$
   function integral_fcn(A, B, C, T) result(out)
     use futils, only: expi
     real(dp), intent(in) :: A, B, C, T !! K
@@ -62,9 +67,9 @@ contains
     out = (-A*B*T*expi(B*T) + A*exp(B*T) + C)/T
   end function
 
-  function sat_pressure_H2O_vap(T, mu_H2O) result(p_H2O_sat)
-    use clima_const, only: Rgas
-    real(dp), intent(in) :: T, mu_H2O
+  !> Saturation pressure of H2O over water
+  function sat_pressure_H2O_vap(T) result(p_H2O_sat)
+    real(dp), intent(in) :: T !! K
     real(dp) :: p_H2O_sat !! dynes/cm2
     real(dp) :: tmp
     ! tmp = integral_fcn(A_v, B_v, C_v, T) - integral_fcn(A_v, B_v, C_v, T0)
@@ -72,9 +77,9 @@ contains
     p_H2O_sat = P0*exp((mu_H2O/Rgas)*(-tmp))
   end function
 
-  function sat_pressure_H2O_sub(T, mu_H2O) result(p_H2O_sat)
-    use clima_const, only: Rgas
-    real(dp), intent(in) :: T, mu_H2O
+  !> Saturation pressure of H2O over ice
+  function sat_pressure_H2O_sub(T) result(p_H2O_sat)
+    real(dp), intent(in) :: T !! K
     real(dp) :: p_H2O_sat !! dynes/cm2
     real(dp) :: tmp
     ! tmp = (integral_fcn(A_v, B_v, C_v, T_freeze) - integral_fcn(A_v, B_v, C_v, T0)) + &
@@ -84,14 +89,15 @@ contains
     p_H2O_sat = P0*exp((mu_H2O/Rgas)*(-tmp))
   end function
 
-  function sat_pressure_H2O(T, mu_H2O) result(p_H2O_sat)
-    real(dp), intent(in) :: T, mu_H2O !! K
+  !> Saturation pressure of H2O over ice or water
+  function sat_pressure_H2O(T) result(p_H2O_sat)
+    real(dp), intent(in) :: T !! K
     real(dp) :: p_H2O_sat !! dynes/cm2
     real(dp) :: tmp
     if (T > T_freeze) then
-      p_H2O_sat = sat_pressure_H2O_vap(T, mu_H2O)
+      p_H2O_sat = sat_pressure_H2O_vap(T)
     else ! (T <= T_freeze) then
-      p_H2O_sat = sat_pressure_H2O_sub(T, mu_H2O)
+      p_H2O_sat = sat_pressure_H2O_sub(T)
     endif
   end function
 

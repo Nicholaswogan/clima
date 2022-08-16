@@ -1,9 +1,10 @@
 module clima_adiabat_water
   use clima_const, only: dp
   use clima_types, only: Species
-  use clima_eqns_water, only: sat_pressure_H2O, latent_heat_H2O, T_freeze
+  use clima_eqns_water, only: sat_pressure_H2O, latent_heat_H2O
   use clima_eqns_water, only: sat_pressure_H2O_sub, latent_heat_H2O_sub
   use clima_eqns_water, only: sat_pressure_H2O_vap, latent_heat_H2O_vap
+  use clima_eqns_water, only: T_freeze, Rgas
   use dop853_module, only: dop853_class
   use futils, only: brent_class
   implicit none
@@ -245,7 +246,7 @@ contains
       P_H2O_start = P_i_surf(LH2O)
     else
       ! Below critical point
-      P_H2O_sat_surf = RH*sat_pressure_H2O(T_surf, sp%g(LH2O)%mass)
+      P_H2O_sat_surf = RH*sat_pressure_H2O(T_surf)
       if (P_H2O_sat_surf > P_i_surf(LH2O)) then
         ! All water on surface is vaporized
         moist_start = .false.
@@ -616,7 +617,7 @@ contains
       real(dp) :: T, P, p_H2O_sat
       P = x
       T = dop%contd8(1, P)
-      p_H2O_sat = d%RH*sat_pressure_H2O(T, d%sp%g(d%LH2O)%mass)
+      p_H2O_sat = d%RH*sat_pressure_H2O(T)
       f = p_H2O_sat - P*d%f_i_surf(d%LH2O)
     end function
   end subroutine
@@ -675,7 +676,7 @@ contains
       irtrn = -1
       
     elseif (d%T_trop <= T_cur .and. T_cur < T_crit_H2O) then
-      p_H2O_sat = d%RH*sat_pressure_H2O(T_cur, d%sp%g(d%LH2O)%mass)
+      p_H2O_sat = d%RH*sat_pressure_H2O(T_cur)
       if (d%f_i_surf(d%LH2O)*P_cur > p_H2O_sat) then
         ! Entered the moist adiabat regime.
         
@@ -726,7 +727,6 @@ contains
   end subroutine
   
   subroutine rhs_dry_dop(self, P, u, du)
-    use clima_const, only: Rgas
     use clima_eqns, only: gravity, heat_capacity_eval
     class(dop853_class), intent(inout) :: self
     real(dp), intent(in) :: P
@@ -883,7 +883,7 @@ contains
     real(dp) :: f_H2O, f_dry
     integer :: i
     
-    f_H2O = d%RH*sat_pressure_H2O(T, d%sp%g(d%LH2O)%mass)/P
+    f_H2O = d%RH*sat_pressure_H2O(T)/P
     f_dry = 1.0_dp - f_H2O
     
     f_i_layer(d%LH2O) = f_H2O
@@ -896,7 +896,7 @@ contains
   end subroutine
   
   subroutine rhs_moist_dop(self, P, u, du)
-    use clima_const, only: Rgas
+    use clima_eqns_water, only: mu_H2O
     use clima_eqns, only: heat_capacity_eval, gravity
     class(dop853_class), intent(inout) :: self
     real(dp), intent(in) :: P
@@ -908,7 +908,7 @@ contains
     real(dp) :: T, z
     real(dp) :: mubar
     real(dp) :: cp_dry, mu_dry, P_dry, f_dry
-    real(dp) :: cp_H2O, mu_H2O, P_H2O, f_H2O, L_H2O
+    real(dp) :: cp_H2O, P_H2O, f_H2O, L_H2O
     real(dp) :: dP_dry_dT, dP_H2O_dT
     real(dp) :: dT_dp, dz_dP
     real(dp) :: grav
@@ -927,13 +927,12 @@ contains
     z = u(2)
     
     ! Water
-    mu_H2O = d%sp%g(d%LH2O)%mass
     if (d%phase_trans_type == H2OVaporization) then
       L_H2O = latent_heat_H2O_vap(T)
-      P_H2O = d%RH*sat_pressure_H2O_vap(T, mu_H2O)
+      P_H2O = d%RH*sat_pressure_H2O_vap(T)
     elseif (d%phase_trans_type == H2OSublimation) then
       L_H2O = latent_heat_H2O_sub(T)
-      P_H2O = d%RH*sat_pressure_H2O_sub(T, mu_H2O)
+      P_H2O = d%RH*sat_pressure_H2O_sub(T)
     endif
     f_H2O = P_H2O/P
     call heat_capacity_eval(d%sp%g(d%LH2O)%thermo, T, found, cp)
@@ -942,7 +941,7 @@ contains
       return
     endif
     ! convert to erg/(g*K)
-    cp_H2O = cp*(1.0_dp/(d%sp%g(d%LH2O)%mass*1.0e-3_dp))*1.0e4_dp
+    cp_H2O = cp*(1.0_dp/(mu_H2O*1.0e-3_dp))*1.0e4_dp
     
     ! Dry atmosphere
     P_dry = P - P_H2O
