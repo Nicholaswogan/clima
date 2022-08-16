@@ -544,7 +544,7 @@ contains
     call brent%set_function(fcn)
     call brent%find_zero(P_old, P_cur, tol, xzero, fzero, info)
     if (info /= 0) then
-      d%err = 'brent failed in "find_tropopause"'
+      d%err = 'brent failed in "find_freezing"'
       return
     endif
 
