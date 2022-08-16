@@ -1,6 +1,9 @@
 module clima_adiabat_water
   use clima_const, only: dp
   use clima_types, only: Species
+  use clima_eqns_water, only: sat_pressure_H2O, latent_heat_H2O, T_freeze
+  use clima_eqns_water, only: sat_pressure_H2O_sub, latent_heat_H2O_sub
+  use clima_eqns_water, only: sat_pressure_H2O_vap, latent_heat_H2O_vap
   use dop853_module, only: dop853_class
   use futils, only: brent_class
   implicit none
@@ -35,6 +38,8 @@ module clima_adiabat_water
     integer :: stopping_reason
     real(dp), allocatable :: P_trop, z_trop
     real(dp), allocatable :: P_bound, z_bound, T_bound
+    integer :: phase_trans_type
+    real(dp), allocatable :: P_freeze, z_freeze
     integer :: j
     
     ! error
@@ -44,11 +49,14 @@ module clima_adiabat_water
 
   ! stopping_reason
   enum, bind(c)
-    enumerator :: ReachedPtop, ReachedTropopause, ReachedMoistAdiabat
+    enumerator :: ReachedPtop, ReachedTropopause, ReachedMoistAdiabat, ReachedFreezing
+  end enum
+
+  ! phase_trans_type
+  enum, bind(c)
+    enumerator :: H2OSublimation, H2OVaporization
   end enum
   
-  !! latent heat of H2O vaporization/condensation (erg/g)
-  real(dp), parameter :: L_H2O = 2307.61404e7_dp
   !! critical point H2O
   real(dp), parameter :: T_crit_H2O = 647.0_dp !! K
   
@@ -225,6 +233,10 @@ contains
       err = 'T_surf is less than T_trop'
       return
     endif
+    if (T_trop > T_freeze) then
+      err = 'T_trop is greater than T_freeze'
+      return
+    endif
     
     if (T_surf > T_crit_H2O) then
       ! Above critical point of water.
@@ -318,8 +330,12 @@ contains
     call mixing_ratios_moist(d, d%P_surf, d%T_surf, d%f_i(1,:))
     d%T(1) = d%T_surf
     d%z(1) = 0.0_dp
-    
     d%stopping_reason = ReachedPtop
+    if (d%T_surf > T_freeze) then
+      d%phase_trans_type = H2OVaporization
+    else
+      d%phase_trans_type = H2OSublimation
+    endif
     if (.not. status_ok) then
       err = 'dop853 initialization failed'
       return
@@ -328,16 +344,27 @@ contains
     ! integrate
     u = [d%T_surf, 0.0_dp]
     Pn = d%P_surf
-    call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-9_dp], iout=2, idid=idid)
-    if (allocated(d%err)) then
-      err = d%err
-      return
-    endif
-    if (idid < 0) then
-      write(tmp_char,'(i6)') idid
-      err = 'dop853 integration failed: '//trim(tmp_char)
-      return
-    endif
+    do 
+      call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-9_dp], iout=2, idid=idid)
+      if (allocated(d%err)) then
+        err = d%err
+        return
+      endif
+      if (idid < 0) then
+        write(tmp_char,'(i6)') idid
+        err = 'dop853 integration failed: '//trim(tmp_char)
+        return
+      endif
+
+      if (d%stopping_reason == ReachedFreezing) then        
+        u = [T_freeze, d%z_freeze]
+        Pn = d%P_freeze
+        d%phase_trans_type = H2OSublimation
+      else
+        exit
+      endif
+
+    enddo
     
     if (d%stopping_reason == ReachedPtop) then
       ! Nothing to do.
@@ -434,6 +461,11 @@ contains
                           iprint=0, icomp=[1,2], status_ok=status_ok)
       dop%d => d ! associate data
       d%stopping_reason = ReachedPtop
+      if (d%T_bound > T_freeze) then
+        d%phase_trans_type = H2OVaporization
+      else
+        d%phase_trans_type = H2OSublimation
+      endif
       if (.not. status_ok) then
         err = 'dop853 initialization failed'
         return
@@ -441,16 +473,27 @@ contains
       
       u = [d%T_bound, d%z_bound]
       Pn = d%P_bound
-      call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-9_dp], iout=2, idid=idid)
-      if (allocated(d%err)) then
-        err = d%err
-        return
-      endif
-      if (idid < 0) then
-        write(tmp_char,'(i6)') idid
-        err = 'dop853 integration failed: '//trim(tmp_char)
-        return
-      endif
+      do
+        call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-9_dp], iout=2, idid=idid)
+        if (allocated(d%err)) then
+          err = d%err
+          return
+        endif
+        if (idid < 0) then
+          write(tmp_char,'(i6)') idid
+          err = 'dop853 integration failed: '//trim(tmp_char)
+          return
+        endif
+
+        if (d%stopping_reason == ReachedFreezing) then        
+          u = [T_freeze, d%z_freeze]
+          Pn = d%P_freeze
+          d%phase_trans_type = H2OSublimation
+        else
+          exit
+        endif
+
+      enddo
       
       ! In either case, we must save where the dry-moist
       ! transition occured
@@ -485,6 +528,35 @@ contains
       
     endif
     
+  end subroutine
+
+  subroutine find_freezing(dop, d, P_cur, P_old)
+    class(dop853_class),intent(inout) :: dop
+    type(AdiabatProfileData), intent(inout) :: d
+    real(dp), intent(in) :: P_cur, P_old
+
+    real(dp), parameter :: tol = 1.0e-8_dp
+    real(dp) :: xzero, fzero
+    integer :: info
+
+    type(brent_class) :: brent
+    call brent%set_function(fcn)
+    call brent%find_zero(P_old, P_cur, tol, xzero, fzero, info)
+    if (info /= 0) then
+      d%err = 'brent failed in "find_tropopause"'
+      return
+    endif
+
+    allocate(d%P_freeze)
+    d%P_freeze = xzero
+    
+  contains
+    function fcn(me, x) result(f)
+      class(brent_class), intent(inout) :: me
+      real(dp), intent(in) :: x
+      real(dp) :: f
+      f = T_freeze - dop%contd8(1, x)
+    end function
   end subroutine
   
   subroutine find_tropopause(dop, d, P_cur, P_old)
@@ -741,9 +813,25 @@ contains
       irtrn = -10
       return
     endif
-    
+
     ! Check if the integration needs to be stopped 
-    if (T_cur < d%T_trop) then
+    if (T_cur < T_freeze .and. d%phase_trans_type == H2OVaporization) then
+      ! We hit the freezing temperature, which is a discontinuity in the 
+      ! latent heat of H2O. So we must stop, and restar the integration
+
+      ! find pressure where we hit 273.15 K
+      call find_freezing(self, d, P_cur, P_old)
+      if (allocated(d%err)) then
+        irtrn = -2
+        return
+      endif
+
+      allocate(d%z_freeze)
+      d%z_freeze = self%contd8(2, d%P_freeze)
+      d%stopping_reason = ReachedFreezing
+      irtrn = -2
+
+    elseif (T_cur < d%T_trop) then
       ! Hit the tropopause
 
       ! Solve for the exact pressure of
@@ -768,6 +856,8 @@ contains
       if (d%P(d%j) <= P_old .and. d%P(d%j) >= P_cur) then
         if (irtrn == -1) then
           PP = d%P_trop
+        elseif (irtrn == -2) then
+          PP = d%P_freeze
         else
           PP = P_cur
         endif
@@ -818,7 +908,7 @@ contains
     real(dp) :: T, z
     real(dp) :: mubar
     real(dp) :: cp_dry, mu_dry, P_dry, f_dry
-    real(dp) :: cp_H2O, mu_H2O, P_H2O, f_H2O
+    real(dp) :: cp_H2O, mu_H2O, P_H2O, f_H2O, L_H2O
     real(dp) :: dP_dry_dT, dP_H2O_dT
     real(dp) :: dT_dp, dz_dP
     real(dp) :: grav
@@ -838,7 +928,13 @@ contains
     
     ! Water
     mu_H2O = d%sp%g(d%LH2O)%mass
-    P_H2O = d%RH*sat_pressure_H2O(T, mu_H2O)
+    if (d%phase_trans_type == H2OVaporization) then
+      L_H2O = latent_heat_H2O_vap(T)
+      P_H2O = d%RH*sat_pressure_H2O_vap(T, mu_H2O)
+    elseif (d%phase_trans_type == H2OSublimation) then
+      L_H2O = latent_heat_H2O_sub(T)
+      P_H2O = d%RH*sat_pressure_H2O_sub(T, mu_H2O)
+    endif
     f_H2O = P_H2O/P
     call heat_capacity_eval(d%sp%g(d%LH2O)%thermo, T, found, cp)
     if (.not. found) then
@@ -908,14 +1004,4 @@ contains
 
   end function
 
-  function sat_pressure_H2O(T, mu_H2O) result(p_H2O_sat)
-    use clima_const, only: Rgas
-    real(dp), intent(in) :: T !! Temperature (K)
-    real(dp), intent(in) :: mu_H2O !! g/mol
-    real(dp) :: p_H2O_sat !! Saturation pressure (dynes/cm2)
-    
-    p_H2O_sat = 1.0e6_dp*exp((L_H2O*mu_H2O)/(Rgas)*(1.0_dp/373.0_dp - 1.0_dp/T))
-    
-  end function
-  
 end module
