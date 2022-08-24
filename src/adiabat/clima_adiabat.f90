@@ -464,7 +464,6 @@ contains
     logical, intent(in) :: overwrite, clip
     character(:), allocatable, intent(out) :: err
     
-    logical :: overwrite_, clip_
     character(len=100) :: tmp
     integer :: io, i, j
 

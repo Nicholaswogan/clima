@@ -1,6 +1,6 @@
 
 submodule(clima_radtran_types) clima_radtran_types_create
-  use yaml_types, only : type_node, type_dictionary, type_list, type_error, &
+  use fortran_yaml_c_types, only : type_node, type_dictionary, type_list, type_error, &
                          type_list_item, type_scalar, type_key_value_pair
   implicit none
 
@@ -169,7 +169,7 @@ contains
   end function
   
   module function create_OpticalProperties(datadir, optype, species_names, particle_names, sop, err) result(op)
-    use fortran_yaml_c, only : parse, error_length
+    use fortran_yaml_c, only: YamlFile
     use clima_const, only: c_light, s_str_len
     use clima_types, only: SettingsOpacity
     character(*), intent(in) :: datadir
@@ -183,8 +183,6 @@ contains
     
     character(:), allocatable :: filename
     integer :: i, j, ind1, ind2
-    character(error_length) :: error
-    class(type_node), pointer :: root
     type(type_dictionary), pointer :: root_dict
     type(type_key_value_pair), pointer :: pair
     character(s_str_len), allocatable :: tmp_str_list(:)
@@ -277,21 +275,17 @@ contains
     tmp_bool = .false.
     if (allocated(sop%rayleigh_bool)) tmp_bool = sop%rayleigh_bool
 
-    if (allocated(sop%rayleigh) .or. tmp_bool) then
+    if (allocated(sop%rayleigh) .or. tmp_bool) then; block
+      type(YamlFile) :: file
       ! parse the yaml file
       filename = datadir//"/rayleigh/rayleigh.yaml"
-      root => parse(filename, error=error)
-      if (len_trim(error) /= 0) then
-        err = trim(error)
-        return
-      end if
-      select type(root)
+      call file%parse(filename, err)
+      if (allocated(err)) return
+      select type(root => file%root)
       class is (type_dictionary)
         root_dict => root
       class default
         err = 'There is an issue with formatting in "'//filename//'"'
-        call root%finalize()
-        deallocate(root)  
         return
       end select
 
@@ -330,16 +324,15 @@ contains
         if (ind1 == 0) then
           err = 'Species "'//trim(sop%rayleigh(i))//'" in optical property '// &
                 '"rayleigh" is not in the list of species.'
-          exit
+          return
         endif
         op%ray(i) = create_RayleighXsection(filename, root_dict, &
                     trim(tmp_str_list(i)), ind1, op%wavl, err)
-        if (allocated(err)) exit
+        if (allocated(err)) return
       enddo
-      call root%finalize()
-      deallocate(root)  
-      if (allocated(err)) return
-    else
+      
+      call file%finalize()
+    endblock; else
       op%nray = 0
     endif
 
@@ -397,7 +390,7 @@ contains
         if (ind1 == 0) then
           err = 'Species "'//trim(sop%rayleigh(i))//'" in optical property '// &
                 '"photolysis-xs" is not in the list of species.'
-          exit
+          return
         endif
         filename = datadir//"/xsections/"//trim(tmp_str_list(i))//"/"//trim(tmp_str_list(i))//"_xs.txt"
         op%pxs(i) = create_PhotolysisXsection(filename, trim(tmp_str_list(i)), ind1, op%wavl, err)

@@ -1,35 +1,31 @@
 
 submodule(clima_types) clima_types_create
-  use yaml_types, only : type_node, type_dictionary, type_list, type_error, &
+  use fortran_yaml_c_types, only : type_node, type_dictionary, type_list, type_error, &
                          type_list_item, type_scalar, type_key_value_pair
   implicit none
   
 contains
   
   module function create_Species(filename, err) result(sp)
-    use fortran_yaml_c, only: parse, error_length
+    use fortran_yaml_c, only: YamlFile
     character(*), intent(in) :: filename
     character(:), allocatable, intent(out) :: err 
     
     type(Species) :: sp
     
-    character(error_length) :: error
-    class(type_node), pointer :: root
+    type(YamlFile) :: file
     
-    root => parse(filename, error=error)
-    if (len_trim(error) /= 0) then
-      err = trim(error)
-      return
-    end if
-    select type (root)
+    call file%parse(filename, err)
+    if (allocated(err)) return
+
+    select type (root => file%root)
       class is (type_dictionary)
         call unpack_speciesfile(root, filename, sp, err)
       class default
         err = 'yaml file "'//filename//'" must have dictionaries at the root level.'
+        return
     end select
-    call root%finalize()
-    deallocate(root)  
-    if (allocated(err)) return
+    call file%finalize()
     
   end function
   
@@ -483,29 +479,25 @@ contains
   end subroutine
   
   module function create_ClimaSettings(filename, err) result(s)
-    use fortran_yaml_c, only : parse, error_length
+    use fortran_yaml_c, only : YamlFile
     character(*), intent(in) :: filename
     character(:), allocatable, intent(out) :: err
     
     type(ClimaSettings) :: s
+
+    type(YamlFile) :: file
     
-    character(error_length) :: error
-    class(type_node), pointer :: root
+    call file%parse(filename, err)
+    if (allocated(err)) return
     
-    root => parse(filename, error=error)
-    if (len_trim(error) /= 0) then
-      err = trim(error)
-      return
-    end if
-    select type (root)
+    select type (root => file%root)
       class is (type_dictionary)
         call unpack_ClimaSettings(root, filename, s, err)
       class default
         err = 'yaml file "'//filename//'" must have dictionaries at the root level.'
+        return
     end select
-    call root%finalize()
-    deallocate(root)  
-    if (allocated(err)) return
+    call file%finalize()
     
   end function
   

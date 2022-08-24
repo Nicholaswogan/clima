@@ -50,8 +50,9 @@ set_property(TARGET clima PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 # Add special compiler flags to Clima
 if ("${CMAKE_Fortran_COMPILER_ID}" MATCHES "GNU")
+  target_compile_options(clima PRIVATE -Wunused -fimplicit-none)
   if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(clima PRIVATE -Wunused -fcheck=all,no-array-temps -fimplicit-none)
+    target_compile_options(clima PRIVATE -fcheck=all,no-array-temps)
   endif()
 endif()
 

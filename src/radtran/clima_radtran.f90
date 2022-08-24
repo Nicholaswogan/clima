@@ -392,7 +392,6 @@ contains
     real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:) !! (nz,np)
     real(dp), intent(out) :: ISR, OLR
     character(:), allocatable, intent(out) :: err
-    real(dp) :: res
       
     call self%radiate(T_surface, T, P, densities, dz, pdensities, radii , err)
     if (allocated(err)) return

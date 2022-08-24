@@ -62,7 +62,7 @@ contains
       stop 1
     endif
     
-    print*,OLR
+    print*,OLR*1.0e-3_dp
     
     open(unit=1,file='ModernEarthIR.dat',form='unformatted',status='replace')
     write(1) rad%ir%freq

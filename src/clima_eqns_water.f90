@@ -93,7 +93,6 @@ contains
   function sat_pressure_H2O(T) result(p_H2O_sat)
     real(dp), intent(in) :: T !! K
     real(dp) :: p_H2O_sat !! dynes/cm2
-    real(dp) :: tmp
     if (T > T_freeze) then
       p_H2O_sat = sat_pressure_H2O_vap(T)
     else ! (T <= T_freeze) then

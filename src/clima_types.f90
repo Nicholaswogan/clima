@@ -57,7 +57,6 @@ module clima_types
   
   interface
     module function create_ClimaSettings(filename, err) result(s)
-      use fortran_yaml_c, only : parse, error_length
       character(*), intent(in) :: filename
       character(:), allocatable, intent(out) :: err
       type(ClimaSettings) :: s
