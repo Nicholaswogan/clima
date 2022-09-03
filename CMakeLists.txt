@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION "3.14")
 
-project(CLIMA LANGUAGES Fortran C VERSION "0.2.1")
+project(CLIMA LANGUAGES Fortran C VERSION "0.2.2")
 
 set(CMAKE_Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 

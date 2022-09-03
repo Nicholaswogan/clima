@@ -72,7 +72,7 @@ module clima_radtran_types
   
   ! integer :: k_method 
   enum, bind(c)
-    enumerator :: K_RandomOverlap, k_RandomOverlapResortRebin
+    enumerator :: K_RandomOverlap, k_RandomOverlapResortRebin, k_AdaptiveEquivalentExtinction
   end enum
   
   type :: Ksettings
@@ -166,6 +166,13 @@ module clima_radtran_types
     real(dp), allocatable :: wxy1(:) ! (nbin*ngauss_max)
     real(dp), allocatable :: wxy_e(:) ! (nbin*ngauss_max+1)
     integer, allocatable :: inds(:) ! (nbin*ngauss_max)
+    ! end work arrays that are needed for k_RandomOverlapResortRebin
+
+    ! work arrays that are only needed for if 
+    ! k_method == k_AdapativeEquivalentExtinction
+    real(dp), allocatable :: tau_grey(:,:) ! (nz,op%nk)
+    real(dp), allocatable :: tau_grey_sum(:) ! (nz)
+    integer, allocatable :: ind_major(:) ! (nz)
   end type
   
   interface

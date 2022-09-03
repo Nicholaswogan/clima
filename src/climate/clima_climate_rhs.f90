@@ -108,6 +108,7 @@ contains
     enddo
 
     ! Fc_e(:) = 0.0_dp
+    ! Fc_g = 0.0_dp
 
     if (self%double_radiative_grid) then
       do i = 1,self%nz

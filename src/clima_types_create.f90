@@ -778,7 +778,9 @@ contains
         if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
       elseif (op%k_method == "RandomOverlap") then
         ! do nothing
-      else
+      elseif (op%k_method == "AdaptiveEquivalentExtinction") then
+        ! do nothing
+      else 
         err = 'k-method "'//op%k_method//'" in "'//filename//'" is not an option.'
         return
       endif

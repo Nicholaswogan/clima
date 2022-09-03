@@ -113,6 +113,10 @@ contains
         allocate(rw%wxy1(kset%nbin*op%ngauss_max))
         allocate(rw%wxy_e(kset%nbin*op%ngauss_max+1))
         allocate(rw%inds(kset%nbin*op%ngauss_max))
+      elseif (kset%k_method == k_AdaptiveEquivalentExtinction) then
+        allocate(rw%tau_grey(nz,op%nk))
+        allocate(rw%tau_grey_sum(nz))
+        allocate(rw%ind_major(nz))
       endif
     endif
     
@@ -164,6 +168,8 @@ contains
       call weights_to_bins(kset%wbin, kset%wbin_e)
     elseif (sop%k_method == "RandomOverlap") then
       kset%k_method = k_RandomOverlap
+    elseif (sop%k_method == "AdaptiveEquivalentExtinction") then
+      kset%k_method = k_AdaptiveEquivalentExtinction
     endif
     
   end function
@@ -226,6 +232,22 @@ contains
       do i = 1,op%nk
         op%ngauss_max = max(op%ngauss_max,op%k(i)%ngauss)
       enddo
+
+      if (op%kset%k_method == k_AdaptiveEquivalentExtinction) then
+        ! we must check that all k-coeff have the same
+        ! number k-bins and the same weights
+        do i = 2,op%nk
+          if (op%k(1)%ngauss /= op%k(i)%ngauss) then
+            err = 'For k-method "AdaptiveEquivalentExtinction", all k-coeff bin weights must match.'
+            return
+          endif
+
+          if (.not.all(op%k(1)%weights(:) == op%k(i)%weights(:))) then
+            err = 'For k-method "AdaptiveEquivalentExtinction", all k-coeff bin weights must match.'
+            return
+          endif
+        enddo
+      endif
       
     else
       err = "You must specify at least one k-distribution in the settings file."

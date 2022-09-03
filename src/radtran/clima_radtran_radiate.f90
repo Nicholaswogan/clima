@@ -20,7 +20,7 @@ contains
     use clima_radtran_types, only: RadiateXSWrk, RadiateZWrk, Ksettings
     use clima_radtran_types, only: OpticalProperties, Kcoefficients
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
-    use clima_radtran_types, only: k_RandomOverlap, k_RandomOverlapResortRebin
+    use clima_radtran_types, only: k_RandomOverlap, k_RandomOverlapResortRebin, k_AdaptiveEquivalentExtinction
     use clima_eqns, only: planck_fcn, ten2power
     use clima_const, only: k_boltz, pi
   
@@ -256,6 +256,9 @@ contains
         elseif (kset%k_method == k_RandomOverlapResortRebin) then
           ! Random Overlap with Resorting and Rebinning.
           call k_rorr(op, kset, u0, surface_albedo, cols, rw, rz)
+        elseif (kset%k_method == k_AdaptiveEquivalentExtinction) then
+          ! Adaptive Equivalent Extinction method
+          call k_aee(op, kset, u0, surface_albedo, cols, rw, rz)
         endif
         
       else
@@ -303,6 +306,84 @@ contains
     enddo
   
   end function
+
+  subroutine k_aee(op, kset, u0, surface_albedo, cols, rw, rz)
+    use clima_radtran_types, only: OpticalProperties, Ksettings
+    use clima_radtran_types, only: RadiateZWrk, RadiateXSWrk
+    use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
+    use clima_eqns, only: weights_to_bins
+    use clima_radtran_twostream, only: two_stream_solar, two_stream_ir
+    
+    type(OpticalProperties), intent(in) :: op
+    type(Ksettings), intent(in) :: kset
+    real(dp), intent(in) :: u0
+    real(dp), intent(in) :: surface_albedo
+    real(dp), intent(in) :: cols(:,:)
+    type(RadiateXSWrk), target, intent(inout) :: rw
+    type(RadiateZWrk), intent(inout) :: rz
+
+    integer :: nz
+    integer :: ii, i, j, k, n
+    real(dp) :: surf_rad
+
+    nz = size(cols, 1)
+
+    ! we first need to compute the grey opacity of all k-coefficients
+    rw%tau_grey(:,:) = 0.0_dp
+    do i = 1,op%nk
+      ii = op%k(i)%sp_ind
+      do k = 1,op%k(i)%ngauss
+        do j = 1,nz
+          rw%tau_grey(j,i) = rw%tau_grey(j,i) + rw%ks(i)%k(j,k)*op%k(i)%weights(k)*cols(j,ii)
+        enddo
+      enddo
+    enddo
+
+    ! determine which species is the major absorber
+    do j = 1,nz
+      n = nz+1-j
+      rw%ind_major(j) = maxloc(rw%tau_grey(j,:), 1)
+      rw%tau_grey_sum(n) = sum(rw%tau_grey(j,:)) - rw%tau_grey(j,rw%ind_major(j))
+    enddo
+    
+    do i = 1,op%k(1)%ngauss
+      ! This will only work if all ktables have the exact same number of
+      ! gausian points, and the same weightings. This is checked while
+      ! creating optical properties.
+
+      ! Consider the k-coeffs from major species
+      rz%taua_1(:) = 0.0_dp
+      do k = 1,nz
+        n = nz+1-k
+        j = rw%ind_major(k)
+        rz%taua_1(n) = rz%taua_1(n) + &
+                       rw%ks(j)%k(k,i)*cols(k,op%k(j)%sp_ind)
+      enddo
+
+      ! sum
+      rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%tausp(:) + rz%taua_1(:) &
+                  + rw%tau_grey_sum(:)
+      do j = 1,nz
+        rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j))/rz%tau(j))
+      enddo
+
+      if (op%op_type == FarUVOpticalProperties .or. &
+          op%op_type == SolarOpticalProperties) then
+        call two_stream_solar(nz, rz%tau, rz%w0, rz%gt, u0, surface_albedo, &
+                              rz%amean, surf_rad, rz%fup, rz%fdn)
+      elseif (op%op_type == IROpticalProperties) then
+        call two_stream_ir(nz, rz%tau, rz%w0, rz%gt, 0.0_dp, rz%bplanck, &
+                           rz%fup, rz%fdn)
+      endif
+      
+      ! weight upward and downward fluxes by
+      ! k-coeff weights (kset%wbin(i))
+      rz%fup1(:) = rz%fup1(:) + rz%fup(:)*op%k(1)%weights(i)
+      rz%fdn1(:) = rz%fdn1(:) + rz%fdn(:)*op%k(1)%weights(i)
+
+    enddo
+
+  end subroutine
   
   subroutine k_rorr(op, kset, u0, surface_albedo, cols, rw, rz)
     use futils, only: rebin
