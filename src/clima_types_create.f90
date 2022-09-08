@@ -754,7 +754,7 @@ contains
     class(type_node), pointer :: node
     type(type_dictionary), pointer :: opacities
     type (type_error), allocatable :: io_err
-    integer :: ind
+    integer :: ind, tmp_int
     logical :: success
     
     if (allocated(op)) deallocate(op)
@@ -767,8 +767,22 @@ contains
     tmp => opacities%get_list("k-distributions",required=.false., error=io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (associated(tmp)) then
-      
+
       ! k-distribution settings
+      ! ability to rebin k-coefficients in the files, before any calculations
+      tmp_int = op_dict%get_integer("new-num-k-bins", error=io_err)
+      if (allocated(io_err)) then
+        deallocate(io_err)
+      else
+        allocate(op%new_num_k_bins)
+        op%new_num_k_bins = tmp_int
+
+        if (op%new_num_k_bins < 1) then
+          err = '"new-num-k-bins" in "'//filename//'" must be bigger than 0.'
+          return
+        endif
+      endif
+      
       op%k_method = op_dict%get_string("k-method", error=io_err)
       if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
       op%k_method = trim(op%k_method)

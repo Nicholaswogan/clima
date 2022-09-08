@@ -223,7 +223,7 @@ contains
                 '"k-distributions" is not in the list of species.'
           return
         endif
-        op%k(i) = create_Ktable(filename, ind1, optype, op%wavl, err)
+        op%k(i) = create_Ktable(filename, ind1, optype, op%wavl, sop%new_num_k_bins, err)
         if (allocated(err)) return
       enddo
       
@@ -1080,7 +1080,7 @@ contains
 
   end subroutine
   
-  function create_Ktable(filename, sp_ind, optype, wavl, err) result(k)
+  function create_Ktable(filename, sp_ind, optype, wavl, new_num_k_bins, err) result(k)
     use h5fortran
     use futils, only: is_close
     use clima_eqns, only: weights_to_bins
@@ -1089,6 +1089,7 @@ contains
     integer, intent(in) :: sp_ind
     integer, intent(in) :: optype
     real(dp), intent(in) :: wavl(:)
+    integer, allocatable, intent(in) :: new_num_k_bins
     character(:), allocatable, intent(out) :: err
     
     type(Ktable) :: k
@@ -1182,7 +1183,13 @@ contains
     call h%read("log10k", log10k)
 
     call h%close()
-    
+
+    ! Give the option to rebin k-coeffs
+    if (allocated(new_num_k_bins)) then
+      call rebin_Ktable(filename, new_num_k_bins, k, log10k, err)
+      if (allocated(err)) return
+    endif
+
     ! initalize interpolators
     allocate(k%log10k(k%ngauss,k%nwav))
     do i = 1,k%nwav
@@ -1208,6 +1215,63 @@ contains
     k%T_max = maxval(k%temp)
     
   end function
+
+  subroutine rebin_Ktable(filename, nbin, k, log10k, err)
+    use futils, only: rebin, gauss_legendre
+    use clima_eqns, only: weights_to_bins
+
+    character(*), intent(in) :: filename
+    integer, intent(in) :: nbin
+    type(Ktable), intent(inout) :: k
+    real(dp), allocatable, intent(inout) :: log10k(:,:,:,:)
+    character(:), allocatable, intent(out) :: err
+
+    integer :: i, j, ii, ierr
+    real(dp), allocatable :: wbin(:) ,wbin_e(:), tmp(:), tmp1(:)
+    real(dp), allocatable :: log10k_new(:,:,:,:)
+
+    if (nbin > k%ngauss) then
+      err = '"new-num-k-bins" in the settings file should not be bigger than '//&
+            'number of k-bins in '//filename
+      return
+    endif
+
+    allocate(wbin(nbin),wbin_e(nbin+1),tmp(nbin))
+    call gauss_legendre(tmp, wbin)
+    wbin = wbin/2.0_dp
+    call weights_to_bins(wbin, wbin_e)
+
+    allocate(log10k_new(nbin,size(log10k,2),size(log10k,3),size(log10k,4)))
+    allocate(tmp1(size(log10k,1)))
+
+    do i = 1,size(log10k,4)
+      do j = 1,size(log10k,3)
+        do ii = 1,size(log10k,2)
+          tmp1(:) = 10.0_dp**log10k(:,ii,j,i)
+          call rebin(k%weight_e, tmp1, wbin_e, log10k_new(:,ii,j,i), ierr)
+          if (ierr /= 0) then
+            err = 'Rebinning k-coefficients in file "'//filename//'" failed'
+            return
+          endif
+          log10k_new(:,ii,j,i) = log10(log10k_new(:,ii,j,i))
+        enddo
+      enddo
+    enddo
+
+    ! replace with new bins
+    k%ngauss = nbin
+    deallocate(k%weights)
+    allocate(k%weights(nbin))
+    k%weights(:) = wbin(:)
+    deallocate(k%weight_e)
+    allocate(k%weight_e(nbin+1))
+    k%weight_e(:) = wbin_e(:)
+
+    deallocate(log10k)
+    allocate(log10k(nbin,size(log10k_new,2),size(log10k_new,3),size(log10k_new,4)))
+    log10k(:,:,:,:) = log10k_new(:,:,:,:)
+
+  end subroutine
   
   subroutine check_h5_dataset(h, dataset, ndims, dtype, prefix, err)
     use h5fortran, only: hdf5_file

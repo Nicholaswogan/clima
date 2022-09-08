@@ -17,6 +17,7 @@ optical-properties:
     particles: [HCaer1]
   ir:
     k-method: AdaptiveEquivalentExtinction
+    new-num-k-bins: 8
     opacities:
       k-distributions: [H2O, CO2, O3]
       CIA: [CO2-CO2, N2-N2, O2-O2, N2-O2]
