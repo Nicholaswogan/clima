@@ -1,11 +1,17 @@
-module wrapper_utils
+module clima_c_api
   use iso_c_binding
   implicit none
 
   integer, parameter :: err_len = 1024
-  
+
 contains
-  
+
+  include "futils.f90"
+  include "OpticalProperties.f90"
+  include "ClimaRadtranWrk.f90"
+  include "Radtran.f90"  
+  include "WaterAdiabatClimate.f90"
+
   !!!!!!!!!!!!!!!!!!
   !!! Utilities  !!!
   !!!!!!!!!!!!!!!!!!
@@ -55,5 +61,5 @@ contains
     end do
     stringc(n+1) = c_null_char
   end subroutine copy_string_ftoc
-  
+
 end module

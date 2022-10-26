@@ -133,6 +133,14 @@ cdef class WaterAdiabatClimate:
       wa_pxd.wateradiabatclimate_species_names_get(&self._ptr, &dim1, <char *>species_names_c.data)
       return c2stringarr(species_names_c, S_STR_LEN, dim1)
 
+  property rad:
+    def __get__(self):
+      cdef void *ptr1
+      wa_pxd.wateradiabatclimate_rad_get(&self._ptr, &ptr1)
+      var = Radtran()
+      var._ptr = ptr1
+      return var
+
   property P:
     def __get__(self):
       cdef int dim1

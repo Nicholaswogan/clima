@@ -6,6 +6,10 @@ import os
 DEF S_STR_LEN = 20;
 DEF ERR_LEN = 1024;
 
+include "futils.pyx"
+include "OpticalProperties.pyx"
+include "ClimaRadtranWrk.pyx"
+include "Radtran.pyx"
 include "WaterAdiabatClimate.pyx"
 
 # utils

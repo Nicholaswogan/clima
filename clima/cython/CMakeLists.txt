@@ -7,6 +7,10 @@ endif()
 
 add_library(_clima MODULE ${_clima})
 set(_clima_deps
+  futils.pyx
+  OpticalProperties.pyx
+  ClimaRadtranWrk.pyx
+  Radtran.pyx
   WaterAdiabatClimate.pyx
 )
 foreach(PDEP ${_clima_deps})
@@ -15,5 +19,5 @@ endforeach()
 
 python_extension_module(_clima)
 
-target_link_libraries(_clima clima_wrapper)
+target_link_libraries(_clima clima_c_api)
 target_include_directories(_clima PUBLIC ${NumPy_INCLUDE_DIRS})

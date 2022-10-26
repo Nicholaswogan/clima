@@ -6,6 +6,7 @@ cdef extern from "<stdbool.h>":
 cdef extern void allocate_wateradiabatclimate(void *ptr);
 cdef extern void deallocate_wateradiabatclimate(void *ptr);
 
+# wrappers for functions
 cdef extern void wateradiabatclimate_create_wrapper(void *ptr, char *data_dir, char *species_file,
                                                     char *settings_file, char *flux_file, char *err);
 
@@ -31,6 +32,7 @@ cdef extern void wateradiabatclimate_to_regular_grid_wrapper(void *ptr, char *er
 
 cdef extern void wateradiabatclimate_out2atmosphere_txt_wrapper(void *ptr, char *filename, int *nz, double *eddy, bool *overwrite, bool *clip, char *err)
 
+# getters and setters
 cdef extern void wateradiabatclimate_p_top_get(void *ptr, double *val)
 cdef extern void wateradiabatclimate_p_top_set(void *ptr, double *val)
 
@@ -60,5 +62,7 @@ cdef extern void wateradiabatclimate_dz_get(void *ptr, int *dim1, double *arr)
 
 cdef extern void wateradiabatclimate_densities_get_size(void *ptr, int *dim1, int *dim2)
 cdef extern void wateradiabatclimate_densities_get(void *ptr, int *dim1, int *dim2, double *arr)
+
+cdef extern void wateradiabatclimate_rad_get(void *ptr, void *ptr1)
 
 

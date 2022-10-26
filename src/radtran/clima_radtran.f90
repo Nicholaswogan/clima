@@ -4,6 +4,7 @@ module clima_radtran
   implicit none
   private
 
+  public :: ClimaRadtranWrk ! Work type that holds results
   public :: RadtranIR ! IR radiative transfer only
   public :: Radtran ! IR and solar radiative transfer
   
