@@ -174,7 +174,8 @@ contains
     
   end function
   
-  module function create_OpticalProperties(datadir, optype, species_names, particle_names, sop, err) result(op)
+  module function create_OpticalProperties(datadir, optype, species_names, &
+                                           particle_names, sop, wavelength_bins_file, err) result(op)
     use fortran_yaml_c, only: YamlFile
     use clima_const, only: c_light, s_str_len
     use clima_types, only: SettingsOpacity
@@ -183,6 +184,7 @@ contains
     character(*), intent(in) :: species_names(:)
     character(*), intent(in) :: particle_names(:)
     type(SettingsOpacity), intent(in) :: sop
+    character(:), allocatable, intent(in) :: wavelength_bins_file
     character(:), allocatable, intent(out) :: err
     
     type(OpticalProperties) :: op
@@ -196,7 +198,11 @@ contains
     
     op%op_type = optype
     ! get the bins
-    filename = datadir//"/kdistributions/bins.h5"
+    if (allocated(wavelength_bins_file)) then
+      filename = wavelength_bins_file ! custom bins file, specified in settings
+    else
+      filename = datadir//"/kdistributions/bins.h5" ! default
+    endif
     call read_wavl(filename, op%op_type, op%wavl, err)
     if (allocated(err)) return 
     

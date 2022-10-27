@@ -157,7 +157,7 @@ contains
       err = '"'//s%filename//'/optical-properties/ir" does not exist.'
       return
     endif
-    rad%ir = OpticalProperties(datadir, IROpticalProperties, species_names, particle_names, s%ir, err)
+    rad%ir = OpticalProperties(datadir, IROpticalProperties, species_names, particle_names, s%ir, s%wavelength_bins_file, err)
     if (allocated(err)) return
     
     ! work arrays
@@ -291,14 +291,14 @@ contains
       err = '"'//s%filename//'/optical-properties/ir" does not exist.'
       return
     endif
-    rad%ir = OpticalProperties(datadir, IROpticalProperties, species_names, particle_names, s%ir, err)
+    rad%ir = OpticalProperties(datadir, IROpticalProperties, species_names, particle_names, s%ir, s%wavelength_bins_file, err)
     if (allocated(err)) return
 
     if (.not. allocated(s%sol)) then
       err = '"'//s%filename//'/optical-properties/solar" does not exist.'
       return
     endif
-    rad%sol = OpticalProperties(datadir, SolarOpticalProperties, species_names, particle_names, s%sol, err)
+    rad%sol = OpticalProperties(datadir, SolarOpticalProperties, species_names, particle_names, s%sol, s%wavelength_bins_file, err)
     if (allocated(err)) return
 
     ! photons hitting the planet

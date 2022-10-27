@@ -124,13 +124,15 @@ module clima_radtran_types
   end type
   
   interface
-    module function create_OpticalProperties(datadir, optype, species_names, particle_names, sop, err) result(op)
+    module function create_OpticalProperties(datadir, optype, species_names, &
+                                             particle_names, sop, wavelength_bins_file, err) result(op)
       use clima_types, only: SettingsOpacity
       character(*), intent(in) :: datadir
       integer, intent(in) :: optype
       character(*), intent(in) :: species_names(:)
       character(*), intent(in) :: particle_names(:)
       type(SettingsOpacity), intent(in) :: sop
+      character(:), allocatable, intent(in) :: wavelength_bins_file
       character(:), allocatable, intent(out) :: err
       type(OpticalProperties) :: op
     end function

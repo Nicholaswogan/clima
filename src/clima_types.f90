@@ -50,6 +50,7 @@ module clima_types
     real(dp), allocatable :: solar_zenith
     
     ! optical-properties
+    character(:), allocatable :: wavelength_bins_file
     character(s_str_len), allocatable :: gases(:)
     character(s_str_len), allocatable :: particles(:)
     type(SettingsOpacity), allocatable :: sol

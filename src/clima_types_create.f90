@@ -671,8 +671,16 @@ contains
     
     type(type_dictionary), pointer :: tmp_dict
     type(type_list), pointer :: tmp
+    type(type_scalar), pointer :: scalar
     type (type_error), allocatable :: io_err
     integer :: ind
+
+    ! wavelength bins file
+    scalar => op_prop%get_scalar('wavelength-bins-file',required=.false.,error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (associated(scalar)) then
+      s%wavelength_bins_file = trim(scalar%string)
+    endif
 
     ! species
     tmp_dict => op_prop%get_dictionary("species", required=.false., error=io_err)
