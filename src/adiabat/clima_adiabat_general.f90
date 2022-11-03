@@ -6,7 +6,7 @@ module clima_adiabat_general
   implicit none
   private
 
-  public :: make_profile
+  public :: make_profile, make_column
 
   type :: AdiabatProfileData
     !> Input data
@@ -76,6 +76,131 @@ module clima_adiabat_general
 
 contains
 
+  subroutine make_column(T_surf, N_i_surf, &
+                         sp, nz, planet_mass, &
+                         planet_radius, P_top, T_trop, RH, &
+                         P, z, T, f_i, &
+                         err)
+    use minpack_module, only: hybrd1
+    use clima_useful, only: MinpackHybrd1Vars
+    use clima_eqns, only: gravity
+    use clima_const, only: k_boltz, N_avo
+    real(dp), target, intent(in) :: T_surf !! K
+    real(dp), intent(in) :: N_i_surf(:) !! (ng) moles/cm^2
+
+    type(Species), target, intent(inout) :: sp
+    integer, intent(in) :: nz
+    real(dp), target, intent(in) :: planet_mass, planet_radius
+    real(dp), target, intent(in) :: P_top, T_trop, RH(:)
+
+    real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
+    real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
+    character(:), allocatable, intent(out) :: err
+
+    integer :: i, j
+    real(dp) :: grav, P_sat, P_ocean, N_ocean
+    real(dp), allocatable :: P_av(:), T_av(:), density_av(:), f_i_av(:,:), dz(:)
+    real(dp), allocatable :: N_i(:), P_i(:)
+    integer, allocatable :: sp_type(:)
+
+    type(MinpackHybrd1Vars) :: mv
+
+    ! allocate memory for minpack
+    mv = MinpackHybrd1Vars(n=sp%ng, tol=1.0e-5_dp)
+
+    ! allocate some work memory
+    allocate(P_av(nz), T_av(nz), density_av(nz), f_i_av(nz,sp%ng), dz(nz))
+    allocate(N_i(sp%ng), P_i(sp%ng))
+    allocate(sp_type(sp%ng))
+    
+    ! Initial guess will be crude conversion of moles/cm2 (column) to 
+    ! to dynes/cm2 (pressure)
+    grav = gravity(planet_radius, planet_mass, 0.0_dp)
+    do i = 1,mv%n
+      mv%x(i) = log10(max(N_i_surf(i)*sp%g(i)%mass*grav, sqrt(tiny(1.0_dp))))
+    enddo
+
+    ! attempt the root solve
+    call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+    if (mv%info == 0 .or. mv%info > 1) then
+      err = 'hybrd1 root solve failed in make_column_water.'
+      return
+    elseif (mv%info < 0) then
+      err = 'hybrd1 root solve failed in make_column_water: '//err
+      return
+    endif
+
+    ! call one more time with solution
+    call fcn(mv%n, mv%x, mv%fvec, mv%info)
+
+  contains
+    subroutine fcn(n_, x_, fvec_, iflag_)
+      integer, intent(in) :: n_
+      real(dp), intent(in) :: x_(n_)
+      real(dp), intent(out) :: fvec_(n_)
+      integer, intent(inout) :: iflag_
+
+      P_i(:) = 10.0_dp**x_(:)
+      call make_profile(T_surf, P_i, &
+                        sp, nz, planet_mass, &
+                        planet_radius, P_top, T_trop, RH, &
+                        P, z, T, f_i, &
+                        err)
+      if (allocated(err)) then
+        iflag_ = -1
+        return
+      endif
+
+      ! Compute the columns by splitting grid into cells
+      do i = 1,nz
+        P_av(i) = P(i)
+        T_av(i) = T(i)
+        dz(i) = z(i+1)-z(i)
+        do j = 1,sp%ng
+          f_i_av(i,j) = f_i(i,j)
+        enddo
+      enddo
+      density_av = P_av/(k_boltz*T_av)
+      do i = 1,sp%ng
+        N_i(i) = sum(density_av*f_i_av(:,i)*dz)/N_avo
+      enddo
+
+      ! we need to know which species are saturated at the surface
+      ! and thus have surface reservoirs
+      do i = 1,sp%ng
+        P_sat = huge(1.0_dp)
+        if (allocated(sp%g(i)%sat)) then
+          if (T_surf < sp%g(i)%sat%T_critical) then
+            P_sat = RH(i)*sp%g(i)%sat%sat_pressure(T_surf)
+          endif
+        endif
+        ! determine if species are condensing, or not
+        if (P_i(i) > P_sat) then
+          sp_type(i) = CondensingSpeciesType
+        else
+          sp_type(i) = DrySpeciesType
+        endif
+      enddo
+
+      do i = 1,sp%ng
+        if (sp_type(i) == CondensingSpeciesType) then
+          ! Figure out the "pressure" of the ocean
+          P_ocean = P_i(i) - P(1)*f_i(1,i)
+          ! convert to a column (moles/cm2)
+          N_ocean = P_ocean/(sp%g(i)%mass*grav)
+          ! Add the ocean to the H2O column in the atmosphere
+          N_i(i) = N_i(i) + N_ocean
+        endif
+      enddo
+
+      ! residual
+      fvec_(:) = N_i - N_i_surf
+
+    end subroutine
+  end subroutine
+
+
+
   subroutine make_profile(T_surf, P_i_surf, &
                           sp, nz, planet_mass, &
                           planet_radius, P_top, T_trop, RH, &
@@ -86,7 +211,7 @@ contains
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), intent(in) :: P_i_surf(:) !! (ng) dynes/cm2
 
-    type(Species), target, intent(in) :: sp
+    type(Species), target, intent(inout) :: sp
     integer, intent(in) :: nz
     real(dp), target, intent(in) :: planet_mass, planet_radius
     real(dp), target, intent(in) :: P_top, T_trop, RH(:)

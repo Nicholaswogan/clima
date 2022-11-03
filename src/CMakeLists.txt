@@ -3,6 +3,7 @@ add_subdirectory(dependencies)
 
 set(BASE_SOURCES
   clima_const.f90
+  clima_useful.f90
   clima_eqns.f90
   clima_saturationdata.f90
   clima_eqns_water.f90
@@ -52,7 +53,7 @@ set_property(TARGET clima PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 # Add special compiler flags to Clima
 if ("${CMAKE_Fortran_COMPILER_ID}" MATCHES "GNU")
-  target_compile_options(clima PRIVATE -Wunused -fimplicit-none)
+  target_compile_options(clima PRIVATE -Wunused -Wimplicit-interface -fimplicit-none)
   if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(clima PRIVATE -fcheck=all,no-array-temps)
   endif()
