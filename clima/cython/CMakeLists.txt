@@ -11,7 +11,7 @@ set(_clima_deps
   OpticalProperties.pyx
   ClimaRadtranWrk.pyx
   Radtran.pyx
-  WaterAdiabatClimate.pyx
+  AdiabatClimate.pyx
 )
 foreach(PDEP ${_clima_deps})
   set_source_files_properties(_clima.pyx PROPERTIES OBJECT_DEPENDS ${PDEP})

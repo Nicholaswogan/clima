@@ -5,15 +5,15 @@ module clima_adiabat
   implicit none
   private
 
-  public :: WaterAdiabatClimate
+  public :: AdiabatClimate
 
-  type :: WaterAdiabatClimate
+  type :: AdiabatClimate
 
     ! settings and free parameters
     integer :: nz
     real(dp) :: P_top = 1.0e-2_dp ! (dynes/cm2)
     real(dp) :: T_trop = 180.0_dp ! (T)
-    real(dp) :: RH = 1.0_dp ! relative humidity
+    real(dp), allocatable :: RH(:) ! relative humidity (ng)
     
     ! planet properties
     real(dp) :: planet_mass ! (g)
@@ -32,23 +32,23 @@ module clima_adiabat
     real(dp), allocatable :: densities(:,:)
     
   contains
-    procedure :: make_profile => WaterAdiabatClimate_make_profile
-    procedure :: make_column => WaterAdiabatClimate_make_column
-    procedure :: TOA_fluxes => WaterAdiabatClimate_TOA_fluxes
-    procedure :: TOA_fluxes_column => WaterAdiabatClimate_TOA_fluxes_column
-    procedure :: surface_temperature => WaterAdiabatClimate_surface_temperature
-    procedure :: surface_temperature_column => WaterAdiabatClimate_surface_temperature_column
-    procedure :: to_regular_grid => WaterAdiabatClimate_to_regular_grid
-    procedure :: out2atmosphere_txt => WaterAdiabatClimate_out2atmosphere_txt
+    procedure :: make_profile => AdiabatClimate_make_profile
+    procedure :: make_column => AdiabatClimate_make_column
+    procedure :: TOA_fluxes => AdiabatClimate_TOA_fluxes
+    procedure :: TOA_fluxes_column => AdiabatClimate_TOA_fluxes_column
+    procedure :: surface_temperature => AdiabatClimate_surface_temperature
+    procedure :: surface_temperature_column => AdiabatClimate_surface_temperature_column
+    procedure :: to_regular_grid => AdiabatClimate_to_regular_grid
+    procedure :: out2atmosphere_txt => AdiabatClimate_out2atmosphere_txt
   end type
   
-  interface WaterAdiabatClimate
-    module procedure :: create_WaterAdiabatClimate
+  interface AdiabatClimate
+    module procedure :: create_AdiabatClimate
   end interface
   
 contains
   
-  function create_WaterAdiabatClimate(datadir, species_f, settings_f, star_f, err) result(c)
+  function create_AdiabatClimate(datadir, species_f, settings_f, star_f, err) result(c)
     use clima_types, only: ClimaSettings 
     character(*), intent(in) :: datadir
     character(*), intent(in) :: species_f
@@ -56,7 +56,7 @@ contains
     character(*), intent(in) :: star_f
     character(:), allocatable, intent(out) :: err
     
-    type(WaterAdiabatClimate) :: c
+    type(AdiabatClimate) :: c
     
     type(ClimaSettings) :: s
     integer :: i, ind
@@ -71,6 +71,10 @@ contains
     do i = 1,c%sp%ng
       c%species_names(i) = c%sp%g(i)%name
     enddo
+
+    ! default relative humidty is 1
+    allocate(c%RH(c%sp%ng))
+    c%RH(:) = 1.0_dp
     
     ! H2O must be a species
     ind = findloc(c%species_names, 'H2O', 1)
@@ -124,10 +128,10 @@ contains
     
   end function
   
-  subroutine WaterAdiabatClimate_make_profile(self, T_surf, P_i_surf, err)
-    use clima_adiabat_water, only: make_profile_water
+  subroutine AdiabatClimate_make_profile(self, T_surf, P_i_surf, err)
+    use clima_adiabat_general, only: make_profile
     use clima_const, only: k_boltz
-    class(WaterAdiabatClimate), intent(inout) :: self
+    class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: T_surf !! K
     real(dp), intent(in) :: P_i_surf(:)
     character(:), allocatable, intent(out) :: err
@@ -145,11 +149,11 @@ contains
     allocate(f_i_e(self%nz+1,self%sp%ng))
     allocate(density(self%nz))
     
-    call make_profile_water(T_surf, P_i_surf, &
-                            self%sp, self%nz, self%LH2O, self%planet_mass, &
-                            self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                            P_e, z_e, T_e, f_i_e, &
-                            err)
+    call make_profile(T_surf, P_i_surf, &
+                      self%sp, self%nz, self%planet_mass, &
+                      self%planet_radius, self%P_top, self%T_trop, self%RH, &
+                      P_e, z_e, T_e, f_i_e, &
+                      err)
     if (allocated(err)) return
 
     
@@ -171,10 +175,10 @@ contains
     
   end subroutine
 
-  subroutine WaterAdiabatClimate_make_column(self, T_surf, N_i_surf, err)
-    use clima_adiabat_water, only: make_column_water
+  subroutine AdiabatClimate_make_column(self, T_surf, N_i_surf, err)
+    use clima_adiabat_general, only: make_column
     use clima_const, only: k_boltz
-    class(WaterAdiabatClimate), intent(inout) :: self
+    class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: T_surf !! K
     real(dp), intent(in) :: N_i_surf(:)
     character(:), allocatable, intent(out) :: err
@@ -192,11 +196,11 @@ contains
     allocate(f_i_e(self%nz+1,self%sp%ng))
     allocate(density(self%nz))
     
-    call make_column_water(T_surf, N_i_surf, &
-                           self%sp, self%nz, self%LH2O, self%planet_mass, &
-                           self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                           P_e, z_e, T_e, f_i_e, &
-                           err)
+    call make_column(T_surf, N_i_surf, &
+                     self%sp, self%nz, self%planet_mass, &
+                     self%planet_radius, self%P_top, self%T_trop, self%RH, &
+                     P_e, z_e, T_e, f_i_e, &
+                     err)
     if (allocated(err)) return
     
     do i = 1,self%nz
@@ -217,8 +221,8 @@ contains
     
   end subroutine
   
-  subroutine WaterAdiabatClimate_TOA_fluxes(self, T_surf, P_i_surf, ISR, OLR, err)
-    class(WaterAdiabatClimate), intent(inout) :: self
+  subroutine AdiabatClimate_TOA_fluxes(self, T_surf, P_i_surf, ISR, OLR, err)
+    class(AdiabatClimate), intent(inout) :: self
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), target, intent(in) :: P_i_surf(:)
     real(dp), intent(out) :: ISR, OLR
@@ -240,8 +244,8 @@ contains
     
   end subroutine
 
-  subroutine WaterAdiabatClimate_TOA_fluxes_column(self, T_surf, N_i_surf, ISR, OLR, err)
-    class(WaterAdiabatClimate), intent(inout) :: self
+  subroutine AdiabatClimate_TOA_fluxes_column(self, T_surf, N_i_surf, ISR, OLR, err)
+    class(AdiabatClimate), intent(inout) :: self
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), target, intent(in) :: N_i_surf(:)
     character(:), allocatable, intent(out) :: err    
@@ -263,9 +267,9 @@ contains
 
   end subroutine
   
-  function WaterAdiabatClimate_surface_temperature(self, P_i_surf, T_guess, err) result(T_surf)
+  function AdiabatClimate_surface_temperature(self, P_i_surf, T_guess, err) result(T_surf)
     use minpack_module, only: hybrd1
-    class(WaterAdiabatClimate), intent(inout) :: self
+    class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
     real(dp), optional, intent(in) :: T_guess
     character(:), allocatable, intent(out) :: err
@@ -324,9 +328,9 @@ contains
     
   end function
 
-  function WaterAdiabatClimate_surface_temperature_column(self, N_i_surf, T_guess, err) result(T_surf)
+  function AdiabatClimate_surface_temperature_column(self, N_i_surf, T_guess, err) result(T_surf)
     use minpack_module, only: hybrd1
-    class(WaterAdiabatClimate), intent(inout) :: self
+    class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: N_i_surf(:)
     real(dp), optional, intent(in) :: T_guess
     character(:), allocatable, intent(out) :: err
@@ -386,11 +390,11 @@ contains
     
   end function
 
-  subroutine WaterAdiabatClimate_to_regular_grid(self, err)
+  subroutine AdiabatClimate_to_regular_grid(self, err)
     use futils, only: rebin, interp
     use clima_eqns, only: vertical_grid
     use clima_const, only: k_boltz
-    class(WaterAdiabatClimate), intent(inout) :: self
+    class(AdiabatClimate), intent(inout) :: self
     character(:), allocatable, intent(out) :: err
 
     real(dp), allocatable :: ze(:), ze_new(:)
@@ -457,8 +461,8 @@ contains
   end subroutine
 
 
-  subroutine WaterAdiabatClimate_out2atmosphere_txt(self, filename, eddy, overwrite, clip, err)
-    class(WaterAdiabatClimate), target, intent(inout) :: self
+  subroutine AdiabatClimate_out2atmosphere_txt(self, filename, eddy, overwrite, clip, err)
+    class(AdiabatClimate), target, intent(inout) :: self
     character(len=*), intent(in) :: filename
     real(dp), intent(in) :: eddy(:)
     logical, intent(in) :: overwrite, clip

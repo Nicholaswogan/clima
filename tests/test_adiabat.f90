@@ -1,18 +1,18 @@
 program test
   use clima, only: dp
-  use clima, only: WaterAdiabatClimate
+  use clima, only: AdiabatClimate
   implicit none
   
-  type(WaterAdiabatClimate) :: c
+  type(AdiabatClimate) :: c
   character(:), allocatable :: err
   real(dp) :: T, OLR
   integer :: i
   
-  c = WaterAdiabatClimate('../clima/data', &
-                          '../templates/runaway_greenhouse/species.yaml', &
-                          '../templates/runaway_greenhouse/settings.yaml', &
-                          '../templates/ModernEarth/Sun_now.txt', &
-                          err)
+  c = AdiabatClimate('../clima/data', &
+                     '../templates/runaway_greenhouse/species.yaml', &
+                     '../templates/runaway_greenhouse/settings.yaml', &
+                     '../templates/ModernEarth/Sun_now.txt', &
+                     err)
   if (allocated(err)) then
     print*,err
     stop 1
@@ -47,6 +47,16 @@ program test
   endif
 
   call c%to_regular_grid(err)
+  if (allocated(err)) then
+    print*,err
+    stop 1
+  endif
+
+  ! A case where CO2 will also begin condensing
+  c%T_trop = 150.0_dp
+  call c%make_profile(280.0_dp, &
+      [270.0e6_dp, 10.0e6_dp, 1.0e6_dp], &
+      err=err)
   if (allocated(err)) then
     print*,err
     stop 1

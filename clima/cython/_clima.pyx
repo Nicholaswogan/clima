@@ -10,7 +10,7 @@ include "futils.pyx"
 include "OpticalProperties.pyx"
 include "ClimaRadtranWrk.pyx"
 include "Radtran.pyx"
-include "WaterAdiabatClimate.pyx"
+include "AdiabatClimate.pyx"
 
 # utils
 cdef pystring2cstring(str pystring):

@@ -10,7 +10,7 @@ contains
   include "OpticalProperties.f90"
   include "ClimaRadtranWrk.f90"
   include "Radtran.f90"  
-  include "WaterAdiabatClimate.f90"
+  include "AdiabatClimate.f90"
 
   !!!!!!!!!!!!!!!!!!
   !!! Utilities  !!!
