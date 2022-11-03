@@ -127,21 +127,46 @@ contains
 
     sat%mu = s%get_real('mu',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (sat%mu <= 0.0_dp) then
+      err = 'Saturation "mu" must be positive for species "'//name//'" in "'//filename//'"'
+      return
+    endif
 
     sat%T_ref = s%get_real('T-ref',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (sat%T_ref <= 0.0_dp) then
+      err = 'Saturation "T-ref" must be positive for species "'//name//'" in "'//filename//'"'
+      return
+    endif
 
     sat%P_ref = s%get_real('P-ref',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (sat%P_ref <= 0.0_dp) then
+      err = 'Saturation "P-ref" must be positive for species "'//name//'" in "'//filename//'"'
+      return
+    endif
 
     sat%T_triple = s%get_real('T-triple',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (sat%T_triple <= 0.0_dp) then
+      err = 'Saturation "T_triple" must be positive for species "'//name//'" in "'//filename//'"'
+      return
+    endif
+    if (sat%T_ref <= sat%T_triple) then
+      err = 'Saturation "T-ref" must be bigger than "T-triple" for species "'//name//'" in "'//filename//'"'
+      return
+    endif
 
     sat%T_critical = s%get_real('T-critical',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-
-    sat%T_triple = s%get_real('T-triple',error = io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+    if (sat%T_critical <= 0.0_dp) then
+      err = 'Saturation "T_critical" must be positive for species "'//name//'" in "'//filename//'"'
+      return
+    endif
+    if (sat%T_ref >= sat%T_critical) then
+      err = 'Saturation "T-ref" must be less than "T-critical" for species "'//name//'" in "'//filename//'"'
+      return
+    endif
 
     tmpdict => s%get_dictionary("vaporization",.true.,error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
@@ -166,6 +191,28 @@ contains
 
     sat%C_s = tmpdict%get_real('C',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+
+    ! test evaluations
+    block
+      real(dp) :: L(3), P(3)
+      L(1) = sat%latent_heat(sat%T_triple-1.0e-8_dp)
+      L(2) = sat%latent_heat(sat%T_triple+1.0e-8_dp)
+      L(3) = sat%latent_heat(sat%T_critical-1.0e-8_dp)
+      if (any(L <= 0.0_dp) .or. any(L /= L)) then
+        err = 'Problem with saturation data for species "'//name//'" in "'//filename//'". '// &
+              'Computed latent heats are negative or nan.'
+        return
+      endif
+
+      P(1) = sat%sat_pressure(sat%T_triple-1.0e-8_dp)
+      P(2) = sat%sat_pressure(sat%T_triple+1.0e-8_dp)
+      P(3) = sat%sat_pressure(sat%T_critical-1.0e-8_dp)
+      if (any(P <= 0.0_dp) .or. any(P /= P)) then
+        err = 'Problem with saturation data for species "'//name//'" in "'//filename//'". '// &
+              'Computed saturation vapor pressures are negative or nan.'
+        return
+      endif
+    endblock
 
   end function
 
