@@ -116,6 +116,16 @@ contains
         ! thermodynamics
         call unpack_thermo(element, sp%g(j)%name, filename, sp%g(j)%thermo, err)
         if (allocated(err)) return
+
+        ! saturation data, if it exists. We will generally be probably assuming that
+        ! a gas does not condense, if no saturation data is provided
+        dict => element%get_dictionary("saturation",.false.,error = io_err)
+        if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+        if (associated(dict)) then
+          allocate(sp%g(j)%sat) ! there are saturation properties
+          sp%g(j)%sat = SaturationData(dict, sp%g(j)%name, filename, err)
+          if (allocated(err)) return
+        endif
         
       class default
         err = '"species" in "'//trim(filename)//'" must made of dictionaries.'

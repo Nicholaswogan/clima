@@ -4,6 +4,7 @@ add_subdirectory(dependencies)
 set(BASE_SOURCES
   clima_const.f90
   clima_eqns.f90
+  clima_saturationdata.f90
   clima_eqns_water.f90
   clima_types.f90
   clima_types_create.f90

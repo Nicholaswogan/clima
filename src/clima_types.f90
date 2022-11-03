@@ -1,6 +1,7 @@
 
 module clima_types
   use clima_const, only: dp, s_str_len
+  use clima_saturationdata, only: SaturationData
   implicit none
   public
   
@@ -126,6 +127,7 @@ module clima_types
     
     ! thermodynamics
     type(ThermodynamicData) :: thermo
+    type(SaturationData), allocatable :: sat
     
   end type
   
