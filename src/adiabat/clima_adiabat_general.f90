@@ -9,49 +9,53 @@ module clima_adiabat_general
   public :: make_profile
 
   type :: AdiabatProfileData
-    ! pointers to input data
+    !> Input data
     type(Species), pointer :: sp
     real(dp), pointer :: planet_mass
     real(dp), pointer :: planet_radius
     real(dp), pointer :: P_top
     real(dp), pointer :: T_trop
-    real(dp), pointer :: RH
+    real(dp), pointer :: RH(:)
     real(dp), pointer :: T_surf
-    
-    ! intent(out)
+    !> Ouput
     real(dp), pointer :: P(:)
     real(dp), pointer :: z(:)
     real(dp), pointer :: T(:)
     real(dp), pointer :: f_i(:,:)
 
-    real(dp) :: P_surf
+    real(dp) :: P_surf !! surface pressure from inputs
 
-    ! work
     !> indicates whether species is dry or condensing (length ng)
     integer, allocatable :: sp_type(:)
-    integer :: stopping_reason
+    integer :: stopping_reason !! Reason why we stop integration (see enum below)
+    !> Index of gas that reached saturation if stopping_reason == ReachedGasSaturation
     integer :: ind_gas_reached_saturation
 
-    !> for roots
+    !> Work space for root finding. All length (ng+1)
     real(dp), allocatable :: gout(:)
     real(dp), allocatable :: gout_old(:)
     real(dp), allocatable :: gout_tmp(:)
     logical, allocatable :: root_found(:)
     real(dp), allocatable :: P_roots(:)
-    real(dp) :: P_root
+    !> When we find a root, and exit integration, these
+    !> guys will give use the root
+    real(dp) :: P_root 
     real(dp) :: u_root(2)
 
-    !> dry atmosphere composition
+    !> Keeps track of how the dry atmosphere is partitioned
+    !> between different species
     real(dp), allocatable :: f_i_dry(:)
+
+    !> index for saving T, z and mixing ratios
     integer :: j
 
-    ! work variables all dimension (ng)
+    !> work variables. All dimension (ng)
     real(dp), allocatable :: P_i_cur(:)
     real(dp), allocatable :: f_i_cur(:)
     real(dp), allocatable :: cp_i_cur(:)
-    real(dp), allocatable :: L_i_moist_cur(:)
+    real(dp), allocatable :: L_i_cur(:)
     
-    ! error
+    !> This helps us propogate error messages outside of the integration
     character(:), allocatable :: err
     
   end type
@@ -85,7 +89,7 @@ contains
     type(Species), target, intent(in) :: sp
     integer, intent(in) :: nz
     real(dp), target, intent(in) :: planet_mass, planet_radius
-    real(dp), target, intent(in) :: P_top, T_trop, RH
+    real(dp), target, intent(in) :: P_top, T_trop, RH(:)
 
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
@@ -112,10 +116,10 @@ contains
       err = 'make_profile: Input "T_trop" is less than 0'
       return
     endif
-    ! if (size(RH) /= sp%ng) then
-    !   err = 'make_profile: Input "RH" has the wrong dimension.'
-    !   return
-    ! endif
+    if (size(RH) /= sp%ng) then
+      err = 'make_profile: Input "RH" has the wrong dimension.'
+      return
+    endif
     if (size(P) /= nz+1) then
       err = 'make_profile: Input "P" has the wrong shape'
       return
@@ -158,7 +162,7 @@ contains
     allocate(d%P_i_cur(sp%ng))
     allocate(d%f_i_cur(sp%ng))
     allocate(d%cp_i_cur(sp%ng))
-    allocate(d%L_i_moist_cur(sp%ng))
+    allocate(d%L_i_cur(sp%ng))
 
     do i = 1,d%sp%ng
 
@@ -166,7 +170,7 @@ contains
       P_sat = huge(1.0_dp)
       if (allocated(d%sp%g(i)%sat)) then
         if (T_surf < d%sp%g(i)%sat%T_critical) then
-          P_sat = d%RH*d%sp%g(i)%sat%sat_pressure(T_surf)
+          P_sat = d%RH(i)*d%sp%g(i)%sat%sat_pressure(T_surf)
         endif
       endif
 
@@ -209,7 +213,6 @@ contains
     integer :: i, idid
     real(dp) :: Pn, u(2)
     character(6) :: tmp_char
-    real(dp) :: f_dry
 
     call dop%initialize(fcn=right_hand_side_dop, solout=solout_dop, n=2, &
                         iprint=0, icomp=[1,2], status_ok=status_ok)
@@ -223,9 +226,10 @@ contains
       err = 'dop853 initialization failed'
       return
     endif
+
+    ! intial conditions
     u = [d%T_surf, 0.0_dp]
     Pn = d%P_surf
-
     do
       call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-9_dp], iout=2, idid=idid)
       if (allocated(d%err)) then
@@ -241,7 +245,8 @@ contains
       if (d%stopping_reason == ReachedPtop .or. &
           d%stopping_reason == ReachedTropopause) then
         exit
-      elseif (d%stopping_reason == ReachedGasSaturation) then
+      elseif (d%stopping_reason == ReachedGasSaturation) then; block
+        real(dp) :: f_dry
 
         Pn = d%P_root
         u = d%u_root
@@ -249,14 +254,15 @@ contains
         d%sp_type(d%ind_gas_reached_saturation) = CondensingSpeciesType
         call update_f_i_dry(d, Pn, d%f_i_cur)
         d%stopping_reason = ReachedPtop
-      endif
+
+      endblock; endif
 
     enddo
 
     if (d%stopping_reason == ReachedPtop) then
       ! Nothing to do.
     elseif (d%stopping_reason == ReachedTropopause) then; block
-      real(dp) :: mubar
+      real(dp) :: mubar, f_dry
 
       call mixing_ratios(d, d%P_root, d%u_root(1), d%f_i_cur, f_dry)
 
@@ -348,7 +354,7 @@ contains
       
     endblock; endif
 
-    d%gout_old(:) = d%gout(:)
+    d%gout_old(:) = d%gout(:) ! save for next step
 
     ! save the results
     if (d%j <= size(d%P)) then
@@ -421,7 +427,7 @@ contains
       P_sat = huge(1.0_dp)
       if (allocated(d%sp%g(i)%sat)) then
         if (T < d%sp%g(i)%sat%T_critical) then
-          P_sat = d%RH*d%sp%g(i)%sat%sat_pressure(T)
+          P_sat = d%RH(i)*d%sp%g(i)%sat%sat_pressure(T)
         endif
       endif
 
@@ -483,7 +489,7 @@ contains
     f_moist = 0.0_dp
     do i = 1,d%sp%ng
       if (d%sp_type(i) == CondensingSpeciesType) then
-        f_i_layer(i) = d%RH*d%sp%g(i)%sat%sat_pressure(T)/P
+        f_i_layer(i) = d%RH(i)*d%sp%g(i)%sat%sat_pressure(T)/P
         f_moist = f_moist + f_i_layer(i)
       endif
     enddo
@@ -509,10 +515,8 @@ contains
 
     real(dp) :: T, z
 
-    real(dp) :: f_dry
-    real(dp) :: cp, cp_dry
-    real(dp) :: mubar, mubar_dry
-    real(dp) :: L
+    real(dp) :: f_dry, cp_dry, mubar_dry
+    real(dp) :: cp, mubar, L
     real(dp) :: first_sumation, second_sumation, Beta_i
     real(dp) :: grav
     real(dp) :: dlnT_dlnP, dT_dP, dz_dP
@@ -539,10 +543,10 @@ contains
       if (d%sp_type(i) == CondensingSpeciesType) then
         L = d%sp%g(i)%sat%latent_heat(T) ! erg/g
         L = L*d%sp%g(i)%mass*1.0e-7_dp ! convert to J/mol
-        d%L_i_moist_cur(i) = L
+        d%L_i_cur(i) = L
       endif
       
-      ! J/(mol*K)
+      ! heat capacity in J/(mol*K)
       call heat_capacity_eval(d%sp%g(i)%thermo, T, found, cp)
       if (.not. found) then
         d%err = "Failed to compute heat capacity"
@@ -550,7 +554,7 @@ contains
       endif
       d%cp_i_cur(i) = cp
       if (d%sp_type(i) == DrySpeciesType) then
-        ! J/(kg*K)
+        ! Here, we convert to J/(kg*K)
         cp_dry = cp_dry + d%f_i_dry(i)*cp*(1.0_dp/(d%sp%g(i)%mass*1.0e-3_dp))
         mubar_dry = mubar_dry + d%f_i_dry(i)*d%sp%g(i)%mass
       endif
@@ -562,7 +566,7 @@ contains
     second_sumation = 0.0_dp
     do i = 1,d%sp%ng
       if (d%sp_type(i) == CondensingSpeciesType) then
-        Beta_i = d%L_i_moist_cur(i)/(Rgas_si*T)
+        Beta_i = d%L_i_cur(i)/(Rgas_si*T)
         first_sumation = first_sumation + &
           d%f_i_cur(i)*(d%cp_i_cur(i) - Rgas_si*Beta_i + Rgas_si*Beta_i**2.0_dp)
 
@@ -587,6 +591,7 @@ contains
 
   end subroutine
 
+  !> Analytical function for the alitude vs height for constant T and mubar.
   pure function altitude_vs_P(P, T, mubar, P0, z0, planet_mass, planet_radius) result(z)
     use clima_const, only: k_boltz, N_avo
     real(dp), intent(in) :: P
