@@ -27,9 +27,13 @@ module clima_adiabat
     ! Radiative transfer
     type(Radtran) :: rad
     
-    ! work variables
-    real(dp), allocatable :: P(:), T(:), f_i(:,:), z(:), dz(:)
-    real(dp), allocatable :: densities(:,:)
+    ! State of the atmosphere
+    real(dp), allocatable :: P(:) !! pressure in each grid cell, dynes/cm^2 (nz)
+    real(dp), allocatable :: T(:) !! Temperature in each grid cell, K (nz) 
+    real(dp), allocatable :: f_i(:,:) !! mixing ratios of species in each grid cell (nz,ng)
+    real(dp), allocatable :: z(:) !! Altitude at the center of the grid cell, cm (nz)
+    real(dp), allocatable :: dz(:) !! Thickness of each grid cell, cm (nz)
+    real(dp), allocatable :: densities(:,:) !! densities in each grid cell, molecules/cm^2 (nz,ng)
     
   contains
     procedure :: make_profile => AdiabatClimate_make_profile
@@ -459,7 +463,6 @@ contains
     self%densities(:,:) = densities_new(:,:)
 
   end subroutine
-
 
   subroutine AdiabatClimate_out2atmosphere_txt(self, filename, eddy, overwrite, clip, err)
     class(AdiabatClimate), target, intent(inout) :: self
