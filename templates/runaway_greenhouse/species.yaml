@@ -4,15 +4,19 @@ atoms:
 - {name: O, mass: 15.9994}
 - {name: C, mass: 12.011}
 
+# List of species that are in the model
 species:
 - name: H2O
   composition: {H: 2, O: 1}
+  # thermodynamic data (required)
   thermo:
     model: Shomate
     temperature-ranges: [0.0, 1700.0, 6000.0]
     data:
     - [30.092, 6.832514, 6.793435, -2.53448, 0.082139, -250.881, 223.3967]
     - [41.96426, 8.622053, -1.49978, 0.098119, -11.15764, -272.1797, 219.7809]
+  # The `saturation` key is optional. If you omit it, then the model assumes that the species
+  # never condenses
   saturation:
     model: Wogan
     mu: 18.01534

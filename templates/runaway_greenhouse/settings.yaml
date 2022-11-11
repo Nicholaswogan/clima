@@ -1,22 +1,51 @@
 
 atmosphere-grid:
-  number-of-layers: 100
+  number-of-layers: 100 # number of atmospheric layers
   
 planet:
-  planet-mass: 5.972e27
-  planet-radius: 6.371e8
-  solar-zenith-angle: 60
+  planet-mass: 5.972e27 # grams
+  planet-radius: 6.371e8 # cm
+  solar-zenith-angle: 60 # degrees
   surface-albedo: 0.25
   
+# This dictionary sets all optical properties. Separate optical properties
+# are set for IR vs. solar wavelengths
 optical-properties:
   ir:
+    # `k-method` is the method for mixing k-distributions. Options are
+    #
+    # k-method: RandomOverlap
+    # k-method: RandomOverlapResortRebin
+    # k-method: AdaptiveEquivalentExtinction
+    # 
+    # These methods are explained in Amundsen et al. (2017) (DOI: 10.1051/0004-6361/201629322).
     k-method: RandomOverlapResortRebin
+
+    # If you choose method RandomOverlapResortRebin, then you must supply
+    # `number-of-bins`, which is the number of bins the method rebins to
     number-of-bins: 16
+
+    # Here you specify opacites. You can see avaliable opacities by looking in
+    # `clima/data/` folder. `CIA`, `rayleigh`, `photolysis-xs` and `water-continuum`
+    # are optional. If you omit these keys then these opacities will not be included.
+    # `k-distributions` is a required key for now.
     opacities:
+     # k-distributions
       k-distributions: [H2O, CO2]
+
+      # CIA opacities
       CIA: [CO2-CO2, N2-N2]
+
+      # Rayleigh scattering. You can optionally do
+      # rayleigh: true
+      # which activates all possible rayleigh species
       rayleigh: [H2O, CO2, N2]
-      water-continuum: MT_CKD
+
+      # Potolysis cross sections. Specify true/false or a list of species
+      photolysis-xs: false
+
+      # MT_CKD H2O continuum.
+      water-continuum: MT_CKD 
   solar:
     k-method: RandomOverlapResortRebin
     number-of-bins: 16
