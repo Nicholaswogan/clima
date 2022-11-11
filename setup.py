@@ -28,6 +28,7 @@ setup(
     url = "https://github.com/Nicholaswogan/clima",
     include_package_data=True,
     cmake_args=['-DSKBUILD=ON',\
+                '-DCMAKE_BUILD_TYPE=Release',\
                 '-DBUILD_PYTHON_CLIMA=ON',\
                 '-DBUILD_EXECUTABLES=OFF',\
                 '-DBUILD_WITH_OPENMP=ON']
