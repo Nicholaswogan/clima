@@ -79,7 +79,7 @@ contains
   subroutine make_column(T_surf, N_i_surf, &
                          sp, nz, planet_mass, &
                          planet_radius, P_top, T_trop, RH, &
-                         P, z, T, f_i, &
+                         P, z, T, f_i, N_surface, &
                          err)
     use minpack_module, only: hybrd1
     use clima_useful, only: MinpackHybrd1Vars
@@ -95,10 +95,11 @@ contains
 
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
+    real(dp), target, intent(out) :: N_surface(:) ! (ng)
     character(:), allocatable, intent(out) :: err
 
     integer :: i, j
-    real(dp) :: grav, P_sat, P_ocean, N_ocean
+    real(dp) :: grav, P_sat, P_ocean
     real(dp), allocatable :: P_av(:), T_av(:), density_av(:), f_i_av(:,:), dz(:)
     real(dp), allocatable :: N_i(:), P_i(:)
     integer, allocatable :: sp_type(:)
@@ -144,7 +145,7 @@ contains
       call make_profile(T_surf, P_i, &
                         sp, nz, planet_mass, &
                         planet_radius, P_top, T_trop, RH, &
-                        P, z, T, f_i, &
+                        P, z, T, f_i, N_surface, &
                         err)
       if (allocated(err)) then
         iflag_ = -1
@@ -187,9 +188,12 @@ contains
           ! Figure out the "pressure" of the ocean
           P_ocean = P_i(i) - P(1)*f_i(1,i)
           ! convert to a column (moles/cm2)
-          N_ocean = P_ocean/(sp%g(i)%mass*grav)
+          N_surface(i) = P_ocean/(sp%g(i)%mass*grav)
           ! Add the ocean to the H2O column in the atmosphere
-          N_i(i) = N_i(i) + N_ocean
+          N_i(i) = N_i(i) + N_surface(i)
+        else if (sp_type(i) == DrySpeciesType) then
+          ! nothing on the surface
+          N_surface(i) = 0.0_dp
         endif
       enddo
 
@@ -199,14 +203,13 @@ contains
     end subroutine
   end subroutine
 
-
-
   subroutine make_profile(T_surf, P_i_surf, &
                           sp, nz, planet_mass, &
                           planet_radius, P_top, T_trop, RH, &
-                          P, z, T, f_i, &
+                          P, z, T, f_i, N_surface, &
                           err)
     use futils, only: linspace
+    use clima_eqns, only: gravity
 
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), intent(in) :: P_i_surf(:) !! (ng) dynes/cm2
@@ -218,11 +221,12 @@ contains
 
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
+    real(dp), target, intent(out) :: N_surface(:)
     character(:), allocatable, intent(out) :: err
 
     type(AdiabatProfileData) :: d
     integer :: i
-    real(dp) :: P_sat
+    real(dp) :: P_sat, grav, P_ocean
 
     ! check inputs
     if (T_surf < T_trop) then
@@ -261,6 +265,10 @@ contains
       err = 'make_profile: Input "f_i" has the wrong shape'
       return
     endif
+    if (size(N_surface) /= sp%ng) then
+      err = 'make_profile: Input "N_surface" has the wrong dimension.'
+      return
+    endif
 
     ! associate
     ! inputs
@@ -289,6 +297,9 @@ contains
     allocate(d%cp_i_cur(sp%ng))
     allocate(d%L_i_cur(sp%ng))
 
+    ! gravity at the surface of planet
+    grav = gravity(planet_radius, planet_mass, 0.0_dp)
+
     do i = 1,d%sp%ng
 
       ! compute saturation vapor pressures
@@ -302,9 +313,15 @@ contains
       ! determine if species are condensing, or not
       if (P_i_surf(i) > P_sat) then
         d%P_i_cur(i) = P_sat
+        ! the pressure of the ocean is everything not in the atmosphere
+        P_ocean = P_i_surf(i) - P_sat 
+        ! The surface mol/cm^2 can then be computed
+        ! from the "surface pressure"
+        N_surface(i) = P_ocean/(sp%g(i)%mass*grav)
         d%sp_type(i) = CondensingSpeciesType
       else
         d%P_i_cur(i) = P_i_surf(i)
+        N_surface(i) = 0.0_dp ! no surface reservoir if not condensing at the surface
         d%sp_type(i) = DrySpeciesType
       endif
     enddo

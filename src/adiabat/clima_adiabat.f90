@@ -34,6 +34,7 @@ module clima_adiabat
     real(dp), allocatable :: z(:) !! Altitude at the center of the grid cell, cm (nz)
     real(dp), allocatable :: dz(:) !! Thickness of each grid cell, cm (nz)
     real(dp), allocatable :: densities(:,:) !! densities in each grid cell, molecules/cm^2 (nz,ng)
+    real(dp), allocatable :: N_surface(:) !! reservoir of gas on surface mol/cm^2 (ng)
     
   contains
     procedure :: make_profile => AdiabatClimate_make_profile
@@ -129,6 +130,7 @@ contains
     ! allocate work variables
     allocate(c%P(c%nz), c%T(c%nz), c%f_i(c%nz,c%sp%ng), c%z(c%nz), c%dz(c%nz))
     allocate(c%densities(c%nz,c%sp%ng))
+    allocate(c%N_surface(c%sp%ng))
     
   end function
   
@@ -156,7 +158,7 @@ contains
     call make_profile(T_surf, P_i_surf, &
                       self%sp, self%nz, self%planet_mass, &
                       self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                      P_e, z_e, T_e, f_i_e, &
+                      P_e, z_e, T_e, f_i_e, self%N_surface, &
                       err)
     if (allocated(err)) return
 
@@ -203,7 +205,7 @@ contains
     call make_column(T_surf, N_i_surf, &
                      self%sp, self%nz, self%planet_mass, &
                      self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                     P_e, z_e, T_e, f_i_e, &
+                     P_e, z_e, T_e, f_i_e, self%N_surface, &
                      err)
     if (allocated(err)) return
     

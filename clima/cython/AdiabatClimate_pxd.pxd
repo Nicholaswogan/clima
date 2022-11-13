@@ -64,6 +64,9 @@ cdef extern void adiabatclimate_dz_get(void *ptr, int *dim1, double *arr)
 cdef extern void adiabatclimate_densities_get_size(void *ptr, int *dim1, int *dim2)
 cdef extern void adiabatclimate_densities_get(void *ptr, int *dim1, int *dim2, double *arr)
 
+cdef extern void adiabatclimate_n_surface_get_size(void *ptr, int *dim1)
+cdef extern void adiabatclimate_n_surface_get(void *ptr, int *dim1, double *arr)
+
 cdef extern void adiabatclimate_rad_get(void *ptr, void *ptr1)
 
 

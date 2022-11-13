@@ -195,6 +195,14 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_densities_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr
 
+  property N_surface:
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.adiabatclimate_n_surface_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.adiabatclimate_n_surface_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+
 
 
 
