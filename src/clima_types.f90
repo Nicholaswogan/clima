@@ -49,6 +49,7 @@ module clima_types
     real(dp), allocatable :: surface_albedo
     real(dp), allocatable :: diurnal_fac
     real(dp), allocatable :: solar_zenith
+    real(dp) :: photon_scale_factor
     
     ! optical-properties
     character(:), allocatable :: wavelength_bins_file

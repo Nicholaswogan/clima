@@ -303,7 +303,7 @@ contains
 
     ! photons hitting the planet
     allocate(rad%photons_sol(rad%sol%nw))
-    call read_stellar_flux(star_f, rad%sol%nw, rad%sol%wavl, rad%photons_sol, err)
+    call read_stellar_flux(star_f, rad%sol%nw, rad%sol%wavl, s%photon_scale_factor, rad%photons_sol, err)
     if (allocated(err)) return
 
     ! IR work arrays

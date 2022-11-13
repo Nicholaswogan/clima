@@ -417,77 +417,6 @@ contains
     
   end subroutine
   
-  subroutine read_stellar_flux(star_file, nw, wavl, photon_flux, err)
-    use futils, only: inter2, addpnt
-    use clima_const, only: c_light, plank
-    
-    character(len=*), intent(in) :: star_file
-    integer, intent(in) :: nw
-    real(dp), intent(in) :: wavl(nw+1)
-    real(dp), intent(out) :: photon_flux(nw)
-    character(:), allocatable, intent(out) :: err
-    
-    real(dp), allocatable :: file_wav(:), file_flux(:)
-    real(dp) :: flux(nw)
-    real(dp) :: dum1, dum2, wavl_av
-    integer :: io, i, n, ierr
-    real(dp), parameter :: rdelta = 1.0e-4_dp
-    
-    open(1,file=star_file,status='old',iostat=io)
-    if (io /= 0) then
-      err = "The input file "//star_file//' does not exist.'
-      return
-    endif
-    
-    ! count lines
-    n = -1 
-    read(1,*)
-    do while (io == 0)
-      read(1,*,iostat=io) dum1, dum2
-      n = n + 1
-    enddo
-    
-    allocate(file_wav(n+4), file_flux(n+4))
-    
-    ! read data
-    rewind(1)
-    read(1,*)
-    do i = 1,n
-      read(1,*,iostat=io) file_wav(i), file_flux(i)
-      if (io /= 0) then
-        err = "Problem reading "//star_file
-        return
-      endif
-    enddo
-    close(1)
-    
-    i = n
-    ! interpolate 
-    call addpnt(file_wav, file_flux, n+4, i, file_wav(1)*(1.0_dp-rdelta), 0.0_dp, ierr)
-    call addpnt(file_wav, file_flux, n+4, i, 0.0_dp, 0.0_dp, ierr)
-    call addpnt(file_wav, file_flux, n+4, i, file_wav(i)*(1.0_dp+rdelta), 0.0_dp,ierr)
-    call addpnt(file_wav, file_flux, n+4, i, huge(rdelta), 0.0_dp,ierr)
-    if (ierr /= 0) then
-      err = "Problem interpolating "//trim(star_file)
-      return
-    endif
-
-    call inter2(nw+1, wavl, flux, n+4, file_wav, file_flux, ierr)
-    if (ierr /= 0) then
-      err = "Problem interpolating "//trim(star_file)
-      return
-    endif
-
-    ! flux is mW/m2/nm
-    ! convert to mW/m2/Hz
-    ! I use the wavelength average in each bin.
-    do i = 1,nw
-      wavl_av = 0.5_dp*(wavl(i) + wavl(i+1))
-      photon_flux(i) = flux(i)*(((wavl_av*1.0e-9_dp)*wavl_av)/c_light)
-    enddo
-
-  end subroutine
-  
   module function create_ClimaSettings(filename, err) result(s)
     use fortran_yaml_c, only : YamlFile
     character(*), intent(in) :: filename
@@ -564,6 +493,8 @@ contains
     character(:), allocatable, intent(out) :: err
     
     type (type_error), allocatable :: io_err
+    type(type_scalar), pointer :: scalar
+    logical :: success
     real(dp) :: tmp
     
     ! required
@@ -571,20 +502,26 @@ contains
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     
     ! not required
-    tmp = grid%get_real('bottom', error = io_err)
-    if (.not. allocated(io_err)) then
+    scalar => grid%get_scalar('bottom',required=.false.,error = io_err)
+    if (associated(scalar)) then
+      tmp = scalar%to_real(0.0_dp, success)
+      if (.not. success) then
+        err = 'Failed to convert "bottom" to a real in "'//filename//'"'
+        return
+      endif
       allocate(s%bottom)
       s%bottom = tmp
-    else
-      deallocate(io_err)
     endif
     
-    tmp = grid%get_real('top', error = io_err)
-    if (.not. allocated(io_err)) then
+    scalar => grid%get_scalar('top',required=.false.,error = io_err)
+    if (associated(scalar)) then
+      tmp = scalar%to_real(0.0_dp, success)
+      if (.not. success) then
+        err = 'Failed to convert "top" to a real in "'//filename//'"'
+        return
+      endif
       allocate(s%top)
       s%top = tmp
-    else
-      deallocate(io_err)
     endif
     
   end subroutine
@@ -597,27 +534,28 @@ contains
     
     type (type_error), allocatable :: io_err
     real(dp) :: tmp
-    character(:), allocatable :: tmp_str
+    type(type_scalar), pointer :: scalar
+    logical :: success
     
     ! not required
-    tmp_str = planet%get_string("background-gas", error=io_err)
-    if (.not. allocated(io_err)) then
-      s%back_gas_name = trim(tmp_str)
-      deallocate(tmp_str)
-    else
-      deallocate(io_err)
+    scalar => planet%get_scalar('background-gas',required=.false.,error = io_err)
+    if (associated(scalar)) then
+      s%back_gas_name = scalar%string
     endif
     
-    tmp = planet%get_real('surface-pressure',error = io_err)
-    if (.not. allocated(io_err)) then
+    scalar => planet%get_scalar('surface-pressure',required=.false.,error = io_err)
+    if (associated(scalar)) then
+      tmp = scalar%to_real(0.0_dp, success)
+      if (.not. success) then
+        err = 'Failed to convert "surface-pressure" to a real in "'//filename//'"'
+        return
+      endif
       allocate(s%P_surf)
       s%P_surf = tmp
       if (s%P_surf <= 0.0_dp) then
         err = 'IOError: Planet surface pressure must be greater than zero.'
         return
       endif
-    else
-      deallocate(io_err)
     endif
     
     ! required
@@ -635,42 +573,54 @@ contains
     endif
     
     ! not required
-    tmp = planet%get_real('surface-albedo',error = io_err)
-    if (.not. allocated(io_err)) then
+    scalar => planet%get_scalar('surface-albedo',required=.false.,error = io_err)
+    if (associated(scalar)) then
+      tmp = scalar%to_real(0.0_dp, success)
+      if (.not. success) then
+        err = 'Failed to convert "surface-albedo" to a real in "'//filename//'"'
+        return
+      endif
       allocate(s%surface_albedo)
       s%surface_albedo = tmp
       if (s%surface_albedo < 0.0_dp) then
         err = 'IOError: Surface albedo must be greater than zero.'
         return
       endif
-    else
-      deallocate(io_err)
     endif
     
-    tmp = planet%get_real('diurnal-averaging-factor',error = io_err)
-    if (.not. allocated(io_err)) then
+    scalar => planet%get_scalar('diurnal-averaging-factor',required=.false.,error = io_err)
+    if (associated(scalar)) then
+      tmp = scalar%to_real(0.0_dp, success)
+      if (.not. success) then
+        err = 'Failed to convert "diurnal-averaging-factor" to a real in "'//filename//'"'
+        return
+      endif
       allocate(s%diurnal_fac)
       s%diurnal_fac = tmp
       if (s%diurnal_fac < 0.0_dp .or. s%diurnal_fac > 1.0_dp) then
         err = 'IOError: diurnal-averaging-factor must be between 0 and 1.'
         return
       endif
-    else
-      deallocate(io_err)
     endif
     
-    tmp = planet%get_real('solar-zenith-angle',error = io_err)
-    if (.not. allocated(io_err)) then
+    scalar => planet%get_scalar('solar-zenith-angle',required=.false.,error = io_err)
+    if (associated(scalar)) then
+      tmp = scalar%to_real(0.0_dp, success)
+      if (.not. success) then
+        err = 'Failed to convert "solar-zenith-angle" to a real in "'//filename//'"'
+        return
+      endif
       allocate(s%solar_zenith)
       s%solar_zenith = tmp
       if (s%solar_zenith < 0.0_dp .or. s%solar_zenith > 90.0_dp) then
         err = 'IOError: solar zenith must be between 0 and 90.'
         return
       endif
-    else
-      deallocate(io_err)
     endif
-    
+
+    s%photon_scale_factor = planet%get_real('photon-scale-factor', default=1.0_dp, error=io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+
   end subroutine
   
   subroutine unpack_settingsopticalproperties(op_prop, filename, s, err)
@@ -771,6 +721,7 @@ contains
     type(type_list), pointer :: tmp
     class(type_node), pointer :: node
     type(type_dictionary), pointer :: opacities
+    type(type_scalar), pointer :: scalar
     type (type_error), allocatable :: io_err
     integer :: ind, tmp_int
     logical :: success
@@ -788,13 +739,15 @@ contains
 
       ! k-distribution settings
       ! ability to rebin k-coefficients in the files, before any calculations
-      tmp_int = op_dict%get_integer("new-num-k-bins", error=io_err)
-      if (allocated(io_err)) then
-        deallocate(io_err)
-      else
+      scalar => op_dict%get_scalar('new-num-k-bins',required=.false.,error = io_err)
+      if (associated(scalar)) then
+        tmp_int = scalar%to_integer(0, success)
+        if (.not. success) then
+          err = 'Failed to convert "new-num-k-bins" to a real in "'//filename//'"'
+          return
+        endif
         allocate(op%new_num_k_bins)
         op%new_num_k_bins = tmp_int
-
         if (op%new_num_k_bins < 1) then
           err = '"new-num-k-bins" in "'//filename//'" must be bigger than 0.'
           return

@@ -220,10 +220,11 @@ module clima_radtran_types
   
   ! for reading the stellar flux
   interface
-    module subroutine read_stellar_flux(star_file, nw, wavl, photon_flux, err)
+    module subroutine read_stellar_flux(star_file, nw, wavl, photon_scale_factor, photon_flux, err)
       character(len=*), intent(in) :: star_file
       integer, intent(in) :: nw
       real(dp), intent(in) :: wavl(nw+1)
+      real(dp), intent(in) :: photon_scale_factor
       real(dp), intent(out) :: photon_flux(nw)
       character(:), allocatable, intent(out) :: err
     end subroutine
