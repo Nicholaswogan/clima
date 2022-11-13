@@ -7,6 +7,11 @@ planet:
   planet-radius: 6.371e8 # cm
   solar-zenith-angle: 60 # degrees
   surface-albedo: 0.25
+  # Optionally include `photon-scale-factor`. The stellar flux
+  # is scaled by this factor. This is useful for modeling
+  # different planets in the same solar system. Default value is 1.0 (no scaling).
+  # photon-scale-factor: 0.4286 # Mars
+  # photon-scale-factor: 1.913 # Venus
   
 # This dictionary sets all optical properties. Separate optical properties
 # are set for IR vs. solar wavelengths
