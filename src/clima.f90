@@ -1,5 +1,8 @@
 
 module clima
+  ! version
+  use clima_version, only: version
+
   ! constants that matter
   use clima_const, only: dp, s_str_len 
 

@@ -2,6 +2,7 @@
 add_subdirectory(dependencies)
 
 set(BASE_SOURCES
+  ${CMAKE_BINARY_DIR}/clima_version.f90
   clima_const.f90
   clima_useful.f90
   clima_eqns.f90
