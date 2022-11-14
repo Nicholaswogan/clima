@@ -83,7 +83,8 @@ contains
     character(:), allocatable :: err
     
     integer :: nz, i
-    real(dp) :: solar_zenith, surface_albedo, T_shift
+    integer :: num_zeniths
+    real(dp) :: surface_albedo, T_shift
     real(dp), allocatable :: T(:), P(:), densities(:,:), mix(:,:), dz(:), z(:), density(:)
     real(dp), allocatable :: pdensities(:,:), radii(:,:)
     
@@ -95,10 +96,10 @@ contains
   
     nz = size(atm%columns(1,:))
 
-    solar_zenith = 60.0_dp
+    num_zeniths = 8
     surface_albedo = 0.15_dp
     rad = Radtran("../clima/data","../templates/ModernEarth/settings.yaml",&
-    "../templates/ModernEarth/Sun_now.txt", solar_zenith, surface_albedo, nz, err)
+    "../templates/ModernEarth/Sun_now.txt", num_zeniths, surface_albedo, nz, err)
     if (allocated(err)) then
       print*,err
       stop 1

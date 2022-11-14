@@ -124,7 +124,7 @@ contains
     
     ! make IR radiative transfer with list of species, from species file
     ! and the optical-properties from the settings file
-    c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, s%solar_zenith, s%surface_albedo, c%nz, err)
+    c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, 1, s%surface_albedo, c%nz, err)
     if (allocated(err)) return
 
     ! allocate work variables

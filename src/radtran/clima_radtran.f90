@@ -76,7 +76,8 @@ module clima_radtran
     type(OpticalProperties) :: sol
     
     real(dp) :: diurnal_fac = 0.5_dp
-    real(dp) :: solar_zenith
+    real(dp), allocatable :: zenith_u(:) ! cos(zenith_angle)
+    real(dp), allocatable :: zenith_weights(:) ! 
     real(dp) :: surface_albedo
     real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2/Hz in each bin  
 
@@ -191,7 +192,8 @@ contains
     if (allocated(err)) return
                                          
     ierr = radiate(self%ir, &
-                   0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
+                   0.0_dp, 0.0_dp, [0.0_dp], &
+                   [0.0_dp], [1.0_dp], &
                    P, T_surface, T, densities, dz, &
                    pdensities, radii, &
                    wrk%rx, wrk%rz, &
@@ -226,13 +228,14 @@ contains
   !!! IR and Solar Radiative Transfer !!!
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-  function create_Radtran_1(datadir, settings_f, star_f, solar_zenith, surface_albedo, nz, err) result(rad)
+  function create_Radtran_1(datadir, settings_f, star_f, num_zenith_angles, surface_albedo, nz, err) result(rad)
     use clima_types, only: ClimaSettings
     
     character(*), intent(in) :: datadir
     character(*), intent(in) :: settings_f
     character(*), intent(in) :: star_f
-    real(dp), intent(in) :: solar_zenith, surface_albedo
+    integer, intent(in) :: num_zenith_angles
+    real(dp), intent(in) :: surface_albedo
     integer, intent(in) :: nz
     character(:), allocatable, intent(out) :: err
     
@@ -250,22 +253,26 @@ contains
 
     if (.not. allocated(s%particles)) allocate(s%particles(0))
     
-    rad = create_Radtran_2(datadir, s%gases, s%particles, s, star_f, solar_zenith, surface_albedo, nz, err)
+    rad = create_Radtran_2(datadir, s%gases, s%particles, s, star_f, num_zenith_angles, surface_albedo, nz, err)
     if (allocated(err)) return
     
   end function
   
-  function create_Radtran_2(datadir, species_names, particle_names, s, star_f, solar_zenith, surface_albedo, nz, err) result(rad)
+  function create_Radtran_2(datadir, species_names, particle_names, s, star_f, &
+                            num_zenith_angles, surface_albedo, nz, err) result(rad)
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties, &
                                    read_stellar_flux
     use clima_types, only: ClimaSettings
+    use clima_eqns, only: zenith_angles_and_weights
+    use clima_const, only: pi
     
     character(*), intent(in) :: datadir
     character(*), intent(in) :: species_names(:)
     character(*), intent(in) :: particle_names(:)
     type(ClimaSettings), intent(in) :: s
     character(*), intent(in) :: star_f
-    real(dp), intent(in) :: solar_zenith, surface_albedo
+    integer, intent(in) :: num_zenith_angles
+    real(dp), intent(in) :: surface_albedo
     integer, intent(in) :: nz
     character(:), allocatable, intent(out) :: err
     
@@ -284,7 +291,11 @@ contains
     endif
     rad%nz = nz
 
-    rad%solar_zenith = solar_zenith
+    allocate(rad%zenith_u(num_zenith_angles))
+    allocate(rad%zenith_weights(num_zenith_angles))
+    call zenith_angles_and_weights(num_zenith_angles, rad%zenith_u, rad%zenith_weights)
+    rad%zenith_u = cos(rad%zenith_u*pi/180.0_dp)
+
     rad%surface_albedo = surface_albedo
     
     if (.not. allocated(s%ir)) then
@@ -339,8 +350,7 @@ contains
     real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:)
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
     character(:), allocatable, intent(out) :: err
-    
-    real(dp) :: u0
+
     integer :: ierr
 
     type(ClimaRadtranWrk), pointer :: wrk_ir
@@ -354,7 +364,8 @@ contains
 
     ! IR radiative transfer                                     
     ierr = radiate(self%ir, &
-                  0.0_dp, 0.0_dp, 0.0_dp, [0.0_dp], &
+                  0.0_dp, 0.0_dp, [0.0_dp], &
+                  [0.0_dp], [1.0_dp], &
                   P, T_surface, T, densities, dz, &
                   pdensities, radii, &
                   wrk_ir%rx, wrk_ir%rz, &
@@ -364,9 +375,9 @@ contains
       return
     endif
     ! Solar radiative transfer
-    u0 = cos(self%solar_zenith*pi/180.0_dp)
     ierr = radiate(self%sol, &
-                   self%surface_albedo, u0, self%diurnal_fac, self%photons_sol, &
+                   self%surface_albedo, self%diurnal_fac, self%photons_sol, &
+                   self%zenith_u, self%zenith_weights, &
                    P, T_surface, T, densities, dz, &
                    pdensities, radii, &
                    wrk_sol%rx, wrk_sol%rz, &

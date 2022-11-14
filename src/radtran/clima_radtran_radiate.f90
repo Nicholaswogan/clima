@@ -8,15 +8,16 @@ module clima_radtran_radiate
 contains
   
   
-  !! Does Solar or IR radiative transfer, depending on value of 
-  !! `op%op_type`. `u0`, `diurnal_fac` and `photons_sol` are all
-  !! only used during Solar radiative transfer.
+  !> Does Solar or IR radiative transfer, depending on value of 
+  !> `op%op_type`. `u0`, `diurnal_fac` and `photons_sol` are all
+  !> only used during Solar radiative transfer.
   function radiate(op, &
-                     surface_albedo, u0, diurnal_fac, photons_sol, &
-                     P, T_surface, T, densities, dz, &
-                     pdensities, radii, &
-                     rw, rz, &
-                     fup_a, fdn_a, fup_n, fdn_n) result(ierr)
+                   surface_albedo, diurnal_fac, photons_sol, &
+                   zenith_u, zenith_weights, &
+                   P, T_surface, T, densities, dz, &
+                   pdensities, radii, &
+                   rw, rz, &
+                   fup_a, fdn_a, fup_n, fdn_n) result(ierr)
     use clima_radtran_types, only: RadiateXSWrk, RadiateZWrk, Ksettings
     use clima_radtran_types, only: OpticalProperties, Kcoefficients
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
@@ -27,9 +28,13 @@ contains
     type(OpticalProperties), target, intent(inout) :: op !! Optical properties
   
     real(dp), intent(in) :: surface_albedo !! Surface albedo (Needed only for solar)
-    real(dp), intent(in) :: u0 !! Cosine of solar zenith angle (Needed only for solar)
     real(dp), intent(in) :: diurnal_fac !! Diurnal averaging factor (0.5) (Needed only for solar)
     real(dp), intent(in) :: photons_sol(:) !! (nw) Average solar flux in each bin (mW/m2/Hz) (Needed only for solar)
+
+    real(dp), intent(in) :: zenith_u(:) !! cos(zenith angles) to average stellar flux over.
+                                        !! SHOULD BE SIZE 1 array for IR with any value.
+    real(dp), intent(in) :: zenith_weights(:) !! Weights for integrating over zenith angle. 
+                                              !! SHOULD BE SIZE 1 array for IR equal to 1.0.
   
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
     real(dp), intent(in) :: T_surface !! Surface Tempeature (K) (Needed only for solar)
@@ -63,6 +68,19 @@ contains
     real(dp) :: dfreq, TT, log10PP
     real(dp), allocatable :: cols(:,:), log10P(:)
     real(dp), allocatable :: foreign_col(:)
+
+    ! check to make sure the zenith anges and weights are OK
+    ! for IR scenario.
+    if (op%op_type == IROpticalProperties) then
+      if (size(zenith_u) /= 1 .or. size(zenith_weights) /= 1) then
+        ierr = -1
+        return
+      endif
+      if (zenith_weights(1) /= 1.0_dp) then
+        ierr = -1
+        return
+      endif
+    endif
     
     kset => op%kset
     nz = size(dz)
@@ -242,8 +260,8 @@ contains
         enddo
       endif
       
-      rz%fup1 = 0.0_dp
-      rz%fdn1 = 0.0_dp
+      rz%fup2 = 0.0_dp
+      rz%fdn2 = 0.0_dp
       
       if (op%nk /= 0) then
         
@@ -252,13 +270,19 @@ contains
           ! Random Overlap method. Slow for >2 k species.
           ! k_loops uses recursion to make an arbitrary
           ! number of nested loops.
-          call k_loops(op, u0, surface_albedo, cols, rw%ks, rz, iks, 1)
+          do j = 1,size(zenith_u)
+            rz%fup1 = 0.0_dp
+            rz%fdn1 = 0.0_dp
+            call k_loops(op, zenith_u(j), surface_albedo, cols, rw%ks, rz, iks, 1)
+            rz%fup2(:) = rz%fup2(:) + rz%fup1(:)*zenith_weights(j)
+            rz%fdn2(:) = rz%fdn2(:) + rz%fdn1(:)*zenith_weights(j)
+          enddo
         elseif (kset%k_method == k_RandomOverlapResortRebin) then
           ! Random Overlap with Resorting and Rebinning.
-          call k_rorr(op, kset, u0, surface_albedo, cols, rw, rz)
+          call k_rorr(op, kset, zenith_u, zenith_weights, surface_albedo, cols, rw, rz)
         elseif (kset%k_method == k_AdaptiveEquivalentExtinction) then
           ! Adaptive Equivalent Extinction method
-          call k_aee(op, kset, u0, surface_albedo, cols, rw, rz)
+          call k_aee(op, kset, zenith_u, zenith_weights, surface_albedo, cols, rw, rz)
         endif
         
       else
@@ -271,8 +295,8 @@ contains
       ! fup_a(1,l) is ground level.
       do i = 1,nz+1
         n = nz+2-i
-        fup_a(i,l) = rz%fup1(n)
-        fdn_a(i,l) = rz%fdn1(n)
+        fup_a(i,l) = rz%fup2(n)
+        fdn_a(i,l) = rz%fdn2(n)
       enddo
       
     enddo
@@ -307,7 +331,7 @@ contains
   
   end function
 
-  subroutine k_aee(op, kset, u0, surface_albedo, cols, rw, rz)
+  subroutine k_aee(op, kset, zenith_u, zenith_weights, surface_albedo, cols, rw, rz)
     use clima_radtran_types, only: OpticalProperties, Ksettings
     use clima_radtran_types, only: RadiateZWrk, RadiateXSWrk
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
@@ -316,7 +340,7 @@ contains
     
     type(OpticalProperties), intent(in) :: op
     type(Ksettings), intent(in) :: kset
-    real(dp), intent(in) :: u0
+    real(dp), intent(in) :: zenith_u(:), zenith_weights(:)
     real(dp), intent(in) :: surface_albedo
     real(dp), intent(in) :: cols(:,:)
     type(RadiateXSWrk), target, intent(inout) :: rw
@@ -345,6 +369,11 @@ contains
       rw%ind_major(j) = maxloc(rw%tau_grey(j,:), 1)
       rw%tau_grey_sum(n) = sum(rw%tau_grey(j,:)) - rw%tau_grey(j,rw%ind_major(j))
     enddo
+
+    ! integration over multiple zenith angles
+    do ii = 1,size(zenith_u)
+    rz%fup1 = 0.0_dp
+    rz%fdn1 = 0.0_dp
     
     do i = 1,op%k(1)%ngauss
       ! This will only work if all ktables have the exact same number of
@@ -369,7 +398,7 @@ contains
 
       if (op%op_type == FarUVOpticalProperties .or. &
           op%op_type == SolarOpticalProperties) then
-        call two_stream_solar(nz, rz%tau, rz%w0, rz%gt, u0, surface_albedo, &
+        call two_stream_solar(nz, rz%tau, rz%w0, rz%gt, zenith_u(ii), surface_albedo, &
                               rz%amean, surf_rad, rz%fup, rz%fdn)
       elseif (op%op_type == IROpticalProperties) then
         call two_stream_ir(nz, rz%tau, rz%w0, rz%gt, 0.0_dp, rz%bplanck, &
@@ -383,9 +412,13 @@ contains
 
     enddo
 
+    rz%fup2 = rz%fup2 + rz%fup1*zenith_weights(ii)
+    rz%fdn2 = rz%fdn2 + rz%fdn1*zenith_weights(ii)
+    enddo
+
   end subroutine
   
-  subroutine k_rorr(op, kset, u0, surface_albedo, cols, rw, rz)
+  subroutine k_rorr(op, kset, zenith_u, zenith_weights, surface_albedo, cols, rw, rz)
     use futils, only: rebin
     use mrgrnk_mod, only: mrgrnk
     
@@ -397,7 +430,7 @@ contains
     
     type(OpticalProperties), intent(in) :: op
     type(Ksettings), intent(in) :: kset
-    real(dp), intent(in) :: u0
+    real(dp), intent(in) :: zenith_u(:), zenith_weights(:)
     real(dp), intent(in) :: surface_albedo
     real(dp), intent(in) :: cols(:,:)
     type(RadiateXSWrk), target, intent(in) :: rw
@@ -411,7 +444,7 @@ contains
     integer, pointer :: inds(:) ! (nbin*ngauss_max)
       
     integer :: nz
-    integer :: i, j, k, n, jj
+    integer :: i, j, k, n, jj, ii
     integer :: j1, j2, ngauss, ngauss_mix
     real(dp) :: surf_rad
       
@@ -463,6 +496,11 @@ contains
       enddo
       
     enddo
+
+    ! integration over multiple zenith angles
+    do ii = 1,size(zenith_u)
+    rz%fup1 = 0.0_dp
+    rz%fdn1 = 0.0_dp
     
     ! loop over mixed k-coeffs
     do i = 1,kset%nbin
@@ -484,7 +522,7 @@ contains
       
       if (op%op_type == FarUVOpticalProperties .or. &
           op%op_type == SolarOpticalProperties) then
-        call two_stream_solar(nz, rz%tau, rz%w0, rz%gt, u0, surface_albedo, &
+        call two_stream_solar(nz, rz%tau, rz%w0, rz%gt, zenith_u(ii), surface_albedo, &
                               rz%amean, surf_rad, rz%fup, rz%fdn)
       elseif (op%op_type == IROpticalProperties) then
         call two_stream_ir(nz, rz%tau, rz%w0, rz%gt, 0.0_dp, rz%bplanck, &
@@ -496,6 +534,10 @@ contains
       rz%fup1 = rz%fup1 + rz%fup*kset%wbin(i)
       rz%fdn1 = rz%fdn1 + rz%fdn*kset%wbin(i)
       
+    enddo
+
+    rz%fup2 = rz%fup2 + rz%fup1*zenith_weights(ii)
+    rz%fdn2 = rz%fdn2 + rz%fdn1*zenith_weights(ii)
     enddo
     
   end subroutine

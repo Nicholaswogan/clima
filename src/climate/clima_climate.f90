@@ -140,7 +140,7 @@ contains
     enddo
 
     ! create radiative transfer
-    c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, s%solar_zenith, s%surface_albedo, c%nz_r, err)
+    c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, 1, s%surface_albedo, c%nz_r, err)
     if (allocated(err)) return
 
     ! allocate memory

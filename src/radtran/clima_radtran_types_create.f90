@@ -145,6 +145,8 @@ contains
     allocate(rz%amean(nz+1))
     allocate(rz%fup1(nz+1))
     allocate(rz%fdn1(nz+1))
+    allocate(rz%fup2(nz+1))
+    allocate(rz%fdn2(nz+1))
     allocate(rz%fup(nz+1))
     allocate(rz%fdn(nz+1))
     allocate(rz%bplanck(nz+1))

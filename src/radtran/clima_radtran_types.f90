@@ -203,6 +203,8 @@ module clima_radtran_types
     real(dp), allocatable :: amean(:)
     real(dp), allocatable :: fup1(:)
     real(dp), allocatable :: fdn1(:)
+    real(dp), allocatable :: fup2(:)
+    real(dp), allocatable :: fdn2(:)
     real(dp), allocatable :: fup(:)
     real(dp), allocatable :: fdn(:)
     real(dp), allocatable :: bplanck(:)

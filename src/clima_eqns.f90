@@ -3,6 +3,23 @@ module clima_eqns
   implicit none
     
 contains
+
+  subroutine zenith_angles_and_weights(ngauss, zenith_angles, weights)
+    use clima_const, only: pi
+    use futils, only: gauss_legendre
+    integer, intent(in) :: ngauss
+    real(dp), intent(out) :: zenith_angles(ngauss), weights(ngauss)
+
+    real(dp) :: x(ngauss), w(ngauss)
+    real(dp) :: mu(ngauss)
+    
+    call gauss_legendre(x, w)
+    ! The below is a change of integration bounds. See
+    ! https://en.wikipedia.org/wiki/Gaussian_quadrature#Change_of_interval
+    mu(:) = x(:)/2.0_dp + 1.0_dp/2.0_dp
+    zenith_angles(:) = acos(mu(:))*180.0_dp/pi
+    weights(:) = w(:)/2.0_dp
+  end subroutine
   
   subroutine weights_to_bins(weights, bins)
     real(dp), intent(in) :: weights(:)
