@@ -534,6 +534,7 @@ contains
     
     type (type_error), allocatable :: io_err
     real(dp) :: tmp
+    integer :: tmp_int
     type(type_scalar), pointer :: scalar
     logical :: success
     
@@ -603,17 +604,17 @@ contains
       endif
     endif
     
-    scalar => planet%get_scalar('solar-zenith-angle',required=.false.,error = io_err)
+    scalar => planet%get_scalar('number-of-zenith-angles',required=.false.,error = io_err)
     if (associated(scalar)) then
-      tmp = scalar%to_real(0.0_dp, success)
+      tmp_int = scalar%to_integer(0, success)
       if (.not. success) then
-        err = 'Failed to convert "solar-zenith-angle" to a real in "'//filename//'"'
+        err = 'Failed to convert "number-of-zenith-angles" to a integer in "'//filename//'"'
         return
       endif
-      allocate(s%solar_zenith)
-      s%solar_zenith = tmp
-      if (s%solar_zenith < 0.0_dp .or. s%solar_zenith > 90.0_dp) then
-        err = 'IOError: solar zenith must be between 0 and 90.'
+      allocate(s%number_of_zenith_angles)
+      s%number_of_zenith_angles = tmp_int
+      if (s%number_of_zenith_angles < 1) then
+        err = '"number-of-zenith-angles" must be bigger than 1 in "'//filename//'"'
         return
       endif
     endif

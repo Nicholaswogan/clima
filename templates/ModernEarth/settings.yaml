@@ -9,7 +9,7 @@ planet:
   planet-mass: 5.972e27
   planet-radius: 6.371e8
   surface-albedo: 0.3
-  solar-zenith-angle: 60.0
+  number-of-zenith-angles: 1 
   
 optical-properties:
   species: 

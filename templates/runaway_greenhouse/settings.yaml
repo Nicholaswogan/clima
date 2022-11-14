@@ -5,7 +5,7 @@ atmosphere-grid:
 planet:
   planet-mass: 5.972e27 # grams
   planet-radius: 6.371e8 # cm
-  solar-zenith-angle: 60 # degrees
+  number-of-zenith-angles: 1 # number of zenith angles to integrate over. 
   surface-albedo: 0.25
   # Optionally include `photon-scale-factor`. The stellar flux
   # is scaled by this factor. This is useful for modeling

@@ -109,8 +109,8 @@ contains
     if (s%planet_is_present) then
       c%planet_mass = s%planet_mass
       c%planet_radius = s%planet_radius
-      if (.not.allocated(s%solar_zenith)) then
-        err = '"solar-zenith-angle" is missing from file "'//settings_f//'"'
+      if (.not.allocated(s%number_of_zenith_angles)) then
+        err = '"number-of-zenith-angles" is missing from file "'//settings_f//'"'
         return
       endif
       if (.not.allocated(s%surface_albedo)) then
@@ -124,7 +124,7 @@ contains
     
     ! make IR radiative transfer with list of species, from species file
     ! and the optical-properties from the settings file
-    c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, 1, s%surface_albedo, c%nz, err)
+    c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz, err)
     if (allocated(err)) return
 
     ! allocate work variables

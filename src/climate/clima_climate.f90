@@ -140,7 +140,8 @@ contains
     enddo
 
     ! create radiative transfer
-    c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, 1, s%surface_albedo, c%nz_r, err)
+    c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, &
+                    s%number_of_zenith_angles, s%surface_albedo, c%nz_r, err)
     if (allocated(err)) return
 
     ! allocate memory
@@ -238,8 +239,8 @@ contains
       return
     endif
 
-    if (.not. allocated(s%solar_zenith)) then
-      err = '"'//s%filename//'/planet/solar-zenith-angle" does not exist.'
+    if (.not. allocated(s%number_of_zenith_angles)) then
+      err = '"'//s%filename//'/planet/number-of-zenith-angles" does not exist.'
       return
     endif
 

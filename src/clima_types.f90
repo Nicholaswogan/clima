@@ -48,7 +48,7 @@ module clima_types
     real(dp) :: planet_radius
     real(dp), allocatable :: surface_albedo
     real(dp), allocatable :: diurnal_fac
-    real(dp), allocatable :: solar_zenith
+    integer, allocatable :: number_of_zenith_angles
     real(dp) :: photon_scale_factor
     
     ! optical-properties
