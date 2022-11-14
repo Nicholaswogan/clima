@@ -9,7 +9,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 with open("CMakeLists.txt",'r') as fil:
     lines = fil.readlines()
     for line in lines:
-        if line.startswith("project(CLIMA"):
+        if line.startswith("project(Clima"):
             version = line.split('"')[1]
             break
             
