@@ -21,7 +21,6 @@ module clima_adiabat
     
     ! species in the model
     character(s_str_len), allocatable :: species_names(:) ! copy of species names
-    integer :: LH2O
     type(Species) :: sp
     
     ! Radiative transfer
@@ -64,7 +63,7 @@ contains
     type(AdiabatClimate) :: c
     
     type(ClimaSettings) :: s
-    integer :: i, ind
+    integer :: i
     character(s_str_len) :: particle_names(0)
 
     ! species
@@ -81,14 +80,6 @@ contains
     allocate(c%RH(c%sp%ng))
     c%RH(:) = 1.0_dp
     
-    ! H2O must be a species
-    ind = findloc(c%species_names, 'H2O', 1)
-    if (ind == 0) then
-      err = '"H2O" must be a species in "'//species_f//'"'
-      return
-    else
-      c%LH2O = ind
-    endif
     ! There must be more than 1 species
     if (c%sp%ng == 1) then 
       err = 'There must be more than 1 species in "'//species_f//'"'

@@ -1,7 +1,8 @@
 # Clima
 
-`Clima` is a radiative transfer code and a climate model. It is currently under construction.
+**NOTE: Clima has not been published in a peer-reviewed journal yet. Please do not use this model in a paper that will be published. Wait for me to publish the model first, so you are able to cite it. Email me if you have questions (wogan@uw.edu)**
 
+`Clima` is a radiative transfer code and a climate model. It is currently under construction.
 
 ## Installation
 
