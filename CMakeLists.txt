@@ -17,8 +17,6 @@ Fortran executables" ON)
 option(BUILD_PYTHON_CLIMA "if ON, then will build a python
 version via Cython" OFF)
 
-configure_file(src/clima_version.f90.in ${CMAKE_BUILD_DIR}/clima_version.f90)
-
 # src
 add_subdirectory(src)
 

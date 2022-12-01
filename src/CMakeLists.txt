@@ -1,8 +1,10 @@
 
 add_subdirectory(dependencies)
 
+configure_file(clima_version.f90.in ${CMAKE_CURRENT_BINARY_DIR}/clima_version.f90)
+
 set(BASE_SOURCES
-  ${CMAKE_BINARY_DIR}/clima_version.f90
+  ${CMAKE_CURRENT_BINARY_DIR}/clima_version.f90
   clima_const.f90
   clima_useful.f90
   clima_eqns.f90
