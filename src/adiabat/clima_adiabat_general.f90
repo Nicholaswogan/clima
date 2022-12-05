@@ -98,13 +98,14 @@ contains
     real(dp), target, intent(out) :: N_surface(:) ! (ng)
     character(:), allocatable, intent(out) :: err
 
-    integer :: i, j
+    integer :: i, j, ii
     real(dp) :: grav, P_sat, P_ocean
     real(dp), allocatable :: P_av(:), T_av(:), density_av(:), f_i_av(:,:), dz(:)
     real(dp), allocatable :: N_i(:), P_i(:)
     integer, allocatable :: sp_type(:)
 
     type(MinpackHybrd1Vars) :: mv
+    real(dp), parameter :: scale_factors(*) = [1.0_dp, 0.5_dp, 2.0_dp] !! Scalings for root solve guessing
 
     ! allocate memory for minpack
     mv = MinpackHybrd1Vars(n=sp%ng, tol=1.0e-5_dp)
@@ -114,15 +115,28 @@ contains
     allocate(N_i(sp%ng), P_i(sp%ng))
     allocate(sp_type(sp%ng))
     
-    ! Initial guess will be crude conversion of moles/cm2 (column) to 
-    ! to dynes/cm2 (pressure)
+    ! gravity at the surface
     grav = gravity(planet_radius, planet_mass, 0.0_dp)
-    do i = 1,mv%n
-      mv%x(i) = log10(max(N_i_surf(i)*sp%g(i)%mass*grav, sqrt(tiny(1.0_dp))))
+
+    do ii = 1,size(scale_factors)
+
+      ! Initial guess will be crude conversion of moles/cm2 (column) to 
+      ! to dynes/cm2 (pressure). I try a few different `scale_factors` 
+      ! to this guess.
+      do i = 1,mv%n
+        mv%x(i) = log10(max(N_i_surf(i)*sp%g(i)%mass*grav*scale_factors(ii), sqrt(tiny(1.0_dp))))
+      enddo
+
+      ! attempt the root solve
+      call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+      if (mv%info == 1) then
+        ! Success, so we exit.
+        exit
+      endif
+
     enddo
 
-    ! attempt the root solve
-    call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+    ! If all attempted solves fail, then an error is thown.
     if (mv%info == 0 .or. mv%info > 1) then
       err = 'hybrd1 root solve failed in make_column_water.'
       return
