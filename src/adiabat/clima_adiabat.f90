@@ -2,6 +2,7 @@ module clima_adiabat
   use clima_const, only: dp, s_str_len
   use clima_types, only: Species
   use clima_radtran, only: Radtran
+  use clima_adiabat_general, only: TropopauseGivenByT
   implicit none
   private
 
@@ -13,6 +14,7 @@ module clima_adiabat
     integer :: nz
     real(dp) :: P_top = 1.0e-2_dp ! (dynes/cm2)
     real(dp) :: T_trop = 180.0_dp ! (T)
+    real(dp) :: P_trop ! dynes/cm^2
     real(dp), allocatable :: RH(:) ! relative humidity (ng)
     
     ! planet properties
@@ -148,12 +150,12 @@ contains
     
     call make_profile(T_surf, P_i_surf, &
                       self%sp, self%nz, self%planet_mass, &
-                      self%planet_radius, self%P_top, self%T_trop, self%RH, &
+                      self%planet_radius, self%P_top, self%RH, &
+                      TropopauseGivenByT, self%T_trop, self%P_trop, &
                       P_e, z_e, T_e, f_i_e, self%N_surface, &
                       err)
     if (allocated(err)) return
 
-    
     do i = 1,self%nz
       self%P(i) = P_e(i)
       self%T(i) = T_e(i)
@@ -195,7 +197,8 @@ contains
     
     call make_column(T_surf, N_i_surf, &
                      self%sp, self%nz, self%planet_mass, &
-                     self%planet_radius, self%P_top, self%T_trop, self%RH, &
+                     self%planet_radius, self%P_top, self%RH, &
+                     TropopauseGivenByT, self%T_trop, self%P_trop, &
                      P_e, z_e, T_e, f_i_e, self%N_surface, &
                      err)
     if (allocated(err)) return

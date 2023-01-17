@@ -7,16 +7,19 @@ module clima_adiabat_general
   private
 
   public :: make_profile, make_column
+  public :: TropopauseGivenByT, TropopauseGivenByP ! tropopause_mode
 
   type :: AdiabatProfileData
     !> Input data
+    real(dp), pointer :: T_surf
     type(Species), pointer :: sp
     real(dp), pointer :: planet_mass
     real(dp), pointer :: planet_radius
     real(dp), pointer :: P_top
-    real(dp), pointer :: T_trop
     real(dp), pointer :: RH(:)
-    real(dp), pointer :: T_surf
+    integer, pointer :: tropopause_mode
+    real(dp), pointer :: T_trop
+    real(dp), pointer :: P_trop
     !> Ouput
     real(dp), pointer :: P(:)
     real(dp), pointer :: z(:)
@@ -70,6 +73,11 @@ module clima_adiabat_general
     enumerator :: DrySpeciesType, CondensingSpeciesType
   end enum
 
+  ! tropopause_mode
+  enum, bind(c)
+    enumerator :: TropopauseGivenByT, TropopauseGivenByP
+  end enum
+
   type, extends(dop853_class) :: dop853_custom
     type(AdiabatProfileData), pointer :: d => NULL()
   end type
@@ -78,7 +86,8 @@ contains
 
   subroutine make_column(T_surf, N_i_surf, &
                          sp, nz, planet_mass, &
-                         planet_radius, P_top, T_trop, RH, &
+                         planet_radius, P_top, RH, &
+                         tropopause_mode, T_trop, P_trop, &
                          P, z, T, f_i, N_surface, &
                          err)
     use minpack_module, only: hybrd1
@@ -91,7 +100,9 @@ contains
     type(Species), target, intent(inout) :: sp
     integer, intent(in) :: nz
     real(dp), target, intent(in) :: planet_mass, planet_radius
-    real(dp), target, intent(in) :: P_top, T_trop, RH(:)
+    real(dp), target, intent(in) :: P_top, RH(:)
+    integer, target, intent(in) :: tropopause_mode
+    real(dp), target, intent(inout) :: T_trop, P_trop
 
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
@@ -158,7 +169,8 @@ contains
       P_i(:) = 10.0_dp**x_(:)
       call make_profile(T_surf, P_i, &
                         sp, nz, planet_mass, &
-                        planet_radius, P_top, T_trop, RH, &
+                        planet_radius, P_top, RH, &
+                        tropopause_mode, T_trop, P_trop, &
                         P, z, T, f_i, N_surface, &
                         err)
       if (allocated(err)) then
@@ -219,7 +231,8 @@ contains
 
   subroutine make_profile(T_surf, P_i_surf, &
                           sp, nz, planet_mass, &
-                          planet_radius, P_top, T_trop, RH, &
+                          planet_radius, P_top, RH, &
+                          tropopause_mode, T_trop, P_trop, &
                           P, z, T, f_i, N_surface, &
                           err)
     use futils, only: linspace
@@ -231,7 +244,9 @@ contains
     type(Species), target, intent(inout) :: sp
     integer, intent(in) :: nz
     real(dp), target, intent(in) :: planet_mass, planet_radius
-    real(dp), target, intent(in) :: P_top, T_trop, RH(:)
+    real(dp), target, intent(in) :: P_top, RH(:)
+    integer, target, intent(in) :: tropopause_mode
+    real(dp), target, intent(inout) :: T_trop, P_trop
 
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
@@ -243,9 +258,15 @@ contains
     real(dp) :: P_sat, grav, P_ocean
 
     ! check inputs
-    if (T_surf < T_trop) then
-      err = 'make_profile: Input "T_surf" is less than input "T_trop"'
-      return
+    if (tropopause_mode == TropopauseGivenByT) then
+      if (T_surf < T_trop) then
+        err = 'make_profile: Input "T_surf" is less than input "T_trop"'
+        return
+      endif
+      if (T_trop < 0.0_dp) then
+        err = 'make_profile: Input "T_trop" is less than 0'
+        return
+      endif
     endif
     if (any(P_i_surf < 0.0_dp)) then
       err = 'make_profile: Surface pressures (input "P_i_surf") must be positive'
@@ -253,10 +274,6 @@ contains
     endif
     if (size(P_i_surf) /= sp%ng) then
       err = 'make_profile: Input "P_i_surf" has the wrong shape'
-      return
-    endif
-    if (T_trop < 0.0_dp) then
-      err = 'make_profile: Input "T_trop" is less than 0'
       return
     endif
     if (size(RH) /= sp%ng) then
@@ -286,13 +303,15 @@ contains
 
     ! associate
     ! inputs
+    d%T_surf => T_surf
     d%sp => sp
     d%planet_mass => planet_mass
     d%planet_radius => planet_radius
     d%P_top => P_top
-    d%T_trop => T_trop
     d%RH => RH
-    d%T_surf => T_surf
+    d%tropopause_mode => tropopause_mode
+    d%T_trop => T_trop
+    d%P_trop => P_trop
     ! outputs
     d%P => P
     d%z => z
@@ -344,6 +363,16 @@ contains
     if (P_top > d%P_surf) then
       err = 'make_profile: "P_top" is bigger than the surface pressure'
       return
+    endif
+    if (tropopause_mode == TropopauseGivenByP) then
+      if (P_trop > d%P_surf) then
+        err = 'make_profile: "P_trop" is bigger than the surface pressure'
+        return
+      endif
+      if (P_trop < P_top) then
+        err = 'make_profile: "P_trop" is smaller than "P_top"'
+        return
+      endif
     endif
     d%f_i_cur(:) = d%P_i_cur(:)/d%P_surf ! mixing ratios
     call update_f_i_dry(d, d%P_surf, d%f_i_cur)
@@ -416,11 +445,23 @@ contains
     enddo
 
     if (d%stopping_reason == ReachedPtop) then
-      ! Nothing to do.
+      ! make it clear that the tropopause was not reached
+      if (d%tropopause_mode == TropopauseGivenByT) then
+        d%P_trop = -1.0_dp
+      elseif (d%tropopause_mode == TropopauseGivenByP) then
+        d%T_trop = -1.0_dp
+      endif
     elseif (d%stopping_reason == ReachedTropopause) then; block
       real(dp) :: mubar, f_dry
 
       call mixing_ratios(d, d%P_root, d%u_root(1), d%f_i_cur, f_dry)
+
+      ! tropopause temp and pressure
+      if (d%tropopause_mode == TropopauseGivenByT) then
+        d%P_trop = d%P_root
+      elseif (d%tropopause_mode == TropopauseGivenByP) then
+        d%T_trop = d%u_root(1)
+      endif
 
       ! Values above the tropopause
       mubar = 0.0_dp
@@ -596,7 +637,11 @@ contains
     enddo
 
     ! also stop at tropopause
-    gout(1) = T - d%T_trop    
+    if (d%tropopause_mode == TropopauseGivenByT) then
+      gout(1) = T - d%T_trop
+    elseif (d%tropopause_mode == TropopauseGivenByP) then
+      gout(1) = P - d%P_trop
+    endif 
 
   end subroutine
 
