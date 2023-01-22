@@ -168,11 +168,11 @@ contains
 
       ! Compute the columns by splitting grid into cells
       do i = 1,nz
-        P_av(i) = P(i)
-        T_av(i) = T(i)
-        dz(i) = z(i+1)-z(i)
+        P_av(i) = P(2*i)
+        T_av(i) = T(2*i)
+        dz(i) = z(2*i+1) - z(2*i-1)
         do j = 1,sp%ng
-          f_i_av(i,j) = f_i(i,j)
+          f_i_av(i,j) = f_i(2*i,j)
         enddo
       enddo
       density_av = P_av/(k_boltz*T_av)
@@ -263,19 +263,19 @@ contains
       err = 'make_profile: Input "RH" has the wrong dimension.'
       return
     endif
-    if (size(P) /= nz+1) then
+    if (size(P) /= 2*nz+1) then
       err = 'make_profile: Input "P" has the wrong shape'
       return
     endif
-    if (size(z) /= nz+1) then
+    if (size(z) /= 2*nz+1) then
       err = 'make_profile: Input "z" has the wrong shape'
       return
     endif
-    if (size(T) /= nz+1) then
+    if (size(T) /= 2*nz+1) then
       err = 'make_profile: Input "T" has the wrong shape'
       return
     endif
-    if (size(f_i, 1) /= nz+1 .or. size(f_i, 2) /= sp%ng) then
+    if (size(f_i, 1) /= 2*nz+1 .or. size(f_i, 2) /= sp%ng) then
       err = 'make_profile: Input "f_i" has the wrong shape'
       return
     endif
@@ -352,7 +352,7 @@ contains
     call linspace(log10(d%P_surf),log10(P_top),P)
     P(:) = 10.0_dp**P(:)
     P(1) = d%P_surf
-    P(nz+1) = P_top
+    P(2*nz+1) = P_top
 
     ! integrate
     call integrate(d, err)

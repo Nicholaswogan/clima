@@ -142,8 +142,8 @@ contains
       return
     endif
     
-    allocate(P_e(self%nz+1),  z_e(self%nz+1), T_e(self%nz+1))
-    allocate(f_i_e(self%nz+1,self%sp%ng))
+    allocate(P_e(2*self%nz+1),  z_e(2*self%nz+1), T_e(2*self%nz+1))
+    allocate(f_i_e(2*self%nz+1,self%sp%ng))
     allocate(density(self%nz))
     
     call make_profile(T_surf, P_i_surf, &
@@ -155,13 +155,12 @@ contains
 
     
     do i = 1,self%nz
-      self%P(i) = P_e(i)
-      self%T(i) = T_e(i)
-      self%z(i) = 0.5_dp*(z_e(i)+z_e(i+1))
-      self%dz(i) = z_e(i+1) - z_e(i)
-      
+      self%P(i) = P_e(2*i)
+      self%T(i) = T_e(2*i)
+      self%z(i) = z_e(2*i)
+      self%dz(i) = z_e(2*i+1) - z_e(2*i-1)
       do j =1,self%sp%ng
-        self%f_i(i,j) = f_i_e(i,j)
+        self%f_i(i,j) = f_i_e(2*i,j)
       enddo
     enddo
     
@@ -189,8 +188,8 @@ contains
       return
     endif
     
-    allocate(P_e(self%nz+1),  z_e(self%nz+1), T_e(self%nz+1))
-    allocate(f_i_e(self%nz+1,self%sp%ng))
+    allocate(P_e(2*self%nz+1),  z_e(2*self%nz+1), T_e(2*self%nz+1))
+    allocate(f_i_e(2*self%nz+1,self%sp%ng))
     allocate(density(self%nz))
     
     call make_column(T_surf, N_i_surf, &
@@ -201,13 +200,12 @@ contains
     if (allocated(err)) return
     
     do i = 1,self%nz
-      self%P(i) = P_e(i)
-      self%T(i) = T_e(i)
-      self%z(i) = 0.5_dp*(z_e(i)+z_e(i+1))
-      self%dz(i) = z_e(i+1) - z_e(i)
-      
+      self%P(i) = P_e(2*i)
+      self%T(i) = T_e(2*i)
+      self%z(i) = z_e(2*i)
+      self%dz(i) = z_e(2*i+1) - z_e(2*i-1)
       do j =1,self%sp%ng
-        self%f_i(i,j) = f_i_e(i,j)
+        self%f_i(i,j) = f_i_e(2*i,j)
       enddo
     enddo
     
