@@ -22,6 +22,7 @@ module clima_adiabat_general
     real(dp), pointer :: z(:)
     real(dp), pointer :: T(:)
     real(dp), pointer :: f_i(:,:)
+    real(dp), pointer :: P_trop
 
     real(dp) :: P_surf !! surface pressure from inputs
 
@@ -79,7 +80,7 @@ contains
   subroutine make_column(T_surf, N_i_surf, &
                          sp, nz, planet_mass, &
                          planet_radius, P_top, T_trop, RH, &
-                         P, z, T, f_i, N_surface, &
+                         P, z, T, f_i, N_surface, P_trop, &
                          err)
     use minpack_module, only: hybrd1
     use clima_useful, only: MinpackHybrd1Vars
@@ -95,7 +96,7 @@ contains
 
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
-    real(dp), target, intent(out) :: N_surface(:) ! (ng)
+    real(dp), target, intent(out) :: N_surface(:), P_trop ! (ng)
     character(:), allocatable, intent(out) :: err
 
     integer :: i, j, ii
@@ -159,7 +160,7 @@ contains
       call make_profile(T_surf, P_i, &
                         sp, nz, planet_mass, &
                         planet_radius, P_top, T_trop, RH, &
-                        P, z, T, f_i, N_surface, &
+                        P, z, T, f_i, N_surface, P_trop, &
                         err)
       if (allocated(err)) then
         iflag_ = -1
@@ -220,7 +221,7 @@ contains
   subroutine make_profile(T_surf, P_i_surf, &
                           sp, nz, planet_mass, &
                           planet_radius, P_top, T_trop, RH, &
-                          P, z, T, f_i, N_surface, &
+                          P, z, T, f_i, N_surface, P_trop, &
                           err)
     use futils, only: linspace
     use clima_eqns, only: gravity
@@ -236,6 +237,8 @@ contains
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
     real(dp), target, intent(out) :: N_surface(:)
+    real(dp), target, intent(out) :: P_trop !! Tropopause pressure (dynes/cm^2). 
+                                            !! Value is negative if no tropopause is found.
     character(:), allocatable, intent(out) :: err
 
     type(AdiabatProfileData) :: d
@@ -298,6 +301,7 @@ contains
     d%z => z
     d%T => T
     d%f_i => f_i
+    d%P_trop => P_trop
     ! allocate
     allocate(d%sp_type(sp%ng))
     allocate(d%gout(sp%ng+1))
@@ -416,11 +420,14 @@ contains
     enddo
 
     if (d%stopping_reason == ReachedPtop) then
-      ! Nothing to do.
+      d%P_trop = -1.0_dp ! no tropopause identified
     elseif (d%stopping_reason == ReachedTropopause) then; block
       real(dp) :: mubar, f_dry
 
       call mixing_ratios(d, d%P_root, d%u_root(1), d%f_i_cur, f_dry)
+
+      ! Propopause pressure
+      d%P_trop = d%P_root
 
       ! Values above the tropopause
       mubar = 0.0_dp

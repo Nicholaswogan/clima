@@ -13,6 +13,7 @@ module clima_adiabat
     integer :: nz
     real(dp) :: P_top = 1.0e-2_dp ! (dynes/cm2)
     real(dp) :: T_trop = 180.0_dp ! (T)
+    real(dp) :: P_trop
     real(dp), allocatable :: RH(:) ! relative humidity (ng)
     
     ! planet properties
@@ -149,7 +150,7 @@ contains
     call make_profile(T_surf, P_i_surf, &
                       self%sp, self%nz, self%planet_mass, &
                       self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                      P_e, z_e, T_e, f_i_e, self%N_surface, &
+                      P_e, z_e, T_e, f_i_e, self%N_surface, self%P_trop, &
                       err)
     if (allocated(err)) return
 
@@ -195,7 +196,7 @@ contains
     call make_column(T_surf, N_i_surf, &
                      self%sp, self%nz, self%planet_mass, &
                      self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                     P_e, z_e, T_e, f_i_e, self%N_surface, &
+                     P_e, z_e, T_e, f_i_e, self%N_surface, self%P_trop, &
                      err)
     if (allocated(err)) return
     
