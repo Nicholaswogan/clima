@@ -13,7 +13,7 @@ module clima_adiabat
     integer :: nz
     real(dp) :: P_top = 1.0e-2_dp ! (dynes/cm2)
     real(dp) :: T_trop = 180.0_dp ! (T)
-    real(dp) :: P_trop
+    real(dp) :: P_surf, P_trop ! dynes/cm^2
     real(dp), allocatable :: RH(:) ! relative humidity (ng)
     
     ! planet properties
@@ -154,7 +154,7 @@ contains
                       err)
     if (allocated(err)) return
 
-    
+    self%P_surf = P_e(1)
     do i = 1,self%nz
       self%P(i) = P_e(2*i)
       self%T(i) = T_e(2*i)
@@ -200,6 +200,7 @@ contains
                      err)
     if (allocated(err)) return
     
+    self%P_surf = P_e(1)
     do i = 1,self%nz
       self%P(i) = P_e(2*i)
       self%T(i) = T_e(2*i)
