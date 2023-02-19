@@ -13,6 +13,7 @@ module clima_const
   real(dp), parameter :: plank = 6.62607004e-34_dp ! planks constant (m2 kg / s)
   real(dp), parameter :: c_light = 299792458.0_dp ! Speed of light (m / s)
   real(dp), parameter :: N_avo = 6.02214076e23_dp ! avagadros number
+  real(dp), parameter :: sigma_si = 5.670374419e-8_dp ! Stefan-Boltzmann constant (W / m^2 / K^4)
   real(dp), parameter :: pi = 3.14159265358979323846e0_dp
   real(dp), parameter :: von_karman_const = 0.41_dp ! from wikipedia
   

@@ -216,4 +216,19 @@ contains
             (1.0_dp/(lambda*1.0e-3_dp)**4.0_dp)
   end function
 
+  pure function equilibrium_temperature(stellar_radiation, bond_albedo) result(T_eq)
+    use clima_const, only: sigma_si
+    real(dp), intent(in) :: stellar_radiation !! Total stellar radiation (W/m^2)
+    real(dp), intent(in) :: bond_albedo !! Bond albedo
+    real(dp) :: T_eq !! Equilibrium Temperature (K)
+    T_eq = ((stellar_radiation*(1.0_dp - bond_albedo))/(4.0_dp*sigma_si))**(0.25_dp)
+  end function
+
+  pure function skin_temperature(stellar_radiation, bond_albedo) result(T_skin)
+    real(dp), intent(in) :: stellar_radiation !! Total stellar radiation (W/m^2)
+    real(dp), intent(in) :: bond_albedo !! Bond albedo
+    real(dp) :: T_skin !! Skin Temperature (K)
+    T_skin = equilibrium_temperature(stellar_radiation, bond_albedo)*(0.5_dp)**(0.25_dp)
+  end function
+
 end module
