@@ -13,7 +13,6 @@ module clima_adiabat
     integer :: nz
     real(dp) :: P_top = 1.0e-2_dp ! (dynes/cm2)
     real(dp) :: T_trop = 180.0_dp ! (T)
-    real(dp) :: P_surf, P_trop ! dynes/cm^2
     real(dp), allocatable :: RH(:) ! relative humidity (ng)
     
     ! planet properties
@@ -28,21 +27,26 @@ module clima_adiabat
     type(Radtran) :: rad
     
     ! State of the atmosphere
+    real(dp) :: P_surf !! Surface pressure (dynes/cm^2)
+    real(dp) :: P_trop !! Tropopause pressure (dynes/cm^2)
     real(dp), allocatable :: P(:) !! pressure in each grid cell, dynes/cm^2 (nz)
+    real(dp) :: T_surf !! Surface Temperature (K)
     real(dp), allocatable :: T(:) !! Temperature in each grid cell, K (nz) 
     real(dp), allocatable :: f_i(:,:) !! mixing ratios of species in each grid cell (nz,ng)
     real(dp), allocatable :: z(:) !! Altitude at the center of the grid cell, cm (nz)
     real(dp), allocatable :: dz(:) !! Thickness of each grid cell, cm (nz)
-    real(dp), allocatable :: densities(:,:) !! densities in each grid cell, molecules/cm^2 (nz,ng)
+    real(dp), allocatable :: densities(:,:) !! densities in each grid cell, molecules/cm^3 (nz,ng)
     real(dp), allocatable :: N_surface(:) !! reservoir of gas on surface mol/cm^2 (ng)
     
   contains
     procedure :: make_profile => AdiabatClimate_make_profile
     procedure :: make_column => AdiabatClimate_make_column
+    procedure :: make_profile_bg_gas => AdiabatClimate_make_profile_bg_gas
     procedure :: TOA_fluxes => AdiabatClimate_TOA_fluxes
     procedure :: TOA_fluxes_column => AdiabatClimate_TOA_fluxes_column
     procedure :: surface_temperature => AdiabatClimate_surface_temperature
     procedure :: surface_temperature_column => AdiabatClimate_surface_temperature_column
+    procedure :: surface_temperature_bg_gas => AdiabatClimate_surface_temperature_bg_gas
     procedure :: to_regular_grid => AdiabatClimate_to_regular_grid
     procedure :: out2atmosphere_txt => AdiabatClimate_out2atmosphere_txt
   end type
@@ -154,6 +158,7 @@ contains
                       err)
     if (allocated(err)) return
 
+    self%T_surf = T_surf
     self%P_surf = P_e(1)
     do i = 1,self%nz
       self%P(i) = P_e(2*i)
@@ -200,6 +205,7 @@ contains
                      err)
     if (allocated(err)) return
     
+    self%T_surf = T_surf
     self%P_surf = P_e(1)
     do i = 1,self%nz
       self%P(i) = P_e(2*i)
@@ -216,6 +222,76 @@ contains
       self%densities(:,j) = self%f_i(:,j)*density(:)
     enddo
     
+  end subroutine
+
+  !> Similar to make_profile, but instead imposes a background gas and fixed
+  !> surface pressure. We do a non-linear solve for the background gas pressure
+  !> so that the desired total surface pressure is satisfied.
+  subroutine AdiabatClimate_make_profile_bg_gas(self, T_surf, P_i_surf, P_surf, bg_gas, err)
+    use minpack_module, only: hybrd1
+    use clima_useful, only: MinpackHybrd1Vars
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: T_surf !! K
+    real(dp), intent(in) :: P_i_surf(:) !! dynes/cm^2
+    real(dp), intent(in) :: P_surf !! dynes/cm^2
+    character(*), intent(in) :: bg_gas !! background gas
+    character(:), allocatable, intent(out) :: err
+
+    real(dp), allocatable :: P_i_surf_copy(:)
+    integer :: i, ind
+    type(MinpackHybrd1Vars) :: mv
+    real(dp), parameter :: scale_factors(*) = [1.0_dp, 0.1_dp]
+
+    if (P_surf <= 0.0_dp) then
+      err = 'P_surf must be greater than zero.'
+      return
+    endif
+
+    ind = findloc(self%species_names, bg_gas, 1)
+    if (ind == 0) then
+      err = 'Gas "'//bg_gas//'" is not in the list of species'
+      return
+    endif
+
+    allocate(P_i_surf_copy(size(P_i_surf)))
+    P_i_surf_copy = P_i_surf
+
+    mv = MinpackHybrd1Vars(1)
+  
+    do i = 1,size(scale_factors)
+      mv%x(1) = log10(P_surf*scale_factors(i))
+      call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+      if (mv%info == 1) then
+        exit
+      endif
+    enddo
+    if (mv%info == 0 .or. mv%info > 1) then
+      err = 'hybrd1 root solve failed in make_profile_bg_gas.'
+      return
+    elseif (mv%info < 0) then
+      err = 'hybrd1 root solve failed in make_profile_bg_gas: '//err
+      return
+    endif
+
+    call fcn(mv%n, mv%x, mv%fvec, mv%info)
+
+  contains
+    subroutine fcn(n_, x_, fvec_, iflag_)
+      integer, intent(in) :: n_
+      real(dp), intent(in) :: x_(n_)
+      real(dp), intent(out) :: fvec_(n_)
+      integer, intent(inout) :: iflag_
+
+      P_i_surf_copy(ind) = 10.0_dp**x_(1)
+
+      call self%make_profile(T_surf, P_i_surf_copy, err)
+      if (allocated(err)) then
+        iflag_ = -1
+        return
+      endif
+
+      fvec_(1) = self%P_surf - P_surf
+    end subroutine
   end subroutine
   
   subroutine AdiabatClimate_TOA_fluxes(self, T_surf, P_i_surf, ISR, OLR, err)
@@ -385,6 +461,69 @@ contains
       fvec_(1) = ISR - OLR
     end subroutine
     
+  end function
+
+  !> Similar to surface_temperature. The difference is that this function imposes
+  !> a background gas and fixed surface pressure.
+  function AdiabatClimate_surface_temperature_bg_gas(self, P_i_surf, P_surf, bg_gas, T_guess, err) result(T_surf)
+    use minpack_module, only: hybrd1
+    use clima_useful, only: MinpackHybrd1Vars
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: P_i_surf(:) !! dynes/cm^2
+    real(dp), intent(in) :: P_surf !! dynes/cm^2
+    character(*), intent(in) :: bg_gas !! background gas
+    real(dp), optional, intent(in) :: T_guess
+    character(:), allocatable, intent(out) :: err
+    real(dp) :: T_surf
+    
+    real(dp) :: T_guess_
+    type(MinpackHybrd1Vars) :: mv
+
+    if (present(T_guess)) then
+      T_guess_ = T_guess
+    else
+      T_guess_ = 280.0_dp
+    endif
+
+    mv = MinpackHybrd1Vars(1)
+    mv%x(1) = log10(T_guess_)
+    call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+    if (mv%info == 0 .or. mv%info > 1) then
+      err = 'hybrd1 root solve failed in surface_temperature_bg_gas.'
+      return
+    elseif (mv%info < 0) then
+      err = 'hybrd1 root solve failed in surface_temperature_bg_gas: '//err
+      return
+    endif
+
+    T_surf = 10.0**mv%x(1)
+    call fcn(mv%n, mv%x, mv%fvec, mv%info)
+
+  contains
+    subroutine fcn(n_, x_, fvec_, iflag_)
+      integer, intent(in) :: n_
+      real(dp), intent(in) :: x_(n_)
+      real(dp), intent(out) :: fvec_(n_)
+      integer, intent(inout) :: iflag_
+
+      real(dp) :: T, ISR, OLR
+
+      T = 10.0_dp**x_(1)
+
+      call self%make_profile_bg_gas(T, P_i_surf, P_surf, bg_gas, err)
+      if (allocated(err)) then
+        iflag_ = -1
+        return
+      endif
+
+      call self%rad%TOA_fluxes(T, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
+      if (allocated(err)) then
+        iflag_ = -1
+        return
+      endif
+
+      fvec_(1) = ISR - OLR
+    end subroutine
   end function
 
   subroutine AdiabatClimate_to_regular_grid(self, err)
