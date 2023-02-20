@@ -110,6 +110,34 @@ subroutine adiabatclimate_make_column_wrapper(ptr, T_surf, ng, N_i_surf, err) bi
 
 end subroutine
 
+subroutine adiabatclimate_make_profile_bg_gas_wrapper(ptr, T_surf, ng, P_i_surf, P_surf, bg_gas, err) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: T_surf
+  integer(c_int), intent(in) :: ng
+  real(c_double), intent(in) :: P_i_surf(ng)
+  real(c_double), intent(in) :: P_surf
+  character(kind=c_char), intent(in) :: bg_gas(*)
+  character(c_char), intent(out) :: err(err_len+1)
+
+  character(len=:), allocatable :: bg_gas_f
+  character(:), allocatable :: err_f
+  type(AdiabatClimate), pointer :: c
+
+  call c_f_pointer(ptr, c)
+
+  allocate(character(len=len_cstring(bg_gas))::bg_gas_f)
+  call copy_string_ctof(bg_gas, bg_gas_f)
+
+  call c%make_profile_bg_gas(T_surf, P_i_surf, P_surf, bg_gas_f, err_f)
+
+  err(1) = c_null_char
+  if (allocated(err_f)) then
+    call copy_string_ftoc(err_f, err)
+  endif
+
+end subroutine
+
 subroutine adiabatclimate_toa_fluxes_wrapper(ptr, T_surf, ng, P_i_surf, ISR, OLR, err) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr
@@ -156,6 +184,35 @@ subroutine adiabatclimate_toa_fluxes_column_wrapper(ptr, T_surf, ng, N_i_surf, I
 
 end subroutine
 
+subroutine adiabatclimate_toa_fluxes_bg_gas_wrapper(ptr, T_surf, ng, P_i_surf, P_surf, bg_gas, ISR, OLR, err) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: T_surf
+  integer(c_int), intent(in) :: ng
+  real(c_double), intent(in) :: P_i_surf(ng)
+  real(c_double), intent(in) :: P_surf
+  character(kind=c_char), intent(in) :: bg_gas(*)
+  real(c_double), intent(out) :: ISR, OLR
+  character(c_char), intent(out) :: err(err_len+1)
+
+  character(len=:), allocatable :: bg_gas_f
+  character(:), allocatable :: err_f
+  type(AdiabatClimate), pointer :: c
+
+  call c_f_pointer(ptr, c)
+
+  allocate(character(len=len_cstring(bg_gas))::bg_gas_f)
+  call copy_string_ctof(bg_gas, bg_gas_f)
+
+  call c%TOA_fluxes_bg_gas(T_surf, P_i_surf, P_surf, bg_gas_f, ISR, OLR, err_f)
+
+  err(1) = c_null_char
+  if (allocated(err_f)) then
+    call copy_string_ftoc(err_f, err)
+  endif
+
+end subroutine
+
 subroutine adiabatclimate_surface_temperature_wrapper(ptr, ng, P_i_surf, T_guess, T_surf, err) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr
@@ -194,6 +251,35 @@ subroutine adiabatclimate_surface_temperature_column_wrapper(ptr, ng, N_i_surf, 
   call c_f_pointer(ptr, c)
 
   T_surf = c%surface_temperature_column(N_i_surf, T_guess, err_f)
+
+  err(1) = c_null_char
+  if (allocated(err_f)) then
+    call copy_string_ftoc(err_f, err)
+  endif
+
+end subroutine
+
+subroutine adiabatclimate_surface_temperature_bg_gas_wrapper(ptr, ng, P_i_surf, P_surf, bg_gas, T_guess, T_surf, err) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: ng
+  real(c_double), intent(in) :: P_i_surf(ng)
+  real(c_double), intent(in) :: P_surf
+  character(kind=c_char), intent(in) :: bg_gas(*)
+  real(c_double), intent(in) :: T_guess
+  real(c_double), intent(out) :: T_surf
+  character(c_char), intent(out) :: err(err_len+1)
+
+  character(len=:), allocatable :: bg_gas_f
+  character(:), allocatable :: err_f
+  type(AdiabatClimate), pointer :: c
+
+  call c_f_pointer(ptr, c)
+
+  allocate(character(len=len_cstring(bg_gas))::bg_gas_f)
+  call copy_string_ctof(bg_gas, bg_gas_f)
+
+  T_surf = c%surface_temperature_bg_gas(P_i_surf, P_surf, bg_gas_f, T_guess, err_f)
 
   err(1) = c_null_char
   if (allocated(err_f)) then
@@ -348,6 +434,24 @@ subroutine adiabatclimate_species_names_get(ptr, dim1, species_names) bind(c)
   
 end subroutine
 
+subroutine adiabatclimate_p_surf_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%P_surf
+end subroutine
+
+subroutine adiabatclimate_p_trop_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%P_trop
+end subroutine
+
 subroutine adiabatclimate_p_get_size(ptr, dim1) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr
@@ -365,6 +469,15 @@ subroutine adiabatclimate_p_get(ptr, dim1, arr) bind(c)
   type(AdiabatClimate), pointer :: c
   call c_f_pointer(ptr, c)
   arr = c%P
+end subroutine
+
+subroutine adiabatclimate_t_surf_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%T_surf
 end subroutine
 
 subroutine adiabatclimate_t_get_size(ptr, dim1) bind(c)

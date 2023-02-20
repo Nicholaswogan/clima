@@ -45,6 +45,16 @@ cdef class AdiabatClimate:
     &ng, <double *>N_i_surf.data, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
+  
+  def make_profile_bg_gas(self, double T_surf, ndarray[double, ndim=1] P_i_surf, double P_surf, str bg_gas):
+    cdef int ng = P_i_surf.shape[0]
+    cdef bytes bg_gas_b = pystring2cstring(bg_gas)
+    cdef char *bg_gas_c = bg_gas_b
+    cdef char err[ERR_LEN+1]
+    wa_pxd.adiabatclimate_make_profile_bg_gas_wrapper(&self._ptr, &T_surf,
+    &ng, <double *>P_i_surf.data, &P_surf, bg_gas_c, err)
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
 
   def TOA_fluxes(self, double T_surf, ndarray[double, ndim=1] P_i_surf):
     cdef int ng = P_i_surf.shape[0]
@@ -65,6 +75,18 @@ cdef class AdiabatClimate:
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
     return ISR, OLR
+
+  def TOA_fluxes_bg_gas(self, double T_surf, ndarray[double, ndim=1] P_i_surf, double P_surf, str bg_gas):
+    cdef int ng = P_i_surf.shape[0]
+    cdef bytes bg_gas_b = pystring2cstring(bg_gas)
+    cdef char *bg_gas_c = bg_gas_b
+    cdef char err[ERR_LEN+1]
+    cdef double ISR, OLR;
+    wa_pxd.adiabatclimate_toa_fluxes_bg_gas_wrapper(&self._ptr, &T_surf,
+    &ng, <double *>P_i_surf.data, &P_surf, bg_gas_c, &ISR, &OLR, err)
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
+    return ISR, OLR
   
   def surface_temperature(self, ndarray[double, ndim=1] P_i_surf, double T_guess = 280):
     cdef int ng = P_i_surf.shape[0]
@@ -82,6 +104,18 @@ cdef class AdiabatClimate:
     cdef double T_surf;
     wa_pxd.adiabatclimate_surface_temperature_column_wrapper(&self._ptr, 
     &ng, <double *>N_i_surf.data, &T_guess, &T_surf, err)
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
+    return T_surf
+
+  def surface_temperature_bg_gas(self, ndarray[double, ndim=1] P_i_surf, double P_surf, str bg_gas, double T_guess = 280):
+    cdef int ng = P_i_surf.shape[0]
+    cdef bytes bg_gas_b = pystring2cstring(bg_gas)
+    cdef char *bg_gas_c = bg_gas_b
+    cdef char err[ERR_LEN+1]
+    cdef double T_surf;
+    wa_pxd.adiabatclimate_surface_temperature_bg_gas_wrapper(&self._ptr, 
+    &ng, <double *>P_i_surf.data, &P_surf, bg_gas_c, &T_guess, &T_surf, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
     return T_surf
@@ -147,6 +181,18 @@ cdef class AdiabatClimate:
       var._ptr = ptr1
       return var
 
+  property P_surf:
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_p_surf_get(&self._ptr, &val)
+      return val
+
+  property P_trop:
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_p_trop_get(&self._ptr, &val)
+      return val
+
   property P:
     def __get__(self):
       cdef int dim1
@@ -154,6 +200,12 @@ cdef class AdiabatClimate:
       cdef ndarray arr = np.empty(dim1, np.double)
       wa_pxd.adiabatclimate_p_get(&self._ptr, &dim1, <double *>arr.data)
       return arr
+
+  property T_surf:
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_t_surf_get(&self._ptr, &val)
+      return val
 
   property T:
     def __get__(self):

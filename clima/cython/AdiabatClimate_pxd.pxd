@@ -16,17 +16,28 @@ cdef extern void adiabatclimate_make_profile_wrapper(void *ptr, double *T_surf, 
 cdef extern void adiabatclimate_make_column_wrapper(void *ptr, double *T_surf, int *ng, 
                                       double *N_i_surf, char *err)
 
+cdef extern void adiabatclimate_make_profile_bg_gas_wrapper(void *ptr, double *T_surf, int *ng, 
+                                      double *P_i_surf, double *P_surf, char *bg_gas, char *err)
+
 cdef extern void adiabatclimate_toa_fluxes_wrapper(void *ptr, double *T_surf, int *ng, 
                                      double *P_i_surf, double *ISR, double *OLR, char *err)
 
 cdef extern void adiabatclimate_toa_fluxes_column_wrapper(void *ptr, double *T_surf, int *ng, 
                                      double *P_i_surf, double *ISR, double *OLR, char *err)
 
+cdef extern void adiabatclimate_toa_fluxes_bg_gas_wrapper(void *ptr, double *T_surf, int *ng, 
+                                     double *P_i_surf, double *P_surf, char *bg_gas, double *ISR, 
+                                     double *OLR, char *err)
+
 cdef extern void adiabatclimate_surface_temperature_wrapper(void *ptr, int *ng, 
                                       double *P_i_surf, double *T_guess, double *T_surf, char *err)
 
 cdef extern void adiabatclimate_surface_temperature_column_wrapper(void *ptr, int *ng, 
                                       double *N_i_surf, double *T_guess, double *T_surf, char *err)
+
+cdef extern void adiabatclimate_surface_temperature_bg_gas_wrapper(void *ptr, int *ng, 
+                                      double *P_i_surf, double *P_surf, char *bg_gas, 
+                                      double *T_guess, double *T_surf, char *err)
 
 cdef extern void adiabatclimate_to_regular_grid_wrapper(void *ptr, char *err)
 
@@ -46,8 +57,14 @@ cdef extern void adiabatclimate_rh_set(void *ptr, int *dim1, double *val)
 cdef extern void adiabatclimate_species_names_get_size(void *ptr, int *dim1)
 cdef extern void adiabatclimate_species_names_get(void *ptr, int *dim1, char* species_names)
 
+cdef extern void adiabatclimate_p_surf_get(void *ptr, double *val)
+
+cdef extern void adiabatclimate_p_trop_get(void *ptr, double *val)
+
 cdef extern void adiabatclimate_p_get_size(void *ptr, int *dim1)
 cdef extern void adiabatclimate_p_get(void *ptr, int *dim1, double *arr)
+
+cdef extern void adiabatclimate_t_surf_get(void *ptr, double *val)
 
 cdef extern void adiabatclimate_t_get_size(void *ptr, int *dim1)
 cdef extern void adiabatclimate_t_get(void *ptr, int *dim1, double *arr)
