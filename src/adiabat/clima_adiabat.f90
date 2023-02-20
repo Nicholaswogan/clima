@@ -39,14 +39,19 @@ module clima_adiabat
     real(dp), allocatable :: N_surface(:) !! reservoir of gas on surface mol/cm^2 (ng)
     
   contains
+    ! Constructs atmospheres
     procedure :: make_profile => AdiabatClimate_make_profile
     procedure :: make_column => AdiabatClimate_make_column
     procedure :: make_profile_bg_gas => AdiabatClimate_make_profile_bg_gas
+    ! Constructs atmosphere and does radiative transfer
     procedure :: TOA_fluxes => AdiabatClimate_TOA_fluxes
     procedure :: TOA_fluxes_column => AdiabatClimate_TOA_fluxes_column
+    procedure :: TOA_fluxes_bg_gas => AdiabatClimate_TOA_fluxes_bg_gas
+    ! Non-linear solves for equilibrium climate
     procedure :: surface_temperature => AdiabatClimate_surface_temperature
     procedure :: surface_temperature_column => AdiabatClimate_surface_temperature_column
     procedure :: surface_temperature_bg_gas => AdiabatClimate_surface_temperature_bg_gas
+    ! Utilities
     procedure :: to_regular_grid => AdiabatClimate_to_regular_grid
     procedure :: out2atmosphere_txt => AdiabatClimate_out2atmosphere_txt
   end type
@@ -59,10 +64,10 @@ contains
   
   function create_AdiabatClimate(datadir, species_f, settings_f, star_f, err) result(c)
     use clima_types, only: ClimaSettings 
-    character(*), intent(in) :: datadir
-    character(*), intent(in) :: species_f
-    character(*), intent(in) :: settings_f
-    character(*), intent(in) :: star_f
+    character(*), intent(in) :: datadir !! Directory with radiative transfer data
+    character(*), intent(in) :: species_f !! Species yaml file
+    character(*), intent(in) :: settings_f !! Settings yaml file
+    character(*), intent(in) :: star_f !! Star text file
     character(:), allocatable, intent(out) :: err
     
     type(AdiabatClimate) :: c
@@ -102,23 +107,22 @@ contains
       err = '"atmosphere-grid" is missing from file "'//settings_f//'"'
       return
     endif
-    if (s%planet_is_present) then
-      c%planet_mass = s%planet_mass
-      c%planet_radius = s%planet_radius
-      if (.not.allocated(s%number_of_zenith_angles)) then
-        err = '"number-of-zenith-angles" is missing from file "'//settings_f//'"'
-        return
-      endif
-      if (.not.allocated(s%surface_albedo)) then
-        err = '"surface-albedo" is missing from file "'//settings_f//'"'
-        return
-      endif
-    else
+    if (.not.s%planet_is_present) then
       err = '"planet" is missing from file "'//settings_f//'"'
       return
     endif
+    c%planet_mass = s%planet_mass
+    c%planet_radius = s%planet_radius
+    if (.not.allocated(s%number_of_zenith_angles)) then
+      err = '"number-of-zenith-angles" is missing from file "'//settings_f//'"'
+      return
+    endif
+    if (.not.allocated(s%surface_albedo)) then
+      err = '"surface-albedo" is missing from file "'//settings_f//'"'
+      return
+    endif
     
-    ! make IR radiative transfer with list of species, from species file
+    ! Make radiative transfer with list of species, from species file
     ! and the optical-properties from the settings file
     c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz, err)
     if (allocated(err)) return
@@ -130,12 +134,15 @@ contains
     
   end function
   
+  !> Constructs an atmosphere using a multispecies pseudoadiabat (Eq. 1 in Graham et al. 2021, PSJ)
+  !> troposphere connected to an isothermal stratosphere. Input are surface partial pressures
+  !> of each gas.
   subroutine AdiabatClimate_make_profile(self, T_surf, P_i_surf, err)
     use clima_adiabat_general, only: make_profile
     use clima_const, only: k_boltz
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: T_surf !! K
-    real(dp), intent(in) :: P_i_surf(:)
+    real(dp), intent(in) :: P_i_surf(:) !! dynes/cm^2
     character(:), allocatable, intent(out) :: err
     
     real(dp), allocatable :: P_e(:), z_e(:), T_e(:), f_i_e(:,:)
@@ -150,7 +157,7 @@ contains
     allocate(P_e(2*self%nz+1),  z_e(2*self%nz+1), T_e(2*self%nz+1))
     allocate(f_i_e(2*self%nz+1,self%sp%ng))
     allocate(density(self%nz))
-    
+
     call make_profile(T_surf, P_i_surf, &
                       self%sp, self%nz, self%planet_mass, &
                       self%planet_radius, self%P_top, self%T_trop, self%RH, &
@@ -177,12 +184,14 @@ contains
     
   end subroutine
 
+  !> Similar to `make_profile`, but instead the input is column reservoirs 
+  !> of each gas (mol/cm^2). 
   subroutine AdiabatClimate_make_column(self, T_surf, N_i_surf, err)
     use clima_adiabat_general, only: make_column
     use clima_const, only: k_boltz
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: T_surf !! K
-    real(dp), intent(in) :: N_i_surf(:)
+    real(dp), intent(in) :: N_i_surf(:) !! mole/cm^2
     character(:), allocatable, intent(out) :: err
     
     real(dp), allocatable :: P_e(:), z_e(:), T_e(:), f_i_e(:,:)
@@ -224,7 +233,7 @@ contains
     
   end subroutine
 
-  !> Similar to make_profile, but instead imposes a background gas and fixed
+  !> Similar to `make_profile`, but instead imposes a background gas and fixed
   !> surface pressure. We do a non-linear solve for the background gas pressure
   !> so that the desired total surface pressure is satisfied.
   subroutine AdiabatClimate_make_profile_bg_gas(self, T_surf, P_i_surf, P_surf, bg_gas, err)
@@ -294,95 +303,99 @@ contains
     end subroutine
   end subroutine
   
+  !> Calls `make_profile`, then does radiative transfer on the constructed atmosphere
   subroutine AdiabatClimate_TOA_fluxes(self, T_surf, P_i_surf, ISR, OLR, err)
     class(AdiabatClimate), intent(inout) :: self
     real(dp), target, intent(in) :: T_surf !! K
-    real(dp), target, intent(in) :: P_i_surf(:)
-    real(dp), intent(out) :: ISR, OLR
+    real(dp), target, intent(in) :: P_i_surf(:) !! dynes/cm^2
+    real(dp), intent(out) :: ISR !! Top-of-atmosphere incoming solar radiation (mW/m^2)
+    real(dp), intent(out) :: OLR !! Top-of-atmosphere outgoing longwave radiation (mW/m^2)
     character(:), allocatable, intent(out) :: err
-
-    if (size(P_i_surf) /= self%sp%ng) then
-      err = "P_i_surf has the wrong dimension"
-      return
-    endif
     
     ! make atmosphere profile
     call self%make_profile(T_surf, P_i_surf, err)
     if (allocated(err)) return
     
     ! Do radiative transfer
-    ! MUST CONVERT P TO BARS
     call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
     
   end subroutine
 
+  !> Calls `make_column`, then does radiative transfer on the constructed atmosphere
   subroutine AdiabatClimate_TOA_fluxes_column(self, T_surf, N_i_surf, ISR, OLR, err)
     class(AdiabatClimate), intent(inout) :: self
     real(dp), target, intent(in) :: T_surf !! K
-    real(dp), target, intent(in) :: N_i_surf(:)
+    real(dp), target, intent(in) :: N_i_surf(:) !! mole/cm^2
+    real(dp), intent(out) :: ISR !! Top-of-atmosphere incoming solar radiation (mW/m^2)
+    real(dp), intent(out) :: OLR !! Top-of-atmosphere outgoing longwave radiation (mW/m^2)
     character(:), allocatable, intent(out) :: err    
-    real(dp), intent(out) :: ISR, OLR
-
-    if (size(N_i_surf) /= self%sp%ng) then
-      err = "N_i_surf has the wrong dimension"
-      return
-    endif
     
     ! make atmosphere profile
     call self%make_column(T_surf, N_i_surf, err)
     if (allocated(err)) return
     
     ! Do radiative transfer
-    ! MUST CONVERT P TO BARS
     call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
 
   end subroutine
+
+  !> Calls `make_profile_bg_gas`, then does radiative transfer on the constructed atmosphere
+  subroutine AdiabatClimate_TOA_fluxes_bg_gas(self, T_surf, P_i_surf, P_surf, bg_gas, ISR, OLR, err)
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), target, intent(in) :: T_surf !! K
+    real(dp), target, intent(in) :: P_i_surf(:) !! dynes/cm^2
+    real(dp), intent(in) :: P_surf !! dynes/cm^2
+    character(*), intent(in) :: bg_gas !! background gas
+    real(dp), intent(out) :: ISR !! Top-of-atmosphere incoming solar radiation (mW/m^2)
+    real(dp), intent(out) :: OLR !! Top-of-atmosphere outgoing longwave radiation (mW/m^2)
+    character(:), allocatable, intent(out) :: err
+    
+    ! make atmosphere profile
+    call self%make_profile_bg_gas(T_surf, P_i_surf, P_surf, bg_gas, err)
+    if (allocated(err)) return
+    
+    ! Do radiative transfer
+    call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
+    if (allocated(err)) return
+    
+  end subroutine
   
+  !> Does a non-linear solve for the surface temperature that balances incoming solar
+  !> and outgoing longwave radiation. Uses `make_profile`.
   function AdiabatClimate_surface_temperature(self, P_i_surf, T_guess, err) result(T_surf)
     use minpack_module, only: hybrd1
+    use clima_useful, only: MinpackHybrd1Vars
     class(AdiabatClimate), intent(inout) :: self
-    real(dp), intent(in) :: P_i_surf(:)
-    real(dp), optional, intent(in) :: T_guess
+    real(dp), intent(in) :: P_i_surf(:) !! dynes/cm^2
+    real(dp), optional, intent(in) :: T_guess !! K
     character(:), allocatable, intent(out) :: err
     
     real(dp) :: T_surf
     
     real(dp) :: T_guess_
-    
-    integer, parameter :: n = 1
-    real(dp) :: x(1)
-    real(dp) :: fvec(1)
-    real(dp), parameter :: tol = 1.0e-8_dp
-    integer :: info
-    integer, parameter :: lwa = (n*(3*n+13))/2 + 1
-    real(dp) :: wa(lwa)
+    type(MinpackHybrd1Vars) :: mv
     
     if (present(T_guess)) then
       T_guess_ = T_guess
     else
       T_guess_ = 280.0_dp
     endif
-
-    if (size(P_i_surf) /= self%sp%ng) then
-      err = "P_i_surf has the wrong dimension"
+    
+    mv = MinpackHybrd1Vars(1)
+    mv%x(1) = log10(T_guess_)
+    call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+    if (mv%info == 0 .or. mv%info > 1) then
+      err = 'hybrd1 root solve failed in surface_temperature.'
+      return
+    elseif (mv%info < 0) then
+      err = 'hybrd1 root solve failed in surface_temperature: '//err
       return
     endif
     
-    x(1) = log10(T_guess_)
-    call hybrd1(fcn, n, x, fvec, tol, info, wa, lwa)
-    if (info == 0 .or. info > 4) then
-      err = 'hybrd1 root solve failed'
-      return
-    elseif (info < 0) then
-      ! err already set
-      err = 'hybrd1 root solve failed: '//err
-      return
-    endif
-    
-    T_surf = 10.0_dp**x(1)
-    call fcn(n, x, fvec, info)
+    T_surf = 10.0_dp**mv%x(1)
+    call fcn(mv%n, mv%x, mv%fvec, mv%info)
     
   contains
     subroutine fcn(n_, x_, fvec_, iflag_)
@@ -395,6 +408,7 @@ contains
       call self%TOA_fluxes(T, P_i_surf, ISR, OLR, err)
       if (allocated(err)) then
         iflag_ = -1
+        return
       endif
       fvec_(1) = ISR - OLR
     end subroutine
@@ -403,6 +417,7 @@ contains
 
   function AdiabatClimate_surface_temperature_column(self, N_i_surf, T_guess, err) result(T_surf)
     use minpack_module, only: hybrd1
+    use clima_useful, only: MinpackHybrd1Vars
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: N_i_surf(:)
     real(dp), optional, intent(in) :: T_guess
@@ -411,19 +426,7 @@ contains
     real(dp) :: T_surf
     
     real(dp) :: T_guess_
-    
-    integer, parameter :: n = 1
-    real(dp) :: x(1)
-    real(dp) :: fvec(1)
-    real(dp), parameter :: tol = 1.0e-8_dp
-    integer :: info
-    integer, parameter :: lwa = (n*(3*n+13))/2 + 1
-    real(dp) :: wa(lwa)
-
-    if (size(N_i_surf) /= self%sp%ng) then
-      err = "N_i_surf has the wrong dimension"
-      return
-    endif
+    type(MinpackHybrd1Vars) :: mv
     
     if (present(T_guess)) then
       T_guess_ = T_guess
@@ -431,19 +434,19 @@ contains
       T_guess_ = 280.0_dp
     endif
     
-    x(1) = log10(T_guess_)
-    call hybrd1(fcn, n, x, fvec, tol, info, wa, lwa)
-    if (info == 0 .or. info > 4) then
-      err = 'hybrd1 root solve failed'
+    mv = MinpackHybrd1Vars(1)
+    mv%x(1) = log10(T_guess_)
+    call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+    if (mv%info == 0 .or. mv%info > 1) then
+      err = 'hybrd1 root solve failed in surface_temperature_column.'
       return
-    elseif (info < 0) then
-      ! err already set
-      err = 'hybrd1 root solve failed: '//err
+    elseif (mv%info < 0) then
+      err = 'hybrd1 root solve failed in surface_temperature_column: '//err
       return
     endif
     
-    T_surf = 10.0_dp**x(1)
-    call fcn(n, x, fvec, info)
+    T_surf = 10.0_dp**mv%x(1)
+    call fcn(mv%n, mv%x, mv%fvec, mv%info)
     
   contains
     subroutine fcn(n_, x_, fvec_, iflag_)
@@ -505,27 +508,18 @@ contains
       real(dp), intent(in) :: x_(n_)
       real(dp), intent(out) :: fvec_(n_)
       integer, intent(inout) :: iflag_
-
       real(dp) :: T, ISR, OLR
-
       T = 10.0_dp**x_(1)
-
-      call self%make_profile_bg_gas(T, P_i_surf, P_surf, bg_gas, err)
+      call self%TOA_fluxes_bg_gas(T, P_i_surf, P_surf, bg_gas, ISR, OLR, err)
       if (allocated(err)) then
         iflag_ = -1
         return
       endif
-
-      call self%rad%TOA_fluxes(T, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
-      if (allocated(err)) then
-        iflag_ = -1
-        return
-      endif
-
       fvec_(1) = ISR - OLR
     end subroutine
   end function
 
+  !> Re-grids atmosphere so that each grid cell is equally spaced in altitude.
   subroutine AdiabatClimate_to_regular_grid(self, err)
     use futils, only: rebin, interp
     use clima_eqns, only: vertical_grid
@@ -564,7 +558,7 @@ contains
     do i = 1,self%sp%ng
       call rebin(ze, self%densities(:,i), ze_new, densities_new(:,i), ierr)
       if (ierr /= 0) then
-        err = 'subroutine conserving_rebin returned an error'
+        err = 'subroutine `rebin` returned an error'
         return
       endif
     enddo
@@ -572,7 +566,7 @@ contains
     allocate(T_new(self%nz))
     call interp(self%nz, self%nz, z_new, self%z, self%T, T_new, ierr)
     if (ierr /= 0) then
-      err = 'Subroutine interp returned an error.'
+      err = 'Subroutine `interp` returned an error.'
       return
     endif
 

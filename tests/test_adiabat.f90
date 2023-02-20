@@ -38,13 +38,15 @@ program test
 
   print*,T
 
-  call c%make_column(280.0_dp, &
-                    [15.0e3_dp, 0.0*23.0_dp, 1.0*36.0_dp], &
-                    err)
+  T = c%surface_temperature_bg_gas( &
+      [270.0e6_dp, 400e-6_dp*1.0e6_dp, 1.0e6_dp], &
+      P_surf = 1.0e6_dp, bg_gas='N2', T_guess = 280.0_dp, err=err)
   if (allocated(err)) then
     print*,err
     stop 1
   endif
+
+  print*,T
 
   call c%to_regular_grid(err)
   if (allocated(err)) then
