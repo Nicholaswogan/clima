@@ -9,6 +9,11 @@ cdef class Radtran:
   def __dealloc__(self):
     pass
 
+  def skin_temperature(self, double bond_albedo):
+    cdef double T_skin
+    rad_pxd.radtran_skin_temperature_wrapper(&self._ptr, &bond_albedo, &T_skin)
+    return T_skin
+
   property ir:
     def __get__(self):
       cdef void *ptr1;

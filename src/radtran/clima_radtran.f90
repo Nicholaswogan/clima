@@ -88,6 +88,7 @@ module clima_radtran
   contains
     procedure :: radiate => Radtran_radiate
     procedure :: TOA_fluxes => Radtran_TOA_fluxes
+    procedure :: skin_temperature => Radtran_skin_temperature
   end type
 
   interface Radtran
@@ -412,6 +413,23 @@ contains
     OLR = - (self%wrk_ir%fdn_n(self%nz+1) - self%wrk_ir%fup_n(self%nz+1)) ! Outgoing long wave
 
   end subroutine
+
+  function Radtran_skin_temperature(self, bond_albedo) result(T_skin)
+    use clima_eqns, only: skin_temperature
+    class(Radtran), target, intent(inout) :: self
+    real(dp), intent(in) :: bond_albedo
+    real(dp) :: T_skin
+
+    real(dp) :: stellar_radiation
+    integer :: i
+
+    stellar_radiation = 0.0_dp
+    do i = 1,self%sol%nw
+      stellar_radiation = stellar_radiation + self%photons_sol(i)*(self%sol%freq(i) - self%sol%freq(i+1))
+    enddo
+    stellar_radiation = stellar_radiation/1.0e3_dp
+    T_skin = skin_temperature(stellar_radiation, bond_albedo)
+  end function
 
   !!!!!!!!!!!!!!!!!
   !!! Utilities !!!

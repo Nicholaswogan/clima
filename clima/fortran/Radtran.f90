@@ -1,5 +1,15 @@
 ! Radtran
 
+subroutine radtran_skin_temperature_wrapper(ptr, bond_albedo, T_skin) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: bond_albedo
+  real(c_double), intent(out) :: T_skin
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  T_skin = rad%skin_temperature(bond_albedo)
+end subroutine
+
 !!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!! getters and setters !!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!
