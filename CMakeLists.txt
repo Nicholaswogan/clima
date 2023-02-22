@@ -17,6 +17,9 @@ Fortran executables" ON)
 option(BUILD_PYTHON_CLIMA "if ON, then will build a python
 version via Cython" OFF)
 
+option(PYTHON_CLIMA_DESTINATION "folder to install python 
+version of clima" "clima")
+
 # src
 add_subdirectory(src)
 
@@ -35,9 +38,9 @@ if (BUILD_PYTHON_CLIMA)
   add_subdirectory(clima)
   
   if (SKBUILD)
-    install(TARGETS _clima DESTINATION clima)
+    install(TARGETS _clima DESTINATION ${PYTHON_CLIMA_DESTINATION})
   else()
-    install(TARGETS _clima DESTINATION ${CMAKE_SOURCE_DIR}/clima)
+    install(TARGETS _clima DESTINATION ${CMAKE_SOURCE_DIR}/${PYTHON_CLIMA_DESTINATION})
   endif()
                 
 endif()
