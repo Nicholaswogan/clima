@@ -17,8 +17,7 @@ Fortran executables" ON)
 option(BUILD_PYTHON_CLIMA "if ON, then will build a python
 version via Cython" OFF)
 
-option(PYTHON_CLIMA_DESTINATION "folder to install python 
-version of clima" "clima")
+set(PYTHON_CLIMA_DESTINATION "clima")
 
 # src
 add_subdirectory(src)
