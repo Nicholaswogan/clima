@@ -106,10 +106,10 @@ contains
     integer, allocatable :: sp_type(:)
 
     type(MinpackHybrd1Vars) :: mv
-    real(dp), parameter :: scale_factors(*) = [1.0_dp, 0.5_dp, 2.0_dp] !! Scalings for root solve guessing
+    real(dp), parameter :: scale_factors(*) = [1.0_dp, 0.5_dp, 2.0_dp, 0.1_dp, 5.0_dp] !! Scalings for root solve guessing
 
     ! allocate memory for minpack
-    mv = MinpackHybrd1Vars(n=sp%ng, tol=1.0e-5_dp)
+    mv = MinpackHybrd1Vars(n=sp%ng, tol=1.0e-8_dp)
 
     ! allocate some work memory
     allocate(P_av(nz), T_av(nz), density_av(nz), f_i_av(nz,sp%ng), dz(nz))
@@ -151,12 +151,18 @@ contains
 
   contains
     subroutine fcn(n_, x_, fvec_, iflag_)
+      use ieee_arithmetic, only: ieee_positive_inf, ieee_value
       integer, intent(in) :: n_
       real(dp), intent(in) :: x_(n_)
       real(dp), intent(out) :: fvec_(n_)
       integer, intent(inout) :: iflag_
 
       P_i(:) = 10.0_dp**x_(:)
+      if (any(P_i == ieee_value(1.0_dp, ieee_positive_inf))) then
+        err = 'ininity values were encountered.'
+        iflag_ = -1
+        return
+      endif
       call make_profile(T_surf, P_i, &
                         sp, nz, planet_mass, &
                         planet_radius, P_top, T_trop, RH, &
