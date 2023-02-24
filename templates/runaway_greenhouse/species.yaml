@@ -18,14 +18,14 @@ species:
   # The `saturation` key is optional. If you omit it, then the model assumes that the species
   # never condenses
   saturation:
-    model: Wogan
+    model: LinearLatentHeat
     mu: 18.01534
     T-ref: 373.15
     P-ref: 1.0142e6
     T-triple: 273.15
     T-critical: 647.0
-    vaporization: {A: -3413485157036.1396, B: 4.093669788667096e-06, C: 3441894705040.859}
-    sublimation: {A: -208246976589.85126, B: -2.0162205697439128e-05, C: 235714178130.73007}
+    vaporization: {a: 2.841421e+10, b: -1.399732e+07}
+    sublimation: {a: 2.746884e+10, b: 4.181527e+06}
   note: From the NIST database
 - name: CO2
   composition: {C: 1, O: 2}
@@ -36,14 +36,14 @@ species:
     - [24.99735, 55.18696, -33.69137, 7.948387, -0.136638, -403.6075, 228.2431]
     - [58.16639, 2.720074, -0.492289, 0.038844, -6.447293, -425.9186, 263.6125]
   saturation:
-    model: Wogan
+    model: LinearLatentHeat
     mu: 44.01
     T-ref: 250.0
     P-ref: 17843676.678142548
     T-triple: 216.58
     T-critical: 304.13
-    vaporization: {A: 54312719329147.53, B: -0.05521337767888357, C: 3713265692.257046}
-    sublimation: {A: -2198001186332.361, B: 1.7914712699934955e-06, C: 2204570845246.812}
+    vaporization: {a: 4.656475e+09, b: -3.393595e+06}
+    sublimation: {a: 6.564668e+09, b: -3.892217e+06}
   note: From the NIST database
 - name: N2
   composition: {N: 2}

@@ -17,9 +17,9 @@ module clima_saturationdata
     real(dp) :: T_critical !! Critical temperature (K)
 
     !> Latent heat fit parameters for vaporization (no units)
-    real(dp) :: A_v, B_v, C_v
+    real(dp) :: a_v, b_v
     !> Latent heat fit parameters for sublimation (no units)
-    real(dp) :: A_s, B_s, C_s
+    real(dp) :: a_s, b_s
 
   contains
     procedure :: latent_heat_vap
@@ -40,7 +40,7 @@ contains
     class(SaturationData), intent(inout) :: self
     real(dp), intent(in) :: T !! K
     real(dp) :: L !! erg/g
-    L = self%A_v*exp(self%B_v*T)+self%C_v
+    L = self%a_v + self%b_v*T
   end function
 
   !> Latent heat of sublimation
@@ -48,7 +48,7 @@ contains
     class(SaturationData), intent(inout) :: self
     real(dp), intent(in) :: T !! K
     real(dp) :: L !! erg/g
-    L = self%A_s*exp(self%B_s*T)+self%C_s
+    L = self%a_s + self%b_s*T
   end function
 
   !> Latent heat of vaporization or sublimation
@@ -70,7 +70,7 @@ contains
     real(dp), intent(in) :: T !! K
     real(dp) :: p_sat !! dynes/cm2
     real(dp) :: tmp
-    tmp = integral_fcn(self%A_v, self%B_v, self%C_v, T) - integral_fcn(self%A_v, self%B_v, self%C_v, self%T_ref)
+    tmp = integral_fcn(self%a_v, self%b_v, T) - integral_fcn(self%a_v, self%b_v, self%T_ref)
     p_sat = self%P_ref*exp((self%mu/Rgas)*(tmp))
   end function
 
@@ -81,8 +81,8 @@ contains
     real(dp), intent(in) :: T !! K
     real(dp) :: p_sat !! dynes/cm2
     real(dp) :: tmp
-    tmp = (integral_fcn(self%A_v, self%B_v, self%C_v, self%T_triple) - integral_fcn(self%A_v, self%B_v, self%C_v, self%T_ref)) + &
-          (integral_fcn(self%A_s, self%B_s, self%C_s, T) - integral_fcn(self%A_s, self%B_s, self%C_s, self%T_triple))
+    tmp = (integral_fcn(self%a_v, self%b_v, self%T_triple) - integral_fcn(self%a_v, self%b_v, self%T_ref)) + &
+          (integral_fcn(self%a_s, self%b_s, T) - integral_fcn(self%a_s, self%b_s, self%T_triple))
     p_sat = self%P_ref*exp((self%mu/Rgas)*(tmp))
   end function
 
@@ -99,11 +99,10 @@ contains
   end function
 
   !> This is $\int L/T^2 dT$
-  function integral_fcn(A, B, C, T) result(out)
-    use futils, only: expi
-    real(dp), intent(in) :: A, B, C, T !! K
-    real(dp) :: out
-    out = -(-A*B*T*expi(B*T) + A*exp(B*T) + C)/T
+  function integral_fcn(A, B, T) result(res)
+    real(dp), intent(in) :: A, B, T !! K
+    real(dp) :: res
+    res = -A/T + B*log(T)
   end function
 
   function create_SaturationData(s, name, filename, err) result(sat)
@@ -120,8 +119,12 @@ contains
     
     model = s%get_string("model",error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (model /= "Wogan") then
-      err = 'Saturation "model" must be "Wogan" for species "'//name//'" in '//filename
+    if (model /= "LinearLatentHeat") then
+      err = 'Saturation "model" must be "LinearLatentHeat" for species "'//name//'" in '//filename
+      if (model == 'Wogan') then
+        err = err // '. Saturation model "Wogan" is no longer supported. *DO NOT* try to use'// &
+                     ' "Wogan" model A, B, and C fitting parameters.'
+      endif
       return
     endif
 
@@ -171,25 +174,19 @@ contains
     tmpdict => s%get_dictionary("vaporization",.true.,error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
 
-    sat%A_v = tmpdict%get_real('A',error = io_err)
+    sat%a_v = tmpdict%get_real('a',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
 
-    sat%B_v = tmpdict%get_real('B',error = io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-
-    sat%C_v = tmpdict%get_real('C',error = io_err)
+    sat%b_v = tmpdict%get_real('b',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
 
     tmpdict => s%get_dictionary("sublimation",.true.,error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
 
-    sat%A_s = tmpdict%get_real('A',error = io_err)
+    sat%a_s = tmpdict%get_real('a',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
 
-    sat%B_s = tmpdict%get_real('B',error = io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-
-    sat%C_s = tmpdict%get_real('C',error = io_err)
+    sat%b_s = tmpdict%get_real('b',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
 
     ! test evaluations
