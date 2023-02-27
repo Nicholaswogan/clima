@@ -376,6 +376,24 @@ subroutine adiabatclimate_t_trop_set(ptr, val) bind(c)
   c%T_trop = val
 end subroutine
 
+subroutine adiabatclimate_solve_for_t_trop_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  logical(c_bool), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%solve_for_T_trop
+end subroutine
+
+subroutine adiabatclimate_solve_for_t_trop_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  logical(c_bool), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%solve_for_T_trop = val
+end subroutine
+
 subroutine adiabatclimate_rh_get_size(ptr, dim1) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr

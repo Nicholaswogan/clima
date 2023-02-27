@@ -151,6 +151,14 @@ cdef class AdiabatClimate:
     def __set__(self, double val):
       wa_pxd.adiabatclimate_t_trop_set(&self._ptr, &val)
 
+  property solve_for_T_trop:
+    def __get__(self):
+      cdef bool val
+      wa_pxd.adiabatclimate_solve_for_t_trop_get(&self._ptr, &val)
+      return val
+    def __set__(self, bool val):
+      wa_pxd.adiabatclimate_solve_for_t_trop_set(&self._ptr, &val)
+
   property RH:
     def __get__(self):
       cdef int dim1

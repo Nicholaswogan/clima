@@ -17,6 +17,8 @@ program test
     print*,err
     stop 1
   endif
+
+  c%solve_for_T_trop = .true.
     
   T = c%surface_temperature( &
       [270.0e6_dp, 400e-6_dp*1.0e6_dp, 1.0e6_dp], &
@@ -26,7 +28,7 @@ program test
     stop 1
   endif
 
-  print*,T
+  print*,T, c%T_trop
 
   T = c%surface_temperature_column( &
       [15.0e3_dp, 400e-6_dp*23.0_dp, 1.0*36.0_dp], &
@@ -36,7 +38,7 @@ program test
     stop 1
   endif
 
-  print*,T
+  print*,T, c%T_trop
 
   T = c%surface_temperature_bg_gas( &
       [270.0e6_dp, 400e-6_dp*1.0e6_dp, 1.0e6_dp], &
@@ -46,7 +48,7 @@ program test
     stop 1
   endif
 
-  print*,T
+  print*,T, c%T_trop
 
   call c%to_regular_grid(err)
   if (allocated(err)) then

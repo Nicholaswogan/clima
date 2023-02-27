@@ -11,16 +11,19 @@ module clima_adiabat
 
     ! settings and free parameters
     integer :: nz
-    real(dp) :: P_top = 1.0e-2_dp ! (dynes/cm2)
-    real(dp) :: T_trop = 180.0_dp ! (T)
-    real(dp), allocatable :: RH(:) ! relative humidity (ng)
+    real(dp) :: P_top = 1.0e-2_dp !! (dynes/cm2)
+    real(dp) :: T_trop = 180.0_dp !! (T)
+    !> If .true., then Tropopause temperature is non-linearly solved for such that
+    !> it matches the skin temperature. The initial guess will always be self%T_trop.
+    logical :: solve_for_T_trop = .false. 
+    real(dp), allocatable :: RH(:) !! relative humidity (ng)
     
     ! planet properties
-    real(dp) :: planet_mass ! (g)
-    real(dp) :: planet_radius ! (cm)
+    real(dp) :: planet_mass !! (g)
+    real(dp) :: planet_radius !! (cm)
     
     ! species in the model
-    character(s_str_len), allocatable :: species_names(:) ! copy of species names
+    character(s_str_len), allocatable :: species_names(:) !! copy of species names
     type(Species) :: sp
     
     ! Radiative transfer
@@ -383,8 +386,14 @@ contains
       T_guess_ = 280.0_dp
     endif
     
-    mv = MinpackHybrd1Vars(1)
-    mv%x(1) = log10(T_guess_)
+    if (self%solve_for_T_trop) then
+      mv = MinpackHybrd1Vars(2)
+      mv%x(1) = log10(T_guess_)
+      mv%x(2) = log10(self%T_trop)
+    else
+      mv = MinpackHybrd1Vars(1)
+      mv%x(1) = log10(T_guess_)
+    endif
     call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
     if (mv%info == 0 .or. mv%info > 1) then
       err = 'hybrd1 root solve failed in surface_temperature.'
@@ -405,12 +414,21 @@ contains
       integer, intent(inout) :: iflag_
       real(dp) :: T, ISR, OLR
       T = 10.0_dp**x_(1)
+      if (self%solve_for_T_trop) then
+        self%T_trop = 10.0_dp**x_(2)
+      endif
       call self%TOA_fluxes(T, P_i_surf, ISR, OLR, err)
       if (allocated(err)) then
         iflag_ = -1
         return
       endif
       fvec_(1) = ISR - OLR
+
+      if (self%solve_for_T_trop) then; block
+        real(dp) :: bond_albedo
+        bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
+        fvec_(2) = self%rad%skin_temperature(bond_albedo) - self%T_trop
+      endblock; endif
     end subroutine
     
   end function
@@ -434,8 +452,14 @@ contains
       T_guess_ = 280.0_dp
     endif
     
-    mv = MinpackHybrd1Vars(1)
-    mv%x(1) = log10(T_guess_)
+    if (self%solve_for_T_trop) then
+      mv = MinpackHybrd1Vars(2)
+      mv%x(1) = log10(T_guess_)
+      mv%x(2) = log10(self%T_trop)
+    else
+      mv = MinpackHybrd1Vars(1)
+      mv%x(1) = log10(T_guess_)
+    endif
     call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
     if (mv%info == 0 .or. mv%info > 1) then
       err = 'hybrd1 root solve failed in surface_temperature_column.'
@@ -456,12 +480,21 @@ contains
       integer, intent(inout) :: iflag_
       real(dp) :: T, ISR, OLR
       T = 10.0_dp**x_(1)
+      if (self%solve_for_T_trop) then
+        self%T_trop = 10.0_dp**x_(2)
+      endif
       call self%TOA_fluxes_column(T, N_i_surf, ISR, OLR, err)
       if (allocated(err)) then
         iflag_ = -1
         return
       endif
       fvec_(1) = ISR - OLR
+
+      if (self%solve_for_T_trop) then; block
+        real(dp) :: bond_albedo
+        bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
+        fvec_(2) = self%rad%skin_temperature(bond_albedo) - self%T_trop
+      endblock; endif
     end subroutine
     
   end function
@@ -488,8 +521,14 @@ contains
       T_guess_ = 280.0_dp
     endif
 
-    mv = MinpackHybrd1Vars(1)
-    mv%x(1) = log10(T_guess_)
+    if (self%solve_for_T_trop) then
+      mv = MinpackHybrd1Vars(2)
+      mv%x(1) = log10(T_guess_)
+      mv%x(2) = log10(self%T_trop)
+    else
+      mv = MinpackHybrd1Vars(1)
+      mv%x(1) = log10(T_guess_)
+    endif
     call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
     if (mv%info == 0 .or. mv%info > 1) then
       err = 'hybrd1 root solve failed in surface_temperature_bg_gas.'
@@ -510,12 +549,21 @@ contains
       integer, intent(inout) :: iflag_
       real(dp) :: T, ISR, OLR
       T = 10.0_dp**x_(1)
+      if (self%solve_for_T_trop) then
+        self%T_trop = 10.0_dp**x_(2)
+      endif
       call self%TOA_fluxes_bg_gas(T, P_i_surf, P_surf, bg_gas, ISR, OLR, err)
       if (allocated(err)) then
         iflag_ = -1
         return
       endif
       fvec_(1) = ISR - OLR
+
+      if (self%solve_for_T_trop) then; block
+        real(dp) :: bond_albedo
+        bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
+        fvec_(2) = self%rad%skin_temperature(bond_albedo) - self%T_trop
+      endblock; endif
     end subroutine
   end function
 
