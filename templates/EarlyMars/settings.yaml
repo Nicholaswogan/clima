@@ -1,0 +1,28 @@
+
+atmosphere-grid:
+  number-of-layers: 100
+  
+planet:
+  planet-mass: 6.4169e26 # Mars (g)
+  planet-radius: 3.3895e8 # Mars (cm)
+  number-of-zenith-angles: 4
+  surface-albedo: 0.2
+  photon-scale-factor: 0.4286 # Mars
+  
+optical-properties:
+  ir:
+    k-method: RandomOverlapResortRebin
+    number-of-bins: 32
+    opacities:
+      k-distributions: [H2O, CO2, CH4]
+      CIA: [CH4-CH4, CO2-CH4, CO2-CO2, CO2-H2, H2-CH4, H2-H2, N2-H2, N2-N2]
+      rayleigh: true
+      water-continuum: MT_CKD
+  solar:
+    k-method: RandomOverlapResortRebin
+    number-of-bins: 32
+    opacities:
+      k-distributions: [H2O, CO2, CH4]
+      CIA: [CH4-CH4, CO2-CH4, CO2-CO2, CO2-H2, H2-CH4, H2-H2, N2-H2, N2-N2]
+      rayleigh: true  
+      water-continuum: MT_CKD
