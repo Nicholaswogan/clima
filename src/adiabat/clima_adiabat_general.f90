@@ -684,7 +684,7 @@ contains
 
     real(dp) :: T, z
 
-    real(dp) :: f_dry, cp_dry, mubar_dry
+    real(dp) :: f_dry, cp_dry
     real(dp) :: cp, mubar, L
     real(dp) :: first_sumation, second_sumation, Beta_i
     real(dp) :: grav
@@ -707,7 +707,6 @@ contains
 
     ! heat capacity and latent heat
     cp_dry = tiny(0.0_dp)
-    mubar_dry = 0.0_dp
     do i = 1,d%sp%ng
       if (d%sp_type(i) == CondensingSpeciesType) then
         L = d%sp%g(i)%sat%latent_heat(T) ! erg/g
@@ -723,12 +722,9 @@ contains
       endif
       d%cp_i_cur(i) = cp
       if (d%sp_type(i) == DrySpeciesType) then
-        ! Here, we convert to J/(kg*K)
-        cp_dry = cp_dry + d%f_i_dry(i)*cp*(1.0_dp/(d%sp%g(i)%mass*1.0e-3_dp))
-        mubar_dry = mubar_dry + d%f_i_dry(i)*d%sp%g(i)%mass
+        cp_dry = cp_dry + d%f_i_dry(i)*cp ! J/(mol*K)
       endif
     enddo
-    cp_dry = cp_dry*(mubar_dry*1e-3_dp) ! convert to J/(mol*K)
 
     ! Two sums in Equation 1 of Graham et al. (2021)
     first_sumation = 0.0_dp

@@ -77,15 +77,17 @@ contains
     do j = 1,self%nz
       cp(j) = 0.0_dp
       do i = 1,self%sp%ng
-        call heat_capacity_eval(self%sp%g(i)%thermo, w%T(j), found, cp_tmp)
+        call heat_capacity_eval(self%sp%g(i)%thermo, w%T(j), found, cp_tmp) ! J/(mol*K)
         if (.not. found) then
           err = "not found"
           return
         endif
-        ! J/(kg*K) (si units)
-        cp(j) = cp(j) + cp_tmp*self%mix(j,i)*(1.0_dp/(self%mubar(j)*1.0e-3_dp))
+        ! J/(mol*K)
+        cp(j) = cp(j) + cp_tmp*self%mix(j,i) ! J/(mol*K)
       enddo
-      ! convert to erg/(g*K)
+      ! J/(mol*K) * (mol/kg) = J/(kg*K)
+      cp(j) = cp(j)*(1.0_dp/(self%mubar(j)*1.0e-3_dp))
+      ! J/(kg*K) * (erg/J) * (kg/g) = erg/(g*K)
       cp(j) = cp(j)*1.0e4_dp
     enddo
     
