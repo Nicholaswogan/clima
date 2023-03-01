@@ -14,6 +14,24 @@ end subroutine
 !!! getters and setters !!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+subroutine radtran_surface_albedo_get(ptr, val) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  val = rad%surface_albedo
+end subroutine
+
+subroutine radtran_surface_albedo_set(ptr, val) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  rad%surface_albedo = val
+end subroutine
+
 subroutine radtran_ir_get(ptr, ptr1) bind(c)
   use clima, only: Radtran
   type(c_ptr), intent(in) :: ptr

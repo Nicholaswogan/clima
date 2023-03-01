@@ -14,6 +14,14 @@ cdef class Radtran:
     rad_pxd.radtran_skin_temperature_wrapper(&self._ptr, &bond_albedo, &T_skin)
     return T_skin
 
+  property surface_albedo:
+    def __get__(self):
+      cdef double val
+      rad_pxd.radtran_surface_albedo_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      rad_pxd.radtran_surface_albedo_set(&self._ptr, &val)
+
   property ir:
     def __get__(self):
       cdef void *ptr1;
