@@ -6,6 +6,16 @@ module clima_adiabat
   private
 
   public :: AdiabatClimate
+  public :: temp_dependent_albedo_fcn
+
+  abstract interface
+    !> A temperature dependent surface albedo
+    function temp_dependent_albedo_fcn(T_surf) result(albedo)
+      use iso_c_binding, only: c_double
+      real(c_double), value, intent(in) :: T_surf !! K
+      real(c_double) :: albedo
+    end function
+  end interface
 
   type :: AdiabatClimate
 
@@ -15,7 +25,10 @@ module clima_adiabat
     real(dp) :: T_trop = 180.0_dp !! (T)
     !> If .true., then Tropopause temperature is non-linearly solved for such that
     !> it matches the skin temperature. The initial guess will always be self%T_trop.
-    logical :: solve_for_T_trop = .false. 
+    logical :: solve_for_T_trop = .false.
+    !> Callback that sets the surface albedo based on the surface temperature.
+    !> This can be used to parameterize the ice-albedo feedback.
+    procedure(temp_dependent_albedo_fcn), nopass, pointer :: albedo_fcn => null()
     real(dp), allocatable :: RH(:) !! relative humidity (ng)
     
     ! planet properties
@@ -318,6 +331,11 @@ contains
     ! make atmosphere profile
     call self%make_profile(T_surf, P_i_surf, err)
     if (allocated(err)) return
+
+    ! set albedo
+    if (associated(self%albedo_fcn)) then
+      self%rad%surface_albedo = self%albedo_fcn(T_surf)
+    endif
     
     ! Do radiative transfer
     call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
@@ -337,6 +355,11 @@ contains
     ! make atmosphere profile
     call self%make_column(T_surf, N_i_surf, err)
     if (allocated(err)) return
+
+    ! set albedo
+    if (associated(self%albedo_fcn)) then
+      self%rad%surface_albedo = self%albedo_fcn(T_surf)
+    endif
     
     ! Do radiative transfer
     call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
@@ -358,6 +381,11 @@ contains
     ! make atmosphere profile
     call self%make_profile_bg_gas(T_surf, P_i_surf, P_surf, bg_gas, err)
     if (allocated(err)) return
+
+    ! set albedo
+    if (associated(self%albedo_fcn)) then
+      self%rad%surface_albedo = self%albedo_fcn(T_surf)
+    endif
     
     ! Do radiative transfer
     call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)

@@ -159,6 +159,25 @@ cdef class AdiabatClimate:
     def __set__(self, bool val):
       wa_pxd.adiabatclimate_solve_for_t_trop_set(&self._ptr, &val)
 
+  property albedo_fcn:
+    def __set__(self, object fcn):
+      cdef bool set_to_null
+      cdef unsigned long long int fcn_l
+      cdef wa_pxd.temp_dependent_albedo_fcn fcn_c
+      if isinstance(fcn, type(None)):
+        set_to_null = True
+      else:
+        set_to_null = False
+        argtypes = (ct.c_double,)
+        restype = ct.c_double
+        if not fcn.ctypes.argtypes == argtypes:
+          raise ClimaException("The callback function has the wrong argument types.")
+        if not fcn.ctypes.restype == restype:
+          raise ClimaException("The callback function has the wrong return type.")
+        fcn_l = <unsigned long long int> fcn.address
+        fcn_c = <wa_pxd.temp_dependent_albedo_fcn> fcn_l
+      wa_pxd.adiabatclimate_albedo_fcn_set(&self._ptr, &set_to_null, fcn_c)
+
   property RH:
     def __get__(self):
       cdef int dim1

@@ -394,6 +394,25 @@ subroutine adiabatclimate_solve_for_t_trop_set(ptr, val) bind(c)
   c%solve_for_T_trop = val
 end subroutine
 
+subroutine adiabatclimate_albedo_fcn_set(ptr, set_to_null, albedo_fcn_c) bind(c)
+  use clima, only: AdiabatClimate
+  use clima_adiabat, only: temp_dependent_albedo_fcn
+  type(c_ptr), intent(in) :: ptr
+  logical(c_bool), intent(in) :: set_to_null
+  type(c_funptr), value, intent(in) :: albedo_fcn_c
+
+  procedure(temp_dependent_albedo_fcn), pointer :: albedo_fcn_f
+  type(AdiabatClimate), pointer :: c
+
+  call c_f_pointer(ptr, c)
+  if (set_to_null) then
+    c%albedo_fcn => null()
+  else
+    call c_f_procpointer(albedo_fcn_c, albedo_fcn_f)
+    c%albedo_fcn => albedo_fcn_f
+  endif
+end subroutine
+
 subroutine adiabatclimate_rh_get_size(ptr, dim1) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr

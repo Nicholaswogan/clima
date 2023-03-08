@@ -2,6 +2,9 @@ from libcpp cimport bool
 cdef extern from "<stdbool.h>":
   pass
 
+# callback signatures
+ctypedef double (*temp_dependent_albedo_fcn)(double T_surf)
+
 # allocate and destroy
 cdef extern void allocate_adiabatclimate(void *ptr);
 cdef extern void deallocate_adiabatclimate(void *ptr);
@@ -52,6 +55,8 @@ cdef extern void adiabatclimate_t_trop_set(void *ptr, double *val)
 
 cdef extern void adiabatclimate_solve_for_t_trop_get(void *ptr, bool *val)
 cdef extern void adiabatclimate_solve_for_t_trop_set(void *ptr, bool *val)
+
+cdef extern void adiabatclimate_albedo_fcn_set(void *ptr, bool *set_to_null, temp_dependent_albedo_fcn fcn)
 
 cdef extern void adiabatclimate_rh_get_size(void *ptr, int *dim1)
 cdef extern void adiabatclimate_rh_get(void *ptr, int *dim1, double *val)
