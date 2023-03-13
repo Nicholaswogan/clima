@@ -5,6 +5,7 @@ atmosphere-grid:
   number-of-layers: 50
   
 planet:
+  background-gas: N2
   surface-pressure: 1.013
   planet-mass: 5.972e27
   planet-radius: 6.371e8

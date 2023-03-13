@@ -147,7 +147,7 @@ module clima_types
     type(Gas), allocatable :: g(:) ! (ng)
 
     ! Particles will be optional.
-    integer, allocatable :: np
+    integer :: np
     type(Particle), allocatable :: p(:) ! (np)
   end type
   

@@ -33,11 +33,16 @@ set(CLIMATE_SOURCES
   climate/clima_climate_integrate.f90
 )
 
+set(RC_SOURCES
+  rc/clima_rc.f90
+)
+
 add_library(clima 
   ${BASE_SOURCES}
   ${RADIATE_SOURCES}
   ${CLIMATE_SOURCES}
   ${ADIABAT_SOURCES}
+  ${RC_SOURCES}
   clima.f90
 )
 target_link_libraries(clima 

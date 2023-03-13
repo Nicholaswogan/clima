@@ -141,7 +141,7 @@ contains
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
 
     if (.not. associated(tmp_list)) then
-      ! No particles
+      sp%np = 0
       return
     endif
 

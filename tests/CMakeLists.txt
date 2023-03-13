@@ -1,5 +1,5 @@
 
-set(CLIMA_TESTS test_radtran test_climate test_adiabat)
+set(CLIMA_TESTS test_radtran test_climate test_adiabat test_rc)
 
 if (BUILD_EXECUTABLES)
   foreach(CLIMA_TEST ${CLIMA_TESTS})
