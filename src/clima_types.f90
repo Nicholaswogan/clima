@@ -131,6 +131,12 @@ module clima_types
     type(SaturationData), allocatable :: sat
     
   end type
+
+  type :: Particle
+    character(:), allocatable :: name
+    integer, allocatable :: composition(:) ! natoms
+    real(dp) :: mass
+  end type
   
   type :: Species
     integer :: natoms
@@ -139,6 +145,10 @@ module clima_types
     
     integer :: ng
     type(Gas), allocatable :: g(:) ! (ng)
+
+    ! Particles will be optional.
+    integer, allocatable :: np
+    type(Particle), allocatable :: p(:) ! (np)
   end type
   
   interface

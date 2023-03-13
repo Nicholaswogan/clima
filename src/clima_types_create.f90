@@ -135,7 +135,64 @@ contains
       item => item%next
     enddo
     !!! done with species !!!
-    
+
+    !!! Particles !!!
+    tmp_list => root%get_list('particles',required=.false.,error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+
+    if (.not. associated(tmp_list)) then
+      ! No particles
+      return
+    endif
+
+    sp%np = tmp_list%size()
+    allocate(sp%p(sp%np))
+    do j = 1,sp%np
+      allocate(sp%p(j)%composition(sp%natoms))
+      sp%p(j)%composition = 0
+    enddo
+
+    j = 1
+    item => tmp_list%first
+    do while(associated(item))
+      select type (element => item%node)
+      class is (type_dictionary)
+        ! name
+        tmp_str = element%get_string("name",error = io_err)
+        if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+        sp%p(j)%name = trim(tmp_str)
+
+        ! composition
+        dict => element%get_dictionary("composition",.true.,error = io_err)
+        if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+        key_value_pair => dict%first
+        do while (associated(key_value_pair))
+          ind = findloc(sp%atoms_names,trim(key_value_pair%key), 1)
+          if (ind == 0) then
+            err = 'The atom "'// trim(key_value_pair%key)//'" in particle "'// &
+                  sp%p(j)%name//'" is not in the list of atoms.'
+            return
+          endif
+          key_value_pair => key_value_pair%next
+        enddo
+        do i=1,sp%natoms
+          sp%p(j)%composition(i) =  &
+              dict%get_integer(sp%atoms_names(i), default = 0, error = io_err)
+          if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+        enddo
+        
+        ! mass
+        sp%p(j)%mass = sum(sp%p(j)%composition*sp%atoms_mass)
+        
+      class default
+        err = '"particles" in "'//trim(filename)//'" must made of dictionaries.'
+        return 
+      end select
+      j = j + 1
+      item => item%next
+    enddo
+    !!! done with particles !!!
+
   end subroutine
   
   subroutine unpack_thermo(molecule, molecule_name, infile, thermo, err)
