@@ -34,6 +34,7 @@ set(CLIMATE_SOURCES
 )
 
 set(RC_SOURCES
+  rc/clima_rc_adiabat.f90
   rc/clima_rc.f90
 )
 

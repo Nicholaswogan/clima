@@ -46,3 +46,5 @@ jobs:
         valgrind --error-exitcode=1 --leak-check=full ./tests/test_radtran
         ./tests/test_adiabat
         valgrind --error-exitcode=1 --leak-check=full ./tests/test_adiabat
+        ./tests/test_rc
+        valgrind --error-exitcode=1 --leak-check=full ./tests/test_rc
