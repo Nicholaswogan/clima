@@ -233,7 +233,7 @@ contains
     integer, allocatable :: cond_z_inds(:,:)
 
     T_surf = 280.0_dp
-    T_trop = 1.0_dp
+    T_trop = 200.0_dp
     allocate(RH(size(condensible_names)))
     allocate(cond_inds(size(condensible_names)))
     allocate(cond_z_inds(2,size(condensible_names)))

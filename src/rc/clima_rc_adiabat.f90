@@ -34,6 +34,8 @@ module clima_rc_adiabat
     integer :: stopping_reason !! Reason why we stop integration (see enum below)
     !> Index of gas that reached saturation if stopping_reason == ReachedGasSaturation
     integer :: ind_gas_reached_saturation
+    logical :: isothermal = .false.
+    logical :: search_for_roots = .true.
 
     ! work space
     real(dp), allocatable :: log10_P(:) !! P grid but in log10 space.
@@ -342,9 +344,15 @@ contains
         return
       endif
 
-      if (d%stopping_reason == ReachedPtop .or. &
-          d%stopping_reason == ReachedTropopause) then
+      if (d%stopping_reason == ReachedPtop) then
         exit
+      elseif (d%stopping_reason == ReachedTropopause) then
+        Pn = d%P_root
+        u = d%u_root
+        d%sp_type(:) = DrySpeciesType
+        d%isothermal = .true.
+        d%search_for_roots = .false.
+        d%stopping_reason = ReachedPtop
       elseif (d%stopping_reason == ReachedGasSaturation) then
         Pn = d%P_root
         u = d%u_root
@@ -387,7 +395,7 @@ contains
       return
     endif
 
-    ! Look for roots
+    if (d%search_for_roots) then
     call root_fcn(d, P_cur, T_cur, d%gout)
     if (allocated(d%err)) then
       irtrn = -10
@@ -433,6 +441,7 @@ contains
     endblock; endif
 
     d%gout_old(:) = d%gout(:) ! save for next step
+    endif
 
     ! save the results
     if (d%j <= size(d%P_integ)) then
@@ -606,6 +615,9 @@ contains
       mubar = mubar + d%f_i_cur(i)*d%sp%g(i)%mass
     enddo
 
+    if (d%isothermal) then
+    dT_dP = 0.0_dp
+    else
     ! Latent heat
     do i = 1,d%ncond
       j = d%cond_inds(i)
@@ -664,6 +676,7 @@ contains
     ! P = [dynes/cm2]
     ! T = [K]
     dT_dP = dlnT_dlnP*(T/P)
+    endif
 
     ! rate of change of altitude
     grav = gravity(d%planet_radius, d%planet_mass, z)
