@@ -48,14 +48,28 @@ module clima_rc
     real(dp), allocatable :: log10_delta_P(:) !! thickness of each pressure layer (dynes/cm^2)
     real(dp), allocatable :: z(:) !! nz
     real(dp), allocatable :: dz(:) !! nz
+    integer, allocatable :: cond_z_inds(:) !! ng
     real(dp), allocatable :: f_i(:,:) !! mixing ratios (nz,ng)
     real(dp), allocatable :: densities(:,:) !! molecules/cm^3 (nz,ng)
     real(dp), allocatable :: pdensities(:,:) !! particle densities (particles/cm^3) (nz,np)
     real(dp), allocatable :: radii(:,:) !! particle radii (cm) (nz,np)
     real(dp), allocatable :: T(:) !! (nz)
     real(dp) :: T_surf
+    real(dp) :: T_trop = 200.0_dp !! in/out
+
+    ! work variables for radiative transfer
+    real(dp), allocatable :: T_r(:) !! (nz_r)
+    real(dp), allocatable :: P_r(:) !! (nz_r)
+    real(dp), allocatable :: densities_r(:,:) !! (nz_r,ng)
+    real(dp), allocatable :: dz_r(:) !! nz_r
+    real(dp), allocatable :: pdensities_r(:,:) !! (nz_r,np)
+    real(dp), allocatable :: radii_r(:,:) !! (nz_r,np)
 
   contains
+    procedure :: make_profile => RadiativeConvectiveClimate_make_profile
+    procedure :: TOA_fluxes => RadiativeConvectiveClimate_TOA_fluxes
+    procedure :: surface_temperature => RadiativeConvectiveClimate_surface_temperature
+
     procedure :: initialize_stepper => RadiativeConvectiveClimate_initialize_stepper
 
   end type
@@ -140,11 +154,19 @@ contains
     ! allocate
     allocate(c%z(c%nz))
     allocate(c%dz(c%nz))
+    allocate(c%cond_z_inds(c%sp%ng))
     allocate(c%f_i(c%nz,c%sp%ng))
     allocate(c%densities(c%nz,c%sp%ng))
     allocate(c%pdensities(c%nz,c%sp%np))
     allocate(c%radii(c%nz,c%sp%np))
     allocate(c%T(c%nz))
+
+    allocate(c%T_r(c%nz_r))
+    allocate(c%P_r(c%nz_r))
+    allocate(c%densities_r(c%nz_r,c%sp%ng))
+    allocate(c%dz_r(c%nz_r))
+    allocate(c%pdensities_r(c%nz_r,c%sp%np))
+    allocate(c%radii_r(c%nz_r,c%sp%np))
 
   end function
 
@@ -184,6 +206,180 @@ contains
 
   end subroutine
 
+  subroutine RadiativeConvectiveClimate_make_profile(self, T_surf, condensible_names, condensible_P, condensible_RH, &
+                                                     f_i, err)
+    use clima_rc_adiabat, only: make_profile_rc
+    use clima_const, only: k_boltz
+    class(RadiativeConvectiveClimate), intent(inout) :: self
+    real(dp), intent(in) :: T_surf
+    character(*), intent(in) :: condensible_names(:)
+    real(dp), intent(in) :: condensible_P(:)
+    real(dp), intent(in) :: condensible_RH(:)
+    real(dp), intent(in) :: f_i(:,:)
+    character(:), allocatable, intent(out) :: err
+
+    integer :: i
+    integer, allocatable :: cond_inds(:), cond_z_inds(:)
+    real(dp), allocatable :: density(:)
+
+    self%T_surf = T_surf
+    self%f_i = f_i
+
+    allocate(cond_inds(size(condensible_names)))
+    allocate(cond_z_inds(size(condensible_names)))
+    do i = 1,size(condensible_names)
+      cond_inds(i) = findloc(self%species_names, condensible_names(i), 1)
+      if (cond_inds(i) == 0) then
+        err = 'Condensible input"'//trim(condensible_names(i))//'" is not in the list of species.'
+        return
+      endif
+    enddo
+
+    call make_profile_rc( &
+      self%sp, self%planet_mass, self%planet_radius, &
+      self%P_surf, T_surf, self%T_trop, self%nz, self%P, self%log10_delta_P, &
+      condensible_RH, condensible_P, cond_inds, self%bg_gas_ind, &
+      self%f_i, cond_z_inds, self%z, self%dz, self%T, err &
+    ) 
+    if (allocated(err)) return
+
+    self%cond_z_inds = -1
+    do i = 1,size(condensible_names)
+      self%cond_z_inds(cond_inds(i)) = cond_z_inds(i)
+    enddo
+
+    allocate(density(self%nz))
+    density = self%P/(k_boltz*self%T)
+    do i = 1,self%sp%ng
+      self%densities(:,i) = self%f_i(:,i)*density(:)
+    enddo
+
+  end subroutine
+
+  subroutine RadiativeConvectiveClimate_TOA_fluxes(self, T_surf, condensible_names, condensible_P, condensible_RH, &
+                                                   f_i, pdensities, radii, ISR, OLR, err)
+    use clima_rc_adiabat, only: make_profile_rc
+    use clima_const, only: k_boltz
+    class(RadiativeConvectiveClimate), intent(inout) :: self
+    real(dp), intent(in) :: T_surf
+    character(*), intent(in) :: condensible_names(:)
+    real(dp), intent(in) :: condensible_P(:)
+    real(dp), intent(in) :: condensible_RH(:)
+    real(dp), intent(in) :: f_i(:,:)
+    real(dp), optional, intent(in) :: pdensities(:,:)
+    real(dp), optional, intent(in) :: radii(:,:)
+    real(dp), intent(out) :: ISR, OLR
+    character(:), allocatable, intent(out) :: err
+
+    integer :: i,j
+
+    ! check inputs
+    call check_inputs(self%nz, self%sp%ng, self%sp%np, f_i, pdensities, radii, err)
+    if (allocated(err)) return
+
+    ! make profile
+    call self%make_profile(T_surf, condensible_names, condensible_P, condensible_RH, f_i, err)
+    if (allocated(err)) return
+
+    ! copy atmosphere to radiative transfer variables
+    do i = 1,self%nz
+      j = 2*(i-1)
+      self%T_r(j+1) = self%T(i)
+      self%T_r(j+2) = self%T(i)
+
+      self%P_r(j+1) = self%P(i)
+      self%P_r(j+2) = self%P(i)
+
+      self%densities_r(j+1,:) = self%densities(i,:)
+      self%densities_r(j+2,:) = self%densities(i,:)
+
+      self%dz_r(j+1) = 0.5_dp*self%dz(i)
+      self%dz_r(j+2) = 0.5_dp*self%dz(i)
+    enddo
+    if (present(pdensities)) then
+      self%pdensities = pdensities
+      self%radii = radii
+      do i = 1,self%nz
+        j = 2*(i-1)
+        self%pdensities_r(j+1,:) = self%pdensities(i,:)
+        self%pdensities_r(j+2,:) = self%pdensities(i,:)
+
+        self%radii_r(j+1,:) = self%radii(i,:)
+        self%radii_r(j+2,:) = self%radii(i,:)
+      enddo
+    endif
+
+    ! Do radiative transfer
+    if (present(pdensities)) then
+      call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, &
+                               self%pdensities_r, self%radii_r, ISR=ISR, OLR=OLR, err=err)
+      if (allocated(err)) return
+    else
+      call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, &
+                               ISR=ISR, OLR=OLR, err=err)
+      if (allocated(err)) return
+    endif
+
+  end subroutine
+
+  function RadiativeConvectiveClimate_surface_temperature(self, condensible_names, condensible_P, condensible_RH, &
+                                                            f_i, pdensities, radii, T_guess, err) result(T_surf)
+    use minpack_module, only: hybrd1
+    use clima_useful, only: MinpackHybrd1Vars
+    class(RadiativeConvectiveClimate), intent(inout) :: self
+    character(*), intent(in) :: condensible_names(:)
+    real(dp), intent(in) :: condensible_P(:)
+    real(dp), intent(in) :: condensible_RH(:)
+    real(dp), intent(in) :: f_i(:,:)
+    real(dp), optional, intent(in) :: pdensities(:,:)
+    real(dp), optional, intent(in) :: radii(:,:)
+    real(dp), optional, intent(in) :: T_guess
+    character(:), allocatable, intent(out) :: err
+
+    real(dp) :: T_surf
+
+    real(dp) :: T_guess_
+    type(MinpackHybrd1Vars) :: mv
+
+    if (present(T_guess)) then
+      T_guess_ = T_guess
+    else
+      T_guess_ = 280.0_dp
+    endif
+
+    mv = MinpackHybrd1Vars(1)
+    mv%x(1) = log10(T_guess_)
+    call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+    if (mv%info == 0 .or. mv%info > 1) then
+      err = 'hybrd1 root solve failed in surface_temperature.'
+      return
+    elseif (mv%info < 0) then
+      err = 'hybrd1 root solve failed in surface_temperature: '//err
+      return
+    endif
+
+    T_surf = 10.0_dp**mv%x(1)
+    call fcn(mv%n, mv%x, mv%fvec, mv%info)
+
+  contains 
+    subroutine fcn(n_, x_, fvec_, iflag_)
+      integer, intent(in) :: n_
+      real(dp), intent(in) :: x_(n_)
+      real(dp), intent(out) :: fvec_(n_)
+      integer, intent(inout) :: iflag_
+      real(dp) :: T, ISR, OLR
+      T = 10.0_dp**x_(1)
+      call self%TOA_fluxes(T, condensible_names, condensible_P, condensible_RH, &
+                           f_i, pdensities, radii, ISR, OLR, err)
+      if (allocated(err)) then
+        iflag_ = -1
+        return
+      endif
+      print*,T, ISR/1.0e3_dp, OLR/1.0e3_dp
+      fvec_(1) = ISR - OLR
+    end subroutine
+  end function
+
   function create_InitialConditions(condensible_names, condensible_P, f_i, pdensities, T_init, radii) result(init)
     character(*), intent(in) :: condensible_names(:)
     real(dp), intent(in) :: condensible_P(:)
@@ -206,12 +402,13 @@ contains
 
   end function
 
-  subroutine RadiativeConvectiveClimate_initialize_stepper(self, condensible_names, condensible_P, &
+  subroutine RadiativeConvectiveClimate_initialize_stepper(self, condensible_names, condensible_P, condensible_RH, &
                                                            f_i, pdensities, radii, err)
     use clima_rc_adiabat, only: make_profile_rc
     class(RadiativeConvectiveClimate), intent(inout) :: self
     character(*), intent(in) :: condensible_names(:)
     real(dp), intent(in) :: condensible_P(:)
+    real(dp), intent(in) :: condensible_RH(:)
     real(dp), intent(in) :: f_i(:,:)
     real(dp), optional, intent(in) :: pdensities(:,:)
     real(dp), optional, intent(in) :: radii(:,:)
@@ -228,17 +425,14 @@ contains
     ! now draw initial T-profile
     block
     real(dp) :: T_surf, T_trop
-    real(dp), allocatable :: RH(:)
     integer, allocatable :: cond_inds(:)
-    integer, allocatable :: cond_z_inds(:,:)
+    integer, allocatable :: cond_z_inds(:)
 
     T_surf = 280.0_dp
-    T_trop = 200.0_dp
-    allocate(RH(size(condensible_names)))
+    T_trop = 100.0_dp
     allocate(cond_inds(size(condensible_names)))
-    allocate(cond_z_inds(2,size(condensible_names)))
+    allocate(cond_z_inds(size(condensible_names)))
 
-    RH = 1.0_dp
     do i = 1,size(condensible_names)
       cond_inds(i) = findloc(self%species_names, condensible_names(i), 1)
     enddo
@@ -246,7 +440,7 @@ contains
     call make_profile_rc( &
       self%sp, self%planet_mass, self%planet_radius, &
       self%P_surf, T_surf, T_trop, self%nz, self%P, self%log10_delta_P, &
-      RH, condensible_P, cond_inds, self%bg_gas_ind, &
+      condensible_RH, condensible_P, cond_inds, self%bg_gas_ind, &
       self%f_i, cond_z_inds, self%z, self%dz, self%T, err &
     ) 
     if (allocated(err)) return
@@ -284,6 +478,11 @@ contains
     if (np > 0) then
       if (.not. present(radii)) then
         err = 'The model contains particles but "pdensities" and "radii" are not arguments.'
+        return
+      endif
+    elseif (np == 0) then
+      if (present(radii)) then
+        err = 'The model does not contain particles but "pdensities" and "radii" are arguments.'
         return
       endif
     endif

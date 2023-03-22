@@ -454,6 +454,11 @@ contains
         err = 'The model contains particles but "pdensities" and "radii" are not arguments.'
         return
       endif
+    elseif (np == 0) then
+      if (present(radii)) then
+        err = 'The model does not contain particles but "pdensities" and "radii" are arguments.'
+        return
+      endif
     endif
     
     call check_dimensions(nz, ng, T, P, densities, dz, err)

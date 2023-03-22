@@ -26,7 +26,7 @@ module clima_rc_adiabat
     ! Input/Output
     real(dp), pointer :: f_i(:,:)
     ! Output
-    integer, pointer :: cond_z_inds(:,:) !! (2,size(cond_inds))
+    integer, pointer :: cond_z_inds(:) !! (size(cond_inds))
     real(dp), pointer :: z(:) !! cm
     real(dp), pointer :: dz(:) !! cm
     real(dp), pointer :: T(:) !! K
@@ -45,6 +45,7 @@ module clima_rc_adiabat
     type(linear_interp_1d), allocatable :: f_interps(:) !! (ndry)
     integer, allocatable :: sp_type(:) !! (ncond)
     real(dp), allocatable :: L_i_cur(:) !! (ncond)
+    real(dp), allocatable :: P_at_start_cond(:) !! (ncond)
     real(dp), allocatable :: f_i_cur(:) !! (ng)
     real(dp), allocatable :: P_i_cur(:) !! (ng)
     real(dp), allocatable :: cp_i_cur(:) !! (ng)
@@ -100,7 +101,7 @@ contains
     real(dp), target, intent(in) :: RH(:), cond_P(:)
     integer, target, intent(in) :: cond_inds(:), bg_gas_ind
     real(dp), target, intent(inout) :: f_i(:,:)
-    integer, target, intent(out) :: cond_z_inds(:,:)
+    integer, target, intent(out) :: cond_z_inds(:)
     real(dp), target, intent(out) :: z(:), dz(:), T(:)
     character(:), allocatable, intent(out) :: err
 
@@ -155,7 +156,7 @@ contains
       err = 'make_profile_rc: Input "f_i" has the wrong shape'
       return
     endif
-    if (size(cond_z_inds,1) /= 2 .and. size(cond_z_inds,2) /= size(cond_P)) then
+    if (size(cond_z_inds) /= size(cond_P)) then
       err = 'make_profile_rc: Input "cond_z_inds" has the wrong shape'
       return
     endif
@@ -203,6 +204,7 @@ contains
     allocate(d%f_interps(d%ndry))
     allocate(d%sp_type(d%ncond))
     allocate(d%L_i_cur(d%ncond))
+    allocate(d%P_at_start_cond(d%ncond))
     allocate(d%f_i_cur(sp%ng))
     allocate(d%P_i_cur(sp%ng))
     allocate(d%cp_i_cur(sp%ng))
@@ -233,6 +235,7 @@ contains
       d%P_i_cur(j) = d%f_i(1,j)*P_surf
     enddo
 
+    d%P_at_start_cond = -1.0_dp
     ! Check if condensation is happening at surface
     do i = 1,d%ncond
       j = d%cond_inds(i)
@@ -244,6 +247,7 @@ contains
         d%P_i_cur(j) = P_sat
         d%f_i_cur(j) = P_sat/P_surf
         d%sp_type(i) = CondensingSpeciesType
+        d%P_at_start_cond(i) = P_surf
       else
         d%P_i_cur(j) = cond_P(i)
         d%f_i_cur(j) = cond_P(i)/P_surf
@@ -313,7 +317,7 @@ contains
 
     type(dop853_custom) :: dop
     logical :: status_ok
-    integer :: idid
+    integer :: idid, i, j
     real(dp) :: Pn, u(2)
     character(6) :: tmp_char
 
@@ -357,9 +361,32 @@ contains
         Pn = d%P_root
         u = d%u_root
         d%sp_type(d%ind_gas_reached_saturation) = CondensingSpeciesType
+        d%P_at_start_cond(d%ind_gas_reached_saturation) = Pn
         d%stopping_reason = ReachedPtop
       endif
 
+    enddo
+
+    ! Fill in output
+    do i = 1,d%nz
+      j = 2*i
+      d%f_i(i,:) = d%f_i_integ(j,:)
+      d%z(i) = d%z_integ(j)
+      d%dz(i) = d%z_integ(j+1) - d%z_integ(j-1)
+      d%T(i) = d%T_integ(j)
+    enddo
+
+    ! Indexes where gases begin saturation
+    d%cond_z_inds = -1
+    do j = 1,d%ncond
+      if (d%P_at_start_cond(j) > 0.0_dp) then
+        do i = 1,d%nz
+          if (d%P(i) < d%P_at_start_cond(j)) then
+            d%cond_z_inds(j) = i
+            exit
+          endif
+        enddo
+      endif
     enddo
 
   end subroutine
