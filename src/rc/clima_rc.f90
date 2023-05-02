@@ -39,8 +39,6 @@ module clima_rc
     real(dp) :: planet_radius !! cm
     real(dp) :: P_surf !! dynes/cm^2
     real(dp) :: P_top = 1.0e2_dp !! Pressure at top of the atmosphere (dynes/cm^2)
-
-    type(InitialConditions), allocatable :: init
   
     ! State of the atmosphere
     real(dp), allocatable :: P(:) !! grid-center pressure (dynes/cm^2)
@@ -48,7 +46,6 @@ module clima_rc
     real(dp), allocatable :: log10_delta_P(:) !! thickness of each pressure layer (dynes/cm^2)
     real(dp), allocatable :: z(:) !! nz
     real(dp), allocatable :: dz(:) !! nz
-    integer, allocatable :: cond_z_inds(:) !! ng
     real(dp), allocatable :: f_i(:,:) !! mixing ratios (nz,ng)
     real(dp), allocatable :: densities(:,:) !! molecules/cm^3 (nz,ng)
     real(dp), allocatable :: pdensities(:,:) !! particle densities (particles/cm^3) (nz,np)
@@ -56,6 +53,14 @@ module clima_rc
     real(dp), allocatable :: T(:) !! (nz)
     real(dp) :: T_surf
     real(dp) :: T_trop = 200.0_dp !! in/out
+    real(dp) :: P_trop
+    integer :: trop_ind
+
+    ! Set
+    character(s_str_len), allocatable :: condensible_names(:)
+    integer, allocatable :: condensible_inds(:)
+    real(dp), allocatable :: condensible_P(:)
+    integer, allocatable :: condensible_z_inds(:)
 
     ! work variables for radiative transfer
     real(dp), allocatable :: T_r(:) !! (nz_r)
@@ -154,7 +159,6 @@ contains
     ! allocate
     allocate(c%z(c%nz))
     allocate(c%dz(c%nz))
-    allocate(c%cond_z_inds(c%sp%ng))
     allocate(c%f_i(c%nz,c%sp%ng))
     allocate(c%densities(c%nz,c%sp%ng))
     allocate(c%pdensities(c%nz,c%sp%np))
@@ -219,17 +223,26 @@ contains
     character(:), allocatable, intent(out) :: err
 
     integer :: i
-    integer, allocatable :: cond_inds(:), cond_z_inds(:)
     real(dp), allocatable :: density(:)
 
     self%T_surf = T_surf
     self%f_i = f_i
 
-    allocate(cond_inds(size(condensible_names)))
-    allocate(cond_z_inds(size(condensible_names)))
+    if (allocated(self%condensible_names)) then
+      deallocate(self%condensible_names)
+      deallocate(self%condensible_inds)
+      deallocate(self%condensible_P)
+      deallocate(self%condensible_z_inds)
+    endif
+    allocate(self%condensible_names(size(condensible_names)))
+    allocate(self%condensible_inds(size(condensible_names)))
+    allocate(self%condensible_P(size(condensible_names)))
+    allocate(self%condensible_z_inds(size(condensible_names)))
+    self%condensible_names = condensible_names
+    self%condensible_P = condensible_P
     do i = 1,size(condensible_names)
-      cond_inds(i) = findloc(self%species_names, condensible_names(i), 1)
-      if (cond_inds(i) == 0) then
+      self%condensible_inds(i) = findloc(self%species_names, condensible_names(i), 1)
+      if (self%condensible_inds(i) == 0) then
         err = 'Condensible input"'//trim(condensible_names(i))//'" is not in the list of species.'
         return
       endif
@@ -238,15 +251,20 @@ contains
     call make_profile_rc( &
       self%sp, self%planet_mass, self%planet_radius, &
       self%P_surf, T_surf, self%T_trop, self%nz, self%P, self%log10_delta_P, &
-      condensible_RH, condensible_P, cond_inds, self%bg_gas_ind, &
-      self%f_i, cond_z_inds, self%z, self%dz, self%T, err &
+      condensible_RH, condensible_P, self%condensible_inds, self%bg_gas_ind, &
+      self%f_i, self%P_trop, self%condensible_z_inds, self%z, self%dz, self%T, err &
     ) 
     if (allocated(err)) return
 
-    self%cond_z_inds = -1
-    do i = 1,size(condensible_names)
-      self%cond_z_inds(cond_inds(i)) = cond_z_inds(i)
-    enddo
+    self%trop_ind = -1
+    if (self%P_trop > 0.0_dp) then
+      do i = 1,self%nz
+        if (self%P(i) < self%P_trop) then
+          self%trop_ind = i - 1
+          exit
+        endif
+      enddo
+    endif
 
     allocate(density(self%nz))
     density = self%P/(k_boltz*self%T)
@@ -375,7 +393,6 @@ contains
         iflag_ = -1
         return
       endif
-      print*,T, ISR/1.0e3_dp, OLR/1.0e3_dp
       fvec_(1) = ISR - OLR
     end subroutine
   end function
@@ -403,7 +420,7 @@ contains
   end function
 
   subroutine RadiativeConvectiveClimate_initialize_stepper(self, condensible_names, condensible_P, condensible_RH, &
-                                                           f_i, pdensities, radii, err)
+                                                           f_i, pdensities, radii, T_surf_guess, err)
     use clima_rc_adiabat, only: make_profile_rc
     class(RadiativeConvectiveClimate), intent(inout) :: self
     character(*), intent(in) :: condensible_names(:)
@@ -412,41 +429,16 @@ contains
     real(dp), intent(in) :: f_i(:,:)
     real(dp), optional, intent(in) :: pdensities(:,:)
     real(dp), optional, intent(in) :: radii(:,:)
+    real(dp), optional :: T_surf_guess
     character(:), allocatable, intent(out) :: err
 
-    integer :: i
+    real(dp) :: T_surf
 
-    ! check inputs
-    call check_inputs(self%nz, self%sp%ng, self%sp%np, f_i, pdensities, radii, err)
+    ! Initial guess
+    T_surf = self%surface_temperature(condensible_names, condensible_P, condensible_RH, &
+                                      f_i, pdensities, radii, T_surf_guess, err)
     if (allocated(err)) return
-
-    self%f_i = f_i
-
-    ! now draw initial T-profile
-    block
-    real(dp) :: T_surf, T_trop
-    integer, allocatable :: cond_inds(:)
-    integer, allocatable :: cond_z_inds(:)
-
-    T_surf = 280.0_dp
-    T_trop = 100.0_dp
-    allocate(cond_inds(size(condensible_names)))
-    allocate(cond_z_inds(size(condensible_names)))
-
-    do i = 1,size(condensible_names)
-      cond_inds(i) = findloc(self%species_names, condensible_names(i), 1)
-    enddo
-
-    call make_profile_rc( &
-      self%sp, self%planet_mass, self%planet_radius, &
-      self%P_surf, T_surf, T_trop, self%nz, self%P, self%log10_delta_P, &
-      condensible_RH, condensible_P, cond_inds, self%bg_gas_ind, &
-      self%f_i, cond_z_inds, self%z, self%dz, self%T, err &
-    ) 
-    if (allocated(err)) return
-
-    end block
-
+    
     ! if (allocated(self%init)) deallocate(self%init)
     ! allocate(self%init)
     ! self%init = InitialConditions(condensible_names, condensible_P, f_i, pdensities, T_init, radii)

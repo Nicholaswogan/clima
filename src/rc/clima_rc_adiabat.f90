@@ -26,6 +26,7 @@ module clima_rc_adiabat
     ! Input/Output
     real(dp), pointer :: f_i(:,:)
     ! Output
+    real(dp), pointer :: P_trop
     integer, pointer :: cond_z_inds(:) !! (size(cond_inds))
     real(dp), pointer :: z(:) !! cm
     real(dp), pointer :: dz(:) !! cm
@@ -92,7 +93,7 @@ contains
   subroutine make_profile_rc(sp, planet_mass, planet_radius, &
                              P_surf, T_surf, T_trop, nz, P, log10_delta_P, &
                              RH, cond_P, cond_inds, bg_gas_ind, &
-                             f_i, cond_z_inds, z, dz, T, err)
+                             f_i, P_trop, cond_z_inds, z, dz, T, err)
     type(Species), target, intent(inout) :: sp
     real(dp), target, intent(in) :: planet_mass, planet_radius
     real(dp), target, intent(in) :: P_surf, T_surf, T_trop
@@ -101,6 +102,7 @@ contains
     real(dp), target, intent(in) :: RH(:), cond_P(:)
     integer, target, intent(in) :: cond_inds(:), bg_gas_ind
     real(dp), target, intent(inout) :: f_i(:,:)
+    real(dp), target, intent(out) :: P_trop
     integer, target, intent(out) :: cond_z_inds(:)
     real(dp), target, intent(out) :: z(:), dz(:), T(:)
     character(:), allocatable, intent(out) :: err
@@ -191,6 +193,7 @@ contains
     ! in/out
     d%f_i => f_i
     ! out
+    d%P_trop => P_trop
     d%cond_z_inds => cond_z_inds
     d%z => z
     d%dz => dz
@@ -328,6 +331,7 @@ contains
     d%f_i_integ(1,:) = d%f_i_cur(:)
     d%T_integ(1) = d%T_surf
     d%z_integ(1) = 0.0_dp
+    d%P_trop = -1.0_dp
     d%stopping_reason = ReachedPtop
     if (.not. status_ok) then
       err = 'dop853 initialization failed'
@@ -356,6 +360,7 @@ contains
         d%sp_type(:) = DrySpeciesType
         d%isothermal = .true.
         d%search_for_roots = .false.
+        d%P_trop = d%P_root
         d%stopping_reason = ReachedPtop
       elseif (d%stopping_reason == ReachedGasSaturation) then
         Pn = d%P_root

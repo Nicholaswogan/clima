@@ -22,6 +22,7 @@ contains
     endif
     allocate(f_i(c%nz,c%sp%ng), T_init(c%nz))
 
+    c%T_trop = 100.0_dp
     condensible_names = ['H2O', 'CO2']
     condensible_P = [270.0e6_dp, 400.0_dp]
     condensible_RH = [0.7_dp, 1.0_dp]
@@ -31,11 +32,12 @@ contains
     f_i(:,4) = 1.0e-10_dp
     f_i(:,5) = 1.0e-10_dp
     f_i(:,6) = 1.0e-10_dp
-    T_surf = c%surface_temperature(condensible_names, condensible_P, condensible_RH, f_i, T_guess = 280.0_dp, err=err)
+    call c%initialize_stepper(condensible_names, condensible_P, condensible_RH, f_i, T_surf_guess = 280.0_dp, err=err)
     if (allocated(err)) then
       print*,err
       stop 1
     endif
+    print*,c%T_surf
 
   end subroutine
 end program
