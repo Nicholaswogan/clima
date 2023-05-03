@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION "3.14")
 
-project(Clima LANGUAGES Fortran C VERSION "0.3.2")
+project(Clima LANGUAGES Fortran C VERSION "0.3.3")
 
 set(CMAKE_Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 
@@ -17,8 +17,10 @@ Fortran executables" ON)
 option(BUILD_PYTHON_CLIMA "if ON, then will build a python
 version via Cython" OFF)
 
-set(PYTHON_CLIMA_DESTINATION "clima" CACHE STRING 
-"folder that python version of climate is installed")
+if (NOT DEFINED PYTHON_CLIMA_DESTINATION)
+  set(PYTHON_CLIMA_DESTINATION "clima" CACHE STRING 
+  "folder that python version of climate is installed")
+endif()
 
 # src
 add_subdirectory(src)
