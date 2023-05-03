@@ -10,6 +10,7 @@ cdef class OpticalProperties:
     pass
 
   property wavl:
+    "ndarray[double,ndim=1], shape (nw+1). The edges of the radiative transfer bins in wavelength (nm)"
     def __get__(self):
       cdef int dim1
       op_pxd.opticalproperties_wavl_get_size(&self._ptr, &dim1)
@@ -18,6 +19,7 @@ cdef class OpticalProperties:
       return arr
 
   property freq:
+    "ndarray[double,ndim=1], shape (nw+1). The edges of the radiative transfer bins in frequency (1/s)"
     def __get__(self):
       cdef int dim1
       op_pxd.opticalproperties_freq_get_size(&self._ptr, &dim1)

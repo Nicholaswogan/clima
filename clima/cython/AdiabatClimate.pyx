@@ -2,10 +2,30 @@
 cimport AdiabatClimate_pxd as wa_pxd
   
 cdef class AdiabatClimate:
+  """This class is a 1-D climate model. The code draws multispecies 
+  pseudoadiabats upward (Eq. 1 in Graham et al. 2021, PSJ), connected
+  to an assumed isothermal stratosphere. The model also can perform radiative
+  transfer and do a non-linear solve for the incoming solar radiation
+  that balances the outgoing longwave radiation.
+  """
+
   cdef void *_ptr
 
   def __init__(self, species_file = None, settings_file = None, 
                      flux_file = None, data_dir = None):           
+    """Initializes `AdiabatClimate`
+
+    Parameters
+    ----------
+    species_file : str
+        The input species .yaml file
+    settings_file : str
+        The input settings .yaml file
+    flux_file : str
+        The input stellar flux file
+    data_dir : str, optional
+        The directory where all data is stored.
+    """
     # Allocate memory
     wa_pxd.allocate_adiabatclimate(&self._ptr)
 
@@ -36,6 +56,16 @@ cdef class AdiabatClimate:
     wa_pxd.deallocate_adiabatclimate(&self._ptr);
 
   def make_profile(self, double T_surf, ndarray[double, ndim=1] P_i_surf):
+    """Constructs an atmosphere using a multispecies pseudoadiabat (Eq. 1 in Graham et al. 2021, PSJ)
+    troposphere connected to an isothermal stratosphere.
+
+    Parameters
+    ----------
+    T_surf : float
+        The surface temperature (K)
+    P_i_surf : ndarray[double,ndim=1]
+        Array of surface pressures of each species (dynes/cm^2)
+    """
     cdef int ng = P_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
     wa_pxd.adiabatclimate_make_profile_wrapper(&self._ptr, &T_surf,
@@ -44,6 +74,16 @@ cdef class AdiabatClimate:
       raise ClimaException(err.decode("utf-8").strip())
     
   def make_column(self, double T_surf, ndarray[double, ndim=1] N_i_surf):
+    """Similar to `make_profile`, but instead the input is column reservoirs 
+    of each gas. 
+
+    Parameters
+    ----------
+    T_surf : float
+        The surface temperature (K)
+    N_i_surf : ndarray[double,ndim=1]
+        Array of columns of each species (mol/cm^2)
+    """
     cdef int ng = N_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
     wa_pxd.adiabatclimate_make_column_wrapper(&self._ptr, &T_surf,
@@ -52,6 +92,21 @@ cdef class AdiabatClimate:
       raise ClimaException(err.decode("utf-8").strip())
   
   def make_profile_bg_gas(self, double T_surf, ndarray[double, ndim=1] P_i_surf, double P_surf, str bg_gas):
+    """Similar to `make_profile`, but instead imposes a background gas and fixed
+    surface pressure. We do a non-linear solve for the background gas pressure
+    so that the desired total surface pressure is satisfied.
+
+    Parameters
+    ----------
+    T_surf : float
+        The surface temperature (K)
+    P_i_surf : ndarray[double,ndim=1]
+        Array of surface pressures of each species (dynes/cm^2)
+    P_surf : float
+        The surface pressure (dynes/cm^2)
+    bg_gas : str
+        The name of the background gas
+    """
     cdef int ng = P_i_surf.shape[0]
     cdef bytes bg_gas_b = pystring2cstring(bg_gas)
     cdef char *bg_gas_c = bg_gas_b
@@ -62,6 +117,22 @@ cdef class AdiabatClimate:
       raise ClimaException(err.decode("utf-8").strip())
 
   def TOA_fluxes(self, double T_surf, ndarray[double, ndim=1] P_i_surf):
+    """Calls `make_profile`, then does radiative transfer on the constructed atmosphere
+
+    Parameters
+    ----------
+    T_surf : float
+        The surface temperature (K)
+    P_i_surf : ndarray[double,ndim=1]
+        Array of surface pressures of each species (dynes/cm^2)
+
+    Returns
+    -------
+    tuple
+        The tuple has two elements. The first is the incoming solar radiation at the top
+        of the atmosphere, and the second is the outgoing longwave radiation at the top
+        of the atmosphere
+    """
     cdef int ng = P_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
     cdef double ISR, OLR;
@@ -72,6 +143,22 @@ cdef class AdiabatClimate:
     return ISR, OLR
 
   def TOA_fluxes_column(self, double T_surf, ndarray[double, ndim=1] N_i_surf):
+    """Calls `make_column`, then does radiative transfer on the constructed atmosphere
+
+    Parameters
+    ----------
+    T_surf : float
+        The surface temperature (K)
+    N_i_surf : ndarray[double,ndim=1]
+        Array of columns of each species (mol/cm^2)
+
+    Returns
+    -------
+    tuple
+        The tuple has two elements. The first is the incoming solar radiation at the top
+        of the atmosphere, and the second is the outgoing longwave radiation at the top
+        of the atmosphere
+    """
     cdef int ng = N_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
     cdef double ISR, OLR;
@@ -82,6 +169,26 @@ cdef class AdiabatClimate:
     return ISR, OLR
 
   def TOA_fluxes_bg_gas(self, double T_surf, ndarray[double, ndim=1] P_i_surf, double P_surf, str bg_gas):
+    """Calls `make_profile_bg_gas`, then does radiative transfer on the constructed atmosphere
+
+    Parameters
+    ----------
+    T_surf : float
+        The surface temperature (K)
+    P_i_surf : ndarray[double,ndim=1]
+        Array of surface pressures of each species (dynes/cm^2)
+    P_surf : float
+        The surface pressure (dynes/cm^2)
+    bg_gas : str
+        The name of the background gas
+
+    Returns
+    -------
+    tuple
+        The tuple has two elements. The first is the incoming solar radiation at the top
+        of the atmosphere, and the second is the outgoing longwave radiation at the top
+        of the atmosphere
+    """
     cdef int ng = P_i_surf.shape[0]
     cdef bytes bg_gas_b = pystring2cstring(bg_gas)
     cdef char *bg_gas_c = bg_gas_b
@@ -94,6 +201,21 @@ cdef class AdiabatClimate:
     return ISR, OLR
   
   def surface_temperature(self, ndarray[double, ndim=1] P_i_surf, double T_guess = 280):
+    """Does a non-linear solve for the surface temperature that balances incoming solar
+    and outgoing longwave radiation. Uses `make_profile`.
+
+    Parameters
+    ----------
+    P_i_surf : ndarray[double,ndim=1]
+        Array of surface pressures of each species (dynes/cm^2)
+    T_guess : float, optional
+        Guess for the surface temperature (K)
+
+    Returns
+    -------
+    float
+        The surface temperature at an equilibrium climate state
+    """
     cdef int ng = P_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
     cdef double T_surf;
@@ -104,6 +226,21 @@ cdef class AdiabatClimate:
     return T_surf
 
   def surface_temperature_column(self, ndarray[double, ndim=1] N_i_surf, double T_guess = 280):
+    """Does a non-linear solve for the surface temperature that balances incoming solar
+    and outgoing longwave radiation. Uses `make_column`.
+
+    Parameters
+    ----------
+    N_i_surf : ndarray[double,ndim=1]
+        Array of columns of each species (mol/cm^2)
+    T_guess : float, optional
+        Guess for the surface temperature (K)
+
+    Returns
+    -------
+    float
+        The surface temperature at an equilibrium climate state
+    """
     cdef int ng = N_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
     cdef double T_surf;
@@ -114,6 +251,25 @@ cdef class AdiabatClimate:
     return T_surf
 
   def surface_temperature_bg_gas(self, ndarray[double, ndim=1] P_i_surf, double P_surf, str bg_gas, double T_guess = 280):
+    """Similar to surface_temperature. The difference is that this function imposes
+    a background gas and fixed surface pressure.
+
+    Parameters
+    ----------
+    P_i_surf : ndarray[double,ndim=1]
+        Array of surface pressures of each species (dynes/cm^2)
+    P_surf : float
+        The surface pressure (dynes/cm^2)
+    bg_gas : str
+        The name of the background gas
+    T_guess : float, optional
+        Guess for the surface temperature (K)
+
+    Returns
+    -------
+    float
+        The surface temperature at an equilibrium climate state
+    """
     cdef int ng = P_i_surf.shape[0]
     cdef bytes bg_gas_b = pystring2cstring(bg_gas)
     cdef char *bg_gas_c = bg_gas_b
@@ -126,12 +282,28 @@ cdef class AdiabatClimate:
     return T_surf
 
   def to_regular_grid(self):
+    "Re-grids atmosphere so that each grid cell is equally spaced in altitude."
     cdef char err[ERR_LEN+1]
     wa_pxd.adiabatclimate_to_regular_grid_wrapper(&self._ptr, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
 
   def out2atmosphere_txt(self, filename, ndarray[double, ndim=1] eddy, bool overwrite = False, bool clip = True):
+    """Saves state of the atmosphere to a file.
+
+    Parameters
+    ----------
+    filename : str
+        Output filename
+    eddy: ndarray[double,ndim=1]
+        Array of eddy diffusions (cm^2/s) to write to the output file. This is
+        useful for coupling to the photochemical model.
+    overwrite : bool, optional
+        If true, then output file can be overwritten, by default False
+    clip : bool, optional
+        If true, then mixing ratios are clipped at a very small 
+        positive number, by default False
+    """  
     cdef int nz = eddy.shape[0]
     cdef bytes filename_b = pystring2cstring(filename)
     cdef char *filename_c = filename_b
@@ -141,6 +313,7 @@ cdef class AdiabatClimate:
       raise ClimaException(err.decode("utf-8").strip())
 
   property P_top:
+    "float. Pressure of the top of the atmosphere (dynes/cm^2)"
     def __get__(self):
       cdef double val
       wa_pxd.adiabatclimate_p_top_get(&self._ptr, &val)
@@ -149,6 +322,7 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_p_top_set(&self._ptr, &val)
 
   property T_trop:
+    "float. Tropopause temperature (K)"
     def __get__(self):
       cdef double val
       wa_pxd.adiabatclimate_t_trop_get(&self._ptr, &val)
@@ -157,6 +331,9 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_t_trop_set(&self._ptr, &val)
 
   property solve_for_T_trop:
+    """bool. If True, then Tropopause temperature is non-linearly solved for such that
+    it matches the skin temperature. The initial guess will always be self.T_trop.
+    """
     def __get__(self):
       cdef bool val
       wa_pxd.adiabatclimate_solve_for_t_trop_get(&self._ptr, &val)
@@ -165,6 +342,9 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_solve_for_t_trop_set(&self._ptr, &val)
 
   property albedo_fcn:
+    """Callback that sets the surface albedo based on the surface temperature.
+    This can be used to parameterize the ice-albedo feedback.
+    """
     def __set__(self, object fcn):
       cdef bool set_to_null
       cdef unsigned long long int fcn_l
@@ -184,6 +364,7 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_albedo_fcn_set(&self._ptr, &set_to_null, fcn_c)
 
   property RH:
+    "ndarray[double,ndim=1], shape (ng). Relative humidity of each species"
     def __get__(self):
       cdef int dim1
       wa_pxd.adiabatclimate_rh_get_size(&self._ptr, &dim1)
@@ -198,6 +379,7 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_rh_set(&self._ptr, &dim1, <double *>arr.data)
 
   property species_names:
+    "List, shape (ng). The name of each species in the model"
     def __get__(self):
       cdef int dim1
       wa_pxd.adiabatclimate_species_names_get_size(&self._ptr, &dim1)
@@ -206,6 +388,7 @@ cdef class AdiabatClimate:
       return c2stringarr(species_names_c, S_STR_LEN, dim1)
 
   property rad:
+    "Radtran object that does radiative transfer"
     def __get__(self):
       cdef void *ptr1
       wa_pxd.adiabatclimate_rad_get(&self._ptr, &ptr1)
@@ -214,18 +397,21 @@ cdef class AdiabatClimate:
       return var
 
   property P_surf:
+    "float. Surface pressure (dynes/cm^2)"
     def __get__(self):
       cdef double val
       wa_pxd.adiabatclimate_p_surf_get(&self._ptr, &val)
       return val
 
   property P_trop:
+    "float. Tropopause pressure (dynes/cm^2)"
     def __get__(self):
       cdef double val
       wa_pxd.adiabatclimate_p_trop_get(&self._ptr, &val)
       return val
 
   property P:
+    "ndarray[double,ndim=1], shape (nz). Pressure in each grid cell (dynes/cm^2)"
     def __get__(self):
       cdef int dim1
       wa_pxd.adiabatclimate_p_get_size(&self._ptr, &dim1)
@@ -234,12 +420,14 @@ cdef class AdiabatClimate:
       return arr
 
   property T_surf:
+    "float. Surface temperature (K)"
     def __get__(self):
       cdef double val
       wa_pxd.adiabatclimate_t_surf_get(&self._ptr, &val)
       return val
 
   property T:
+    "ndarray[double,ndim=1], shape (nz). Temperature in each grid cell (K)"
     def __get__(self):
       cdef int dim1
       wa_pxd.adiabatclimate_t_get_size(&self._ptr, &dim1)
@@ -248,6 +436,9 @@ cdef class AdiabatClimate:
       return arr
 
   property f_i:
+    """ndarray[double,ndim=2], shape (nz,ng). Mixing ratios of each species at 
+    each atmospheric layer
+    """
     def __get__(self):
       cdef int dim1, dim2
       wa_pxd.adiabatclimate_f_i_get_size(&self._ptr, &dim1, &dim2)
@@ -256,6 +447,7 @@ cdef class AdiabatClimate:
       return arr
 
   property z:
+    "ndarray[double,ndim=1], shape (nz). Altitude at the center of the grid cell (cm)"
     def __get__(self):
       cdef int dim1
       wa_pxd.adiabatclimate_z_get_size(&self._ptr, &dim1)
@@ -264,6 +456,7 @@ cdef class AdiabatClimate:
       return arr
 
   property dz:
+    "ndarray[double,ndim=1], shape (nz). Thickness of each grid cell (cm)"
     def __get__(self):
       cdef int dim1
       wa_pxd.adiabatclimate_dz_get_size(&self._ptr, &dim1)
@@ -272,6 +465,7 @@ cdef class AdiabatClimate:
       return arr
 
   property densities:
+    "ndarray[double,ndim=2], shape (nz,ng). Densities in each grid cell (molecules/cm^3)"
     def __get__(self):
       cdef int dim1, dim2
       wa_pxd.adiabatclimate_densities_get_size(&self._ptr, &dim1, &dim2)
@@ -280,6 +474,7 @@ cdef class AdiabatClimate:
       return arr
 
   property N_surface:
+    "ndarray[double,ndim=1], shape (ng). Reservoir of gas on surface (mol/cm^2)"
     def __get__(self):
       cdef int dim1
       wa_pxd.adiabatclimate_n_surface_get_size(&self._ptr, &dim1)

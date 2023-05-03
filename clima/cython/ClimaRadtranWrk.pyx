@@ -10,6 +10,9 @@ cdef class ClimaRadtranWrk:
     pass
   
   property fup_a:
+    """ndarray[double,ndim=2], size (nz+1,nw). mW/m^2/Hz in each wavelength 
+    bin at the edges of the vertical grid. Upward radiation.
+    """
     def __get__(self):
       cdef int dim1, dim2
       rwrk_pxd.climaradtranwrk_fup_a_get_size(&self._ptr, &dim1, &dim2)
@@ -18,6 +21,9 @@ cdef class ClimaRadtranWrk:
       return arr
 
   property fdn_a:
+    """ndarray[double,ndim=2], size (nz+1,nw). mW/m^2/Hz in each wavelength 
+    bin at the edges of the vertical grid. Downward radiation.
+    """
     def __get__(self):
       cdef int dim1, dim2
       rwrk_pxd.climaradtranwrk_fdn_a_get_size(&self._ptr, &dim1, &dim2)
@@ -26,6 +32,9 @@ cdef class ClimaRadtranWrk:
       return arr
 
   property fup_n:
+    """ndarray[double,ndim=2], size (nz+1). `fup_a`, but integrated over
+    wavelength
+    """
     def __get__(self):
       cdef int dim1
       rwrk_pxd.climaradtranwrk_fup_n_get_size(&self._ptr, &dim1)
@@ -34,6 +43,9 @@ cdef class ClimaRadtranWrk:
       return arr
 
   property fdn_n:
+    """ndarray[double,ndim=2], size (nz+1). `fdn_a`, but integrated over
+    wavelength
+    """
     def __get__(self):
       cdef int dim1
       rwrk_pxd.climaradtranwrk_fdn_n_get_size(&self._ptr, &dim1)
