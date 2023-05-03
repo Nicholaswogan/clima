@@ -31,7 +31,7 @@ contains
   
     nz = size(atm%columns(1,:))
     
-    rad = RadtranIR("../clima/data","../templates/ModernEarth/settings.yaml",nz, err)
+    rad = RadtranIR("../templates/ModernEarth/settings.yaml",nz,"../clima/data", err)
     if (allocated(err)) then
       print*,err
       stop 1
@@ -98,8 +98,8 @@ contains
 
     num_zeniths = 8
     surface_albedo = 0.15_dp
-    rad = Radtran("../clima/data","../templates/ModernEarth/settings.yaml",&
-    "../templates/ModernEarth/Sun_now.txt", num_zeniths, surface_albedo, nz, err)
+    rad = Radtran("../templates/ModernEarth/settings.yaml",&
+    "../templates/ModernEarth/Sun_now.txt", num_zeniths, surface_albedo, nz, "../clima/data", err)
     if (allocated(err)) then
       print*,err
       stop 1

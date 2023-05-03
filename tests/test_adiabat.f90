@@ -8,10 +8,10 @@ program test
   real(dp) :: T, OLR
   integer :: i
   
-  c = AdiabatClimate('../clima/data', &
-                     '../templates/runaway_greenhouse/species.yaml', &
+  c = AdiabatClimate('../templates/runaway_greenhouse/species.yaml', &
                      '../templates/runaway_greenhouse/settings.yaml', &
                      '../templates/ModernEarth/Sun_now.txt', &
+                     '../clima/data', &
                      err)
   if (allocated(err)) then
     print*,err

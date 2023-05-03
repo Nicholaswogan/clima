@@ -10,8 +10,8 @@ cdef extern void allocate_adiabatclimate(void *ptr);
 cdef extern void deallocate_adiabatclimate(void *ptr);
 
 # wrappers for functions
-cdef extern void adiabatclimate_create_wrapper(void *ptr, char *data_dir, char *species_file,
-                                                    char *settings_file, char *flux_file, char *err);
+cdef extern void adiabatclimate_create_wrapper(void *ptr, char *species_file,
+                                                    char *settings_file, char *flux_file, char *data_dir, char *err);
 
 cdef extern void adiabatclimate_make_profile_wrapper(void *ptr, double *T_surf, int *ng, 
                                       double *P_i_surf, char *err)

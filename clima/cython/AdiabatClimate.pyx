@@ -5,24 +5,29 @@ cdef class AdiabatClimate:
   cdef void *_ptr
 
   def __init__(self, species_file = None, settings_file = None, 
-                     flux_file = None):           
+                     flux_file = None, data_dir = None):           
     # Allocate memory
     wa_pxd.allocate_adiabatclimate(&self._ptr)
+
+    if data_dir == None:
+      data_dir_ = os.path.dirname(os.path.realpath(__file__))+'/data'
+    else:
+      data_dir_ = data_dir
     
     # convert strings to char
-    cdef bytes data_dir_b = pystring2cstring(os.path.dirname(os.path.realpath(__file__))+'/data')
-    cdef char *data_dir_c = data_dir_b
     cdef bytes species_file_b = pystring2cstring(species_file)
     cdef char *species_file_c = species_file_b
     cdef bytes settings_file_b = pystring2cstring(settings_file)
     cdef char *settings_file_c = settings_file_b
     cdef bytes flux_file_b = pystring2cstring(flux_file)
     cdef char *flux_file_c = flux_file_b
+    cdef bytes data_dir_b = pystring2cstring(data_dir_)
+    cdef char *data_dir_c = data_dir_b
     cdef char err[ERR_LEN+1]
     
     # Initialize
-    wa_pxd.adiabatclimate_create_wrapper(&self._ptr, data_dir_c, species_file_c,
-                                              settings_file_c, flux_file_c,
+    wa_pxd.adiabatclimate_create_wrapper(&self._ptr, species_file_c,
+                                              settings_file_c, flux_file_c, data_dir_c,
                                               err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())

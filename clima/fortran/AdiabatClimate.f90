@@ -25,40 +25,40 @@ end subroutine
 !!! subroutine wrappers  !!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-subroutine adiabatclimate_create_wrapper(ptr, data_dir, species_file, &
-                                    settings_file, flux_file, err) bind(c)
+subroutine adiabatclimate_create_wrapper(ptr, species_file, &
+                                    settings_file, flux_file, data_dir, err) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr
-  character(kind=c_char), intent(in) :: data_dir(*)
   character(kind=c_char), intent(in) :: species_file(*)
   character(kind=c_char), intent(in) :: settings_file(*)
   character(kind=c_char), intent(in) :: flux_file(*)
+  character(kind=c_char), intent(in) :: data_dir(*)
   character(kind=c_char), intent(out) :: err(err_len+1)
   
-  character(len=:), allocatable :: data_dir_f
   character(len=:), allocatable :: species_file_f
   character(len=:), allocatable :: settings_file_f
   character(len=:), allocatable :: flux_file_f
+  character(len=:), allocatable :: data_dir_f
   character(:), allocatable :: err_f
   type(AdiabatClimate), pointer :: c
   
   call c_f_pointer(ptr, c)
   
-  allocate(character(len=len_cstring(data_dir))::data_dir_f)
   allocate(character(len=len_cstring(species_file))::species_file_f)
   allocate(character(len=len_cstring(settings_file))::settings_file_f)
   allocate(character(len=len_cstring(flux_file))::flux_file_f)
+  allocate(character(len=len_cstring(data_dir))::data_dir_f)
   
-  call copy_string_ctof(data_dir, data_dir_f)
   call copy_string_ctof(species_file, species_file_f)
   call copy_string_ctof(settings_file, settings_file_f)
   call copy_string_ctof(flux_file, flux_file_f)
+  call copy_string_ctof(data_dir, data_dir_f)
   
-  c = AdiabatClimate(data_dir_f, &
-                          species_file_f, &
-                          settings_file_f, &
-                          flux_file_f, &
-                          err_f)
+  c = AdiabatClimate(species_file_f, &
+                     settings_file_f, &
+                     flux_file_f, &
+                     data_dir_f, &
+                     err_f)
   
   err(1) = c_null_char
   if (allocated(err_f)) then

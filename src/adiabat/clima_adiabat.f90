@@ -78,12 +78,12 @@ module clima_adiabat
   
 contains
   
-  function create_AdiabatClimate(datadir, species_f, settings_f, star_f, err) result(c)
+  function create_AdiabatClimate(species_f, settings_f, star_f, data_dir, err) result(c)
     use clima_types, only: ClimaSettings 
-    character(*), intent(in) :: datadir !! Directory with radiative transfer data
     character(*), intent(in) :: species_f !! Species yaml file
     character(*), intent(in) :: settings_f !! Settings yaml file
     character(*), intent(in) :: star_f !! Star text file
+    character(*), intent(in) :: data_dir !! Directory with radiative transfer data
     character(:), allocatable, intent(out) :: err
     
     type(AdiabatClimate) :: c
@@ -140,7 +140,7 @@ contains
     
     ! Make radiative transfer with list of species, from species file
     ! and the optical-properties from the settings file
-    c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz, err)
+    c%rad = Radtran(c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz, data_dir, err)
     if (allocated(err)) return
 
     ! allocate work variables

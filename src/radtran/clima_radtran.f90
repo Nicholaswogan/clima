@@ -102,12 +102,12 @@ contains
   !!! IR Radiative Transfer !!!
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   
-  function create_RadtranIR_1(datadir, settings_f, nz, err) result(rad)
+  function create_RadtranIR_1(settings_f, nz, datadir, err) result(rad)
     use clima_types, only: ClimaSettings
     
-    character(*), intent(in) :: datadir
     character(*), intent(in) :: settings_f
     integer, intent(in) :: nz
+    character(*), intent(in) :: datadir
     character(:), allocatable, intent(out) :: err
     
     type(RadtranIR) :: rad
@@ -124,20 +124,20 @@ contains
 
     if (.not. allocated(s%particles)) allocate(s%particles(0))
     
-    rad = create_RadtranIR_2(datadir, s%gases, s%particles, s, nz, err)
+    rad = create_RadtranIR_2(s%gases, s%particles, s, nz, datadir, err)
     if (allocated(err)) return
     
   end function
   
-  function create_RadtranIR_2(datadir, species_names, particle_names, s, nz, err) result(rad)
+  function create_RadtranIR_2(species_names, particle_names, s, nz, datadir, err) result(rad)
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_types, only: ClimaSettings
     
-    character(*), intent(in) :: datadir
     character(*), intent(in) :: species_names(:)
     character(*), intent(in) :: particle_names(:)
     type(ClimaSettings), intent(in) :: s
     integer, intent(in) :: nz
+    character(*), intent(in) :: datadir
     character(:), allocatable, intent(out) :: err
     
     type(RadtranIR) :: rad
@@ -229,15 +229,15 @@ contains
   !!! IR and Solar Radiative Transfer !!!
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-  function create_Radtran_1(datadir, settings_f, star_f, num_zenith_angles, surface_albedo, nz, err) result(rad)
+  function create_Radtran_1(settings_f, star_f, num_zenith_angles, surface_albedo, nz, datadir, err) result(rad)
     use clima_types, only: ClimaSettings
     
-    character(*), intent(in) :: datadir
     character(*), intent(in) :: settings_f
     character(*), intent(in) :: star_f
     integer, intent(in) :: num_zenith_angles
     real(dp), intent(in) :: surface_albedo
     integer, intent(in) :: nz
+    character(*), intent(in) :: datadir
     character(:), allocatable, intent(out) :: err
     
     type(Radtran) :: rad
@@ -254,20 +254,19 @@ contains
 
     if (.not. allocated(s%particles)) allocate(s%particles(0))
     
-    rad = create_Radtran_2(datadir, s%gases, s%particles, s, star_f, num_zenith_angles, surface_albedo, nz, err)
+    rad = create_Radtran_2(s%gases, s%particles, s, star_f, num_zenith_angles, surface_albedo, nz, datadir, err)
     if (allocated(err)) return
     
   end function
   
-  function create_Radtran_2(datadir, species_names, particle_names, s, star_f, &
-                            num_zenith_angles, surface_albedo, nz, err) result(rad)
+  function create_Radtran_2(species_names, particle_names, s, star_f, &
+                            num_zenith_angles, surface_albedo, nz, datadir, err) result(rad)
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties, &
                                    read_stellar_flux
     use clima_types, only: ClimaSettings
     use clima_eqns, only: zenith_angles_and_weights
     use clima_const, only: pi
     
-    character(*), intent(in) :: datadir
     character(*), intent(in) :: species_names(:)
     character(*), intent(in) :: particle_names(:)
     type(ClimaSettings), intent(in) :: s
@@ -275,6 +274,7 @@ contains
     integer, intent(in) :: num_zenith_angles
     real(dp), intent(in) :: surface_albedo
     integer, intent(in) :: nz
+    character(*), intent(in) :: datadir
     character(:), allocatable, intent(out) :: err
     
     type(Radtran) :: rad
