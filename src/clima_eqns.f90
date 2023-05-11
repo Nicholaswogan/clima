@@ -9,12 +9,13 @@ module clima_eqns
       real(c_double), value, intent(in) :: T_surf !! K
       real(c_double) :: albedo
     end function
-    
+
+    !> Function describing how gases dissolved in an ocean.
     subroutine ocean_solubility_fcn(T_surf, P_i, m_i) 
       use iso_c_binding, only: c_double
       real(c_double), value, intent(in) :: T_surf !! K
-      real(c_double), intent(in) :: P_i(:) !! bars
-      real(c_double), intent(out) :: m_i(:) !! mol/kg
+      real(c_double), intent(in) :: P_i(:) !! surface pressure of all gases (bars)
+      real(c_double), intent(out) :: m_i(:) !! concentration of each gas in ocean (mol/kg)
     end subroutine
   end interface
     

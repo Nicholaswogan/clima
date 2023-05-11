@@ -396,7 +396,7 @@ end subroutine
 
 subroutine adiabatclimate_albedo_fcn_set(ptr, set_to_null, albedo_fcn_c) bind(c)
   use clima, only: AdiabatClimate
-  use clima_adiabat, only: temp_dependent_albedo_fcn
+  use clima, only: temp_dependent_albedo_fcn
   type(c_ptr), intent(in) :: ptr
   logical(c_bool), intent(in) :: set_to_null
   type(c_funptr), value, intent(in) :: albedo_fcn_c

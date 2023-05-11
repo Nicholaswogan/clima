@@ -3,10 +3,16 @@ module clima_adiabat_general
   use clima_types, only: Species
   use dop853_module, only: dop853_class
   use futils, only: brent_class
+  use clima_eqns, only: ocean_solubility_fcn
   implicit none
   private
 
   public :: make_profile, make_column
+  public :: OceanFunction
+
+  type :: OceanFunction
+    procedure(ocean_solubility_fcn), nopass, pointer :: fcn => null()
+  end type
 
   type :: AdiabatProfileData
     !> Input data
@@ -80,7 +86,7 @@ contains
   subroutine make_column(T_surf, N_i_surf, &
                          sp, nz, planet_mass, &
                          planet_radius, P_top, T_trop, RH, &
-                         ocean_fcn, ocean_ind, &
+                         ocean_fcns, &
                          P, z, T, f_i, P_trop, &
                          N_surface, N_ocean, &
                          err)
@@ -95,13 +101,13 @@ contains
     integer, intent(in) :: nz
     real(dp), target, intent(in) :: planet_mass, planet_radius
     real(dp), target, intent(in) :: P_top, T_trop, RH(:)
-    procedure(ocean_solubility_fcn), pointer, intent(in) :: ocean_fcn
-    integer, intent(in) :: ocean_ind
+    type(OceanFunction), intent(in) :: ocean_fcns(:)
 
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
     real(dp), target, intent(out) :: P_trop
-    real(dp), target, intent(out) :: N_surface(:), N_ocean(:) ! (ng)
+    real(dp), target, intent(out) :: N_surface(:) ! (ng)
+    real(dp), target, intent(out) :: N_ocean(:,:) ! (ng,ng)
     character(:), allocatable, intent(out) :: err
 
     integer :: i, j, ii
@@ -171,7 +177,7 @@ contains
       call make_profile(T_surf, P_i, &
                         sp, nz, planet_mass, &
                         planet_radius, P_top, T_trop, RH, &
-                        ocean_fcn, ocean_ind, &
+                        ocean_fcns, &
                         P, z, T, f_i, P_trop, &
                         N_surface, N_ocean, &
                         err)
@@ -199,7 +205,9 @@ contains
       N_i(:) = N_i(:) + N_surface(:)
 
       ! Add mol/cm^2 dissolved in an ocean
-      N_i(:) = N_i(:) + N_ocean(:)
+      do i = 1,sp%ng
+        N_i(:) = N_i(:) + N_ocean(:,i)
+      enddo
 
       ! residual
       fvec_(:) = N_i - N_i_surf
@@ -210,7 +218,7 @@ contains
   subroutine make_profile(T_surf, P_i_surf, &
                           sp, nz, planet_mass, &
                           planet_radius, P_top, T_trop, RH, &
-                          ocean_fcn, ocean_ind, &
+                          ocean_fcns, &
                           P, z, T, f_i, P_trop, &
                           N_surface, N_ocean, &
                           err)
@@ -224,18 +232,17 @@ contains
     integer, intent(in) :: nz
     real(dp), target, intent(in) :: planet_mass, planet_radius
     real(dp), target, intent(in) :: P_top, T_trop, RH(:)
-    procedure(ocean_solubility_fcn), pointer, intent(in) :: ocean_fcn
-    integer, intent(in) :: ocean_ind
+    type(OceanFunction), intent(in) :: ocean_fcns(:)
 
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
     real(dp), target, intent(out) :: P_trop !! Tropopause pressure (dynes/cm^2). 
                                             !! Value is negative if no tropopause is found.
-    real(dp), target, intent(out) :: N_surface(:), N_ocean(:)
+    real(dp), target, intent(out) :: N_surface(:), N_ocean(:,:)
     character(:), allocatable, intent(out) :: err
 
     type(AdiabatProfileData) :: d
-    integer :: i
+    integer :: i, j
     real(dp) :: P_sat, grav, P_surface_inventory
 
     ! check inputs
@@ -279,7 +286,7 @@ contains
       err = 'make_profile: Input "N_surface" has the wrong dimension.'
       return
     endif
-    if (size(N_ocean) /= sp%ng) then
+    if (size(N_ocean,1) /= sp%ng .or. size(N_ocean,2) /= sp%ng) then
       err = 'make_profile: Input "N_ocean" has the wrong dimension.'
       return
     endif
@@ -341,25 +348,27 @@ contains
       endif
     enddo
 
-    ! compute gases dissolved in ocean
-    if (associated(ocean_fcn)) then; block
-      real(dp), allocatable :: m_i_cur(:)
+    ! compute gases dissolved in oceans. This allows for multiple ocean.
+    do j = 1,sp%ng
+      if (associated(ocean_fcns(j)%fcn)) then; block
+        real(dp), allocatable :: m_i_cur(:)
 
-      ! Compute mol/kg of each gas dissolved in the ocean
-      allocate(m_i_cur(sp%ng))
-      call ocean_fcn(T_surf, d%P_i_cur/1.0e6_dp, m_i_cur)
-      
-      ! Compute mol/cm^2 of each gas dissolved in ocean
-      N_ocean(ocean_ind) = 0.0_dp ! ocean can not dissolve into itself
-      do i = 1,sp%ng
-        if (i /= ocean_ind) then
-          N_ocean(i) = m_i_cur(i)*N_surface(ocean_ind)*(1.0e3_dp/sp%g(ocean_ind)%mass)
-        endif
-      enddo
-    endblock; else
-      ! Nothing dissolved in ocean
-      N_ocean(:) = 0.0_dp
-    endif
+        ! Compute mol/kg of each gas dissolved in the ocean
+        allocate(m_i_cur(sp%ng))
+        call ocean_fcns(j)%fcn(T_surf, d%P_i_cur/1.0e6_dp, m_i_cur)
+        
+        ! Compute mol/cm^2 of each gas dissolved in ocean
+        N_ocean(i,j) = 0.0_dp ! ocean can not dissolve into itself
+        do i = 1,sp%ng
+          if (i /= j) then
+            N_ocean(i,j) = m_i_cur(i)*N_surface(j)*(1.0e3_dp/sp%g(j)%mass)
+          endif
+        enddo
+      endblock; else
+        ! Nothing dissolved in ocean
+        N_ocean(:,j) = 0.0_dp
+      endif
+    enddo
 
     d%P_surf = sum(d%P_i_cur) ! total pressure
     if (P_top > d%P_surf) then

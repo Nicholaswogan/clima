@@ -3,6 +3,7 @@ module clima_adiabat
   use clima_types, only: Species
   use clima_radtran, only: Radtran
   use clima_eqns, only: ocean_solubility_fcn, temp_dependent_albedo_fcn
+  use clima_adiabat_general, only: OceanFunction
   implicit none
   private
 
@@ -23,10 +24,9 @@ module clima_adiabat
     !> This can be used to parameterize the ice-albedo feedback.
     procedure(temp_dependent_albedo_fcn), nopass, pointer :: albedo_fcn => null()
 
-    !> index for the ocean
-    integer :: ocean_ind = 0
-    !> Function describing ocean solubility
-    procedure(ocean_solubility_fcn), nopass, pointer :: ocean_fcn => null()
+    !> Function describing how gases disolve in oceans. This allows for multiple oceans, each
+    !> made of different condensed volatiles.
+    type(OceanFunction), allocatable :: ocean_fcns(:)
     
     ! planet properties
     real(dp) :: planet_mass !! (g)
@@ -51,7 +51,9 @@ module clima_adiabat
     real(dp), allocatable :: densities(:,:) !! densities in each grid cell, molecules/cm^3 (nz,ng)
     real(dp), allocatable :: N_atmos(:) !! reservoir of gas in atmosphere mol/cm^2 (ng)
     real(dp), allocatable :: N_surface(:) !! reservoir of gas on surface mol/cm^2 (ng)
-    real(dp), allocatable :: N_ocean(:) !! reservoir of gas dissolved in an ocean mol/cm^2 (ng)
+    !> reservoir of gas dissolved in oceans in mol/cm^2 (ng, ng). There can be multiple oceans.
+    !> The gases dissolved in ocean made of species 1 is given by `N_ocean(:,1)`.
+    real(dp), allocatable :: N_ocean(:,:) 
     
   contains
     ! Constructs atmospheres
@@ -143,10 +145,13 @@ contains
     c%rad = Radtran(c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz, data_dir, err)
     if (allocated(err)) return
 
+    ! allocate ocean functions
+    allocate(c%ocean_fcns(c%sp%ng))
+
     ! allocate work variables
     allocate(c%P(c%nz), c%T(c%nz), c%f_i(c%nz,c%sp%ng), c%z(c%nz), c%dz(c%nz))
     allocate(c%densities(c%nz,c%sp%ng))
-    allocate(c%N_atmos(c%sp%ng),c%N_surface(c%sp%ng),c%N_ocean(c%sp%ng))
+    allocate(c%N_atmos(c%sp%ng),c%N_surface(c%sp%ng),c%N_ocean(c%sp%ng,c%sp%ng))
     
   end function
   
@@ -177,7 +182,7 @@ contains
     call make_profile(T_surf, P_i_surf, &
                       self%sp, self%nz, self%planet_mass, &
                       self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                      self%ocean_fcn, self%ocean_ind, &
+                      self%ocean_fcns, &
                       P_e, z_e, T_e, f_i_e, self%P_trop, &
                       self%N_surface, self%N_ocean, &
                       err)
@@ -233,7 +238,7 @@ contains
     call make_column(T_surf, N_i_surf, &
                      self%sp, self%nz, self%planet_mass, &
                      self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                     self%ocean_fcn, self%ocean_ind, &
+                     self%ocean_fcns, &
                      P_e, z_e, T_e, f_i_e, self%P_trop, &
                      self%N_surface, self%N_ocean, &
                      err)
@@ -615,13 +620,15 @@ contains
     procedure(ocean_solubility_fcn), pointer, intent(in) :: ocean_fcn
     character(:), allocatable, intent(out) :: err
 
-    self%ocean_ind = findloc(self%species_names, ocean_gas, 1)
-    if (self%ocean_ind == 0) then
+    integer :: ind
+
+    ind = findloc(self%species_names, ocean_gas, 1)
+    if (ind == 0) then
       err = 'Gas "'//ocean_gas//'" is not in the list of species'
       return
     endif
 
-    self%ocean_fcn => ocean_fcn
+    self%ocean_fcns(ind)%fcn => ocean_fcn
 
   end subroutine
 
