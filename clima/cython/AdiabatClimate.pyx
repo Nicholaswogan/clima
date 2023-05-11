@@ -263,16 +263,23 @@ cdef class AdiabatClimate:
     cdef bytes species_b = pystring2cstring(species)
     cdef char *species_c = species_b
     cdef char err[ERR_LEN+1]
+    cdef unsigned long long int fcn_l
+    cdef wa_pxd.ocean_solubility_fcn fcn_c
 
-    argtypes = (ct.c_double, ct.c_int32, ct.POINTER(ct.c_double), ct.POINTER(ct.c_double))
-    restype = None
-    if not fcn.ctypes.argtypes == argtypes:
-      raise ClimaException("The callback function has the wrong argument types.")
-    if not fcn.ctypes.restype == restype:
-      raise ClimaException("The callback function has the wrong return type.")
+    if isinstance(fcn, type(None)):
+      fcn_l = 0
+      fcn_c = NULL
+    else:
+      argtypes = (ct.c_double, ct.c_int32, ct.POINTER(ct.c_double), ct.POINTER(ct.c_double))
+      restype = None
+      if not fcn.ctypes.argtypes == argtypes:
+        raise ClimaException("The callback function has the wrong argument types.")
+      if not fcn.ctypes.restype == restype:
+        raise ClimaException("The callback function has the wrong return type.")
 
-    cdef unsigned long long int fcn_l = <unsigned long long int> fcn.address
-    cdef wa_pxd.ocean_solubility_fcn fcn_c = <wa_pxd.ocean_solubility_fcn> fcn_l
+      fcn_l = <unsigned long long int> fcn.address
+      fcn_c = <wa_pxd.ocean_solubility_fcn> fcn_l
+
     wa_pxd.adiabatclimate_set_ocean_solubility_fcn_wrapper(&self._ptr, species_c, fcn_c, err)
     if len(err.strip()) > 0:
        raise ClimaException(err.decode("utf-8").strip())
