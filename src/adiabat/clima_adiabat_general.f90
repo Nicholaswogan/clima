@@ -150,10 +150,10 @@ contains
 
     ! If all attempted solves fail, then an error is thown.
     if (mv%info == 0 .or. mv%info > 1) then
-      err = 'hybrd1 root solve failed in make_column_water.'
+      err = 'hybrd1 root solve failed in make_column.'
       return
     elseif (mv%info < 0) then
-      err = 'hybrd1 root solve failed in make_column_water: '//err
+      err = 'hybrd1 root solve failed in make_column: '//err
       return
     endif
 
@@ -355,10 +355,10 @@ contains
 
         ! Compute mol/kg of each gas dissolved in the ocean
         allocate(m_i_cur(sp%ng))
-        call ocean_fcns(j)%fcn(T_surf, d%P_i_cur/1.0e6_dp, m_i_cur)
+        call ocean_fcns(j)%fcn(T_surf, sp%ng, d%P_i_cur/1.0e6_dp, m_i_cur)
         
         ! Compute mol/cm^2 of each gas dissolved in ocean
-        N_ocean(i,j) = 0.0_dp ! ocean can not dissolve into itself
+        N_ocean(j,j) = 0.0_dp ! ocean can not dissolve into itself
         do i = 1,sp%ng
           if (i /= j) then
             N_ocean(i,j) = m_i_cur(i)*N_surface(j)*(1.0e3_dp/sp%g(j)%mass)

@@ -288,6 +288,39 @@ subroutine adiabatclimate_surface_temperature_bg_gas_wrapper(ptr, ng, P_i_surf, 
 
 end subroutine
 
+subroutine adiabatclimate_set_ocean_solubility_fcn_wrapper(ptr, species_c, fcn_c, err) bind(c)
+  use clima, only: AdiabatClimate
+  use clima, only: ocean_solubility_fcn
+  type(c_ptr), intent(in) :: ptr
+  character(kind=c_char), intent(in) :: species_c(*)
+  type(c_funptr), value, intent(in) :: fcn_c
+  character(kind=c_char), intent(out) :: err(err_len+1)
+
+  type(AdiabatClimate), pointer :: c
+  procedure(ocean_solubility_fcn), pointer :: fcn_f
+  character(:), allocatable :: species_f
+  character(:), allocatable :: err_f
+
+  ! Cast the void pointer to wrapped object.
+  call c_f_pointer(ptr, c)
+
+  ! Copy c string to f string.
+  allocate(character(len=len_cstring(species_c))::species_f)
+  call copy_string_ctof(species_c, species_f)
+
+  ! Convert c function pointer to a fortran function pointer.
+  call c_f_procpointer(fcn_c, fcn_f)
+
+  ! Call the function.
+  call c%set_ocean_solubility_fcn(species_f, fcn_f, err_f)
+
+  ! Set error, if there is one.
+  err(1) = c_null_char
+  if (allocated(err_f)) then
+    call copy_string_ftoc(err_f, err)
+  endif 
+end subroutine
+
 subroutine adiabatclimate_to_regular_grid_wrapper(ptr, err) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr
@@ -604,6 +637,25 @@ subroutine adiabatclimate_densities_get_size(ptr, dim1, dim2) bind(c)
   dim2 = size(c%densities,2)
 end subroutine
 
+subroutine adiabatclimate_n_atmos_get_size(ptr, dim1) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  dim1 = size(c%N_atmos,1)
+end subroutine
+
+subroutine adiabatclimate_n_atmos_get(ptr, dim1, arr) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(out) :: arr(dim1)
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  arr = c%N_atmos
+end subroutine
+
 subroutine adiabatclimate_n_surface_get_size(ptr, dim1) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr
@@ -621,6 +673,26 @@ subroutine adiabatclimate_n_surface_get(ptr, dim1, arr) bind(c)
   type(AdiabatClimate), pointer :: c
   call c_f_pointer(ptr, c)
   arr = c%N_surface
+end subroutine
+
+subroutine adiabatclimate_n_ocean_get_size(ptr, dim1, dim2) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1, dim2
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  dim1 = size(c%N_ocean,1)
+  dim2 = size(c%N_ocean,2)
+end subroutine
+
+subroutine adiabatclimate_n_ocean_get(ptr, dim1, dim2, arr) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1, dim2
+  real(c_double), intent(out) :: arr(dim1,dim2)
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  arr = c%N_ocean
 end subroutine
 
 subroutine adiabatclimate_densities_get(ptr, dim1, dim2, arr) bind(c)

@@ -4,6 +4,7 @@ cdef extern from "<stdbool.h>":
 
 # callback signatures
 ctypedef double (*temp_dependent_albedo_fcn)(double T_surf)
+ctypedef void (*ocean_solubility_fcn)(double T_surf, int ng, double *P_i, double *m_i)
 
 # allocate and destroy
 cdef extern void allocate_adiabatclimate(void *ptr);
@@ -41,6 +42,8 @@ cdef extern void adiabatclimate_surface_temperature_column_wrapper(void *ptr, in
 cdef extern void adiabatclimate_surface_temperature_bg_gas_wrapper(void *ptr, int *ng, 
                                       double *P_i_surf, double *P_surf, char *bg_gas, 
                                       double *T_guess, double *T_surf, char *err)
+
+cdef extern void adiabatclimate_set_ocean_solubility_fcn_wrapper(void *ptr, char *species_c, ocean_solubility_fcn fcn, char *err)
 
 cdef extern void adiabatclimate_to_regular_grid_wrapper(void *ptr, char *err)
 
@@ -89,8 +92,14 @@ cdef extern void adiabatclimate_dz_get(void *ptr, int *dim1, double *arr)
 cdef extern void adiabatclimate_densities_get_size(void *ptr, int *dim1, int *dim2)
 cdef extern void adiabatclimate_densities_get(void *ptr, int *dim1, int *dim2, double *arr)
 
+cdef extern void adiabatclimate_n_atmos_get_size(void *ptr, int *dim1)
+cdef extern void adiabatclimate_n_atmos_get(void *ptr, int *dim1, double *arr)
+
 cdef extern void adiabatclimate_n_surface_get_size(void *ptr, int *dim1)
 cdef extern void adiabatclimate_n_surface_get(void *ptr, int *dim1, double *arr)
+
+cdef extern void adiabatclimate_n_ocean_get_size(void *ptr, int *dim1, int *dim2)
+cdef extern void adiabatclimate_n_ocean_get(void *ptr, int *dim1, int *dim2, double *arr)
 
 cdef extern void adiabatclimate_rad_get(void *ptr, void *ptr1)
 

@@ -614,21 +614,23 @@ contains
     end subroutine
   end function
 
-  subroutine AdiabatClimate_set_ocean_solubility_fcn(self, ocean_gas, ocean_fcn, err)
+  !> Sets a function for describing how gases dissolve in a liquid ocean.
+  subroutine AdiabatClimate_set_ocean_solubility_fcn(self, species, fcn, err)
     class(AdiabatClimate), intent(inout) :: self
-    character(*), intent(in) :: ocean_gas
-    procedure(ocean_solubility_fcn), pointer, intent(in) :: ocean_fcn
+    character(*), intent(in) :: species !! name of species that makes the ocean
+    !> Function describing solubility of other gases in ocean
+    procedure(ocean_solubility_fcn), pointer, intent(in) :: fcn 
     character(:), allocatable, intent(out) :: err
 
     integer :: ind
 
-    ind = findloc(self%species_names, ocean_gas, 1)
+    ind = findloc(self%species_names, species, 1)
     if (ind == 0) then
-      err = 'Gas "'//ocean_gas//'" is not in the list of species'
+      err = 'Gas "'//species//'" is not in the list of species'
       return
     endif
 
-    self%ocean_fcns(ind)%fcn => ocean_fcn
+    self%ocean_fcns(ind)%fcn => fcn
 
   end subroutine
 

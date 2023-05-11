@@ -250,6 +250,33 @@ cdef class AdiabatClimate:
       raise ClimaException(err.decode("utf-8").strip())
     return T_surf
 
+  def set_ocean_solubility_fcn(self, str species, object fcn):
+    """Sets a function for describing how gases dissolve in a liquid ocean.
+
+    Parameters
+    ----------
+    species : str
+        Species that the ocean is made of
+    fcn : function
+        A Numba cfunc that describes the solubility of other gases in the ocean
+    """
+    cdef bytes species_b = pystring2cstring(species)
+    cdef char *species_c = species_b
+    cdef char err[ERR_LEN+1]
+
+    argtypes = (ct.c_double, ct.c_int32, ct.POINTER(ct.c_double), ct.POINTER(ct.c_double))
+    restype = None
+    if not fcn.ctypes.argtypes == argtypes:
+      raise ClimaException("The callback function has the wrong argument types.")
+    if not fcn.ctypes.restype == restype:
+      raise ClimaException("The callback function has the wrong return type.")
+
+    cdef unsigned long long int fcn_l = <unsigned long long int> fcn.address
+    cdef wa_pxd.ocean_solubility_fcn fcn_c = <wa_pxd.ocean_solubility_fcn> fcn_l
+    wa_pxd.adiabatclimate_set_ocean_solubility_fcn_wrapper(&self._ptr, species_c, fcn_c, err)
+    if len(err.strip()) > 0:
+       raise ClimaException(err.decode("utf-8").strip())
+
   def surface_temperature_bg_gas(self, ndarray[double, ndim=1] P_i_surf, double P_surf, str bg_gas, double T_guess = 280):
     """Similar to surface_temperature. The difference is that this function imposes
     a background gas and fixed surface pressure.
@@ -473,6 +500,15 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_densities_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr
 
+  property N_atmos:
+    "ndarray[double,ndim=1], shape (ng). Reservoir of gas in the atmosphere (mol/cm^2)"
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.adiabatclimate_n_atmos_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.adiabatclimate_n_atmos_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+  
   property N_surface:
     "ndarray[double,ndim=1], shape (ng). Reservoir of gas on surface (mol/cm^2)"
     def __get__(self):
@@ -480,6 +516,15 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_n_surface_get_size(&self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
       wa_pxd.adiabatclimate_n_surface_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+
+  property N_ocean:
+    "ndarray[double,ndim=2], shape (ng,ng). Reservoir of gas on surface (mol/cm^2)"
+    def __get__(self):
+      cdef int dim1, dim2
+      wa_pxd.adiabatclimate_n_ocean_get_size(&self._ptr, &dim1, &dim2)
+      cdef ndarray arr = np.empty((dim1,dim2), np.double, order="f")
+      wa_pxd.adiabatclimate_n_ocean_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr
 
 
