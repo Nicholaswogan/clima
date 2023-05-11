@@ -94,7 +94,7 @@ contains
     integer(c_int), value, intent(in) :: ng
     real(c_double), intent(in) :: P_i(ng) !! bars
     real(c_double), intent(out) :: m_i(ng) !! mol/kg
-    m_i(:) = 0.0_dp
+    m_i(1) = 0.0_dp
     m_i(2) = P_i(2)*3.4e-2_dp
     m_i(3) = P_i(3)*6.1e-4_dp
   end subroutine

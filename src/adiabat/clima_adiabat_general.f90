@@ -361,7 +361,7 @@ contains
         N_ocean(j,j) = 0.0_dp ! ocean can not dissolve into itself
         do i = 1,sp%ng
           if (i /= j) then
-            N_ocean(i,j) = m_i_cur(i)*N_surface(j)*(1.0e3_dp/sp%g(j)%mass)
+            N_ocean(i,j) = m_i_cur(i)*N_surface(j)*(sp%g(j)%mass/1.0e3_dp)
           endif
         enddo
       endblock; else
