@@ -1,6 +1,22 @@
 module clima_eqns
   use clima_const, only: dp
   implicit none
+
+  interface
+    !> A temperature dependent surface albedo
+    function temp_dependent_albedo_fcn(T_surf) result(albedo)
+      use iso_c_binding, only: c_double
+      real(c_double), value, intent(in) :: T_surf !! K
+      real(c_double) :: albedo
+    end function
+    
+    subroutine ocean_solubility_fcn(T_surf, P_i, m_i) 
+      use iso_c_binding, only: c_double
+      real(c_double), value, intent(in) :: T_surf !! K
+      real(c_double), intent(in) :: P_i(:) !! bars
+      real(c_double), intent(out) :: m_i(:) !! mol/kg
+    end subroutine
+  end interface
     
 contains
 

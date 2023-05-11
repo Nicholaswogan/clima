@@ -2,20 +2,11 @@ module clima_adiabat
   use clima_const, only: dp, s_str_len
   use clima_types, only: Species
   use clima_radtran, only: Radtran
+  use clima_eqns, only: ocean_solubility_fcn, temp_dependent_albedo_fcn
   implicit none
   private
 
   public :: AdiabatClimate
-  public :: temp_dependent_albedo_fcn
-
-  abstract interface
-    !> A temperature dependent surface albedo
-    function temp_dependent_albedo_fcn(T_surf) result(albedo)
-      use iso_c_binding, only: c_double
-      real(c_double), value, intent(in) :: T_surf !! K
-      real(c_double) :: albedo
-    end function
-  end interface
 
   type :: AdiabatClimate
 
@@ -23,13 +14,19 @@ module clima_adiabat
     integer :: nz
     real(dp) :: P_top = 1.0e-2_dp !! (dynes/cm2)
     real(dp) :: T_trop = 180.0_dp !! (T)
+    real(dp), allocatable :: RH(:) !! relative humidity (ng)
+
     !> If .true., then Tropopause temperature is non-linearly solved for such that
     !> it matches the skin temperature. The initial guess will always be self%T_trop.
     logical :: solve_for_T_trop = .false.
     !> Callback that sets the surface albedo based on the surface temperature.
     !> This can be used to parameterize the ice-albedo feedback.
     procedure(temp_dependent_albedo_fcn), nopass, pointer :: albedo_fcn => null()
-    real(dp), allocatable :: RH(:) !! relative humidity (ng)
+
+    !> index for the ocean
+    integer :: ocean_ind = 0
+    !> Function describing ocean solubility
+    procedure(ocean_solubility_fcn), nopass, pointer :: ocean_fcn => null()
     
     ! planet properties
     real(dp) :: planet_mass !! (g)
@@ -52,7 +49,9 @@ module clima_adiabat
     real(dp), allocatable :: z(:) !! Altitude at the center of the grid cell, cm (nz)
     real(dp), allocatable :: dz(:) !! Thickness of each grid cell, cm (nz)
     real(dp), allocatable :: densities(:,:) !! densities in each grid cell, molecules/cm^3 (nz,ng)
+    real(dp), allocatable :: N_atmos(:) !! reservoir of gas in atmosphere mol/cm^2 (ng)
     real(dp), allocatable :: N_surface(:) !! reservoir of gas on surface mol/cm^2 (ng)
+    real(dp), allocatable :: N_ocean(:) !! reservoir of gas dissolved in an ocean mol/cm^2 (ng)
     
   contains
     ! Constructs atmospheres
@@ -68,6 +67,7 @@ module clima_adiabat
     procedure :: surface_temperature_column => AdiabatClimate_surface_temperature_column
     procedure :: surface_temperature_bg_gas => AdiabatClimate_surface_temperature_bg_gas
     ! Utilities
+    procedure :: set_ocean_solubility_fcn => AdiabatClimate_set_ocean_solubility_fcn
     procedure :: to_regular_grid => AdiabatClimate_to_regular_grid
     procedure :: out2atmosphere_txt => AdiabatClimate_out2atmosphere_txt
   end type
@@ -146,7 +146,7 @@ contains
     ! allocate work variables
     allocate(c%P(c%nz), c%T(c%nz), c%f_i(c%nz,c%sp%ng), c%z(c%nz), c%dz(c%nz))
     allocate(c%densities(c%nz,c%sp%ng))
-    allocate(c%N_surface(c%sp%ng))
+    allocate(c%N_atmos(c%sp%ng),c%N_surface(c%sp%ng),c%N_ocean(c%sp%ng))
     
   end function
   
@@ -155,7 +155,7 @@ contains
   !> of each gas.
   subroutine AdiabatClimate_make_profile(self, T_surf, P_i_surf, err)
     use clima_adiabat_general, only: make_profile
-    use clima_const, only: k_boltz
+    use clima_const, only: k_boltz, N_avo
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: T_surf !! K
     real(dp), intent(in) :: P_i_surf(:) !! dynes/cm^2
@@ -177,7 +177,9 @@ contains
     call make_profile(T_surf, P_i_surf, &
                       self%sp, self%nz, self%planet_mass, &
                       self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                      P_e, z_e, T_e, f_i_e, self%N_surface, self%P_trop, &
+                      self%ocean_fcn, self%ocean_ind, &
+                      P_e, z_e, T_e, f_i_e, self%P_trop, &
+                      self%N_surface, self%N_ocean, &
                       err)
     if (allocated(err)) return
 
@@ -197,6 +199,11 @@ contains
     do j =1,self%sp%ng
       self%densities(:,j) = self%f_i(:,j)*density(:)
     enddo
+
+    do i = 1,self%sp%ng
+      ! mol/cm^2 in atmosphere
+      self%N_atmos(i) = sum(density*self%f_i(:,i)*self%dz)/N_avo
+    enddo
     
   end subroutine
 
@@ -204,7 +211,7 @@ contains
   !> of each gas (mol/cm^2). 
   subroutine AdiabatClimate_make_column(self, T_surf, N_i_surf, err)
     use clima_adiabat_general, only: make_column
-    use clima_const, only: k_boltz
+    use clima_const, only: k_boltz, N_avo
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: T_surf !! K
     real(dp), intent(in) :: N_i_surf(:) !! mole/cm^2
@@ -226,7 +233,9 @@ contains
     call make_column(T_surf, N_i_surf, &
                      self%sp, self%nz, self%planet_mass, &
                      self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                     P_e, z_e, T_e, f_i_e, self%N_surface, self%P_trop, &
+                     self%ocean_fcn, self%ocean_ind, &
+                     P_e, z_e, T_e, f_i_e, self%P_trop, &
+                     self%N_surface, self%N_ocean, &
                      err)
     if (allocated(err)) return
     
@@ -245,6 +254,11 @@ contains
     density = self%P/(k_boltz*self%T)
     do j =1,self%sp%ng
       self%densities(:,j) = self%f_i(:,j)*density(:)
+    enddo
+
+    do i = 1,self%sp%ng
+      ! mol/cm^2 in atmosphere
+      self%N_atmos(i) = sum(density*self%f_i(:,i)*self%dz)/N_avo
     enddo
     
   end subroutine
@@ -594,6 +608,22 @@ contains
       endblock; endif
     end subroutine
   end function
+
+  subroutine AdiabatClimate_set_ocean_solubility_fcn(self, ocean_gas, ocean_fcn, err)
+    class(AdiabatClimate), intent(inout) :: self
+    character(*), intent(in) :: ocean_gas
+    procedure(ocean_solubility_fcn), pointer, intent(in) :: ocean_fcn
+    character(:), allocatable, intent(out) :: err
+
+    self%ocean_ind = findloc(self%species_names, ocean_gas, 1)
+    if (self%ocean_ind == 0) then
+      err = 'Gas "'//ocean_gas//'" is not in the list of species'
+      return
+    endif
+
+    self%ocean_fcn => ocean_fcn
+
+  end subroutine
 
   !> Re-grids atmosphere so that each grid cell is equally spaced in altitude.
   subroutine AdiabatClimate_to_regular_grid(self, err)
