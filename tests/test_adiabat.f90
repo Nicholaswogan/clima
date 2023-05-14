@@ -75,6 +75,8 @@ program test
     stop 1
   endif
 
+  c%use_make_column_P_guess = .true.
+
   call c%make_column(280.0_dp, &
       [15.0e4_dp, 400e-6_dp*23.0_dp, 1.0*36.0_dp], &
       err=err)

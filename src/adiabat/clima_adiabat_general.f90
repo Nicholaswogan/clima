@@ -87,6 +87,7 @@ contains
                          sp, nz, planet_mass, &
                          planet_radius, P_top, T_trop, RH, &
                          ocean_fcns, args_p, &
+                         use_P_guess, P_guess, &
                          P, z, T, f_i, P_trop, &
                          N_surface, N_ocean, &
                          err)
@@ -104,7 +105,8 @@ contains
     real(dp), target, intent(in) :: P_top, T_trop, RH(:)
     type(OceanFunction), intent(in) :: ocean_fcns(:)
     type(c_ptr), value, intent(in) :: args_p
-
+    logical, intent(in) :: use_P_guess
+    real(dp), intent(inout) :: P_guess(:)
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
     real(dp), target, intent(out) :: P_trop
@@ -123,6 +125,7 @@ contains
 
     ! allocate memory for minpack
     mv = MinpackHybrd1Vars(n=sp%ng, tol=1.0e-8_dp)
+    mv%info = 0
 
     ! allocate some work memory
     allocate(P_av(nz), T_av(nz), density_av(nz), f_i_av(nz,sp%ng), dz(nz))
@@ -132,23 +135,40 @@ contains
     ! gravity at the surface
     grav = gravity(planet_radius, planet_mass, 0.0_dp)
 
-    do ii = 1,size(scale_factors)
-
-      ! Initial guess will be crude conversion of moles/cm2 (column) to 
-      ! to dynes/cm2 (pressure). I try a few different `scale_factors` 
-      ! to this guess.
-      do i = 1,mv%n
-        mv%x(i) = log10(max(N_i_surf(i)*sp%g(i)%mass*grav*scale_factors(ii), sqrt(tiny(1.0_dp))))
-      enddo
-
-      ! attempt the root solve
-      call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
-      if (mv%info == 1) then
-        ! Success, so we exit.
-        exit
+    ! First, if a initial guess is provided, then we try it
+    if (use_P_guess) then
+      if (size(P_guess) /= sp%ng) then
+        err = 'make_column: Input "P_guess" has the wrong shape'
+        return
       endif
+      do i = 1,mv%n
+        mv%x(i) = log10(max(P_guess(i),sqrt(tiny(1.0_dp))))
+      enddo
+      ! Attempt the root solve
+      call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+    endif
 
-    enddo
+    ! If the initial guess fails, or if an initial guess is not provided
+    ! then we try to solve anyway using a variety of initial guesses.
+    if (mv%info /= 1) then
+      do ii = 1,size(scale_factors)
+
+        ! Initial guess will be crude conversion of moles/cm2 (column) to 
+        ! to dynes/cm2 (pressure). I try a few different `scale_factors` 
+        ! to this guess.
+        do i = 1,mv%n
+          mv%x(i) = log10(max(N_i_surf(i)*sp%g(i)%mass*grav*scale_factors(ii), sqrt(tiny(1.0_dp))))
+        enddo
+
+        ! Attempt the root solve
+        call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+        if (mv%info == 1) then
+          ! Success, so we exit.
+          exit
+        endif
+
+      enddo
+    endif
 
     ! If all attempted solves fail, then an error is thown.
     if (mv%info == 0 .or. mv%info > 1) then
@@ -161,6 +181,7 @@ contains
 
     ! call one more time with solution
     call fcn(mv%n, mv%x, mv%fvec, mv%info)
+    P_guess = 10.0**mv%x
 
   contains
     subroutine fcn(n_, x_, fvec_, iflag_)

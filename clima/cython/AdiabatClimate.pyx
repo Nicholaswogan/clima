@@ -365,6 +365,34 @@ cdef class AdiabatClimate:
     def __set__(self, double val):
       wa_pxd.adiabatclimate_t_trop_set(&self._ptr, &val)
 
+  property use_make_column_P_guess:
+    """bool. If True, then any function that calls `make_column` will
+    use the initial guess in `self.make_column_P_guess`
+    """
+    def __get__(self):
+      cdef bool val
+      wa_pxd.adiabatclimate_use_make_column_p_guess_get(&self._ptr, &val)
+      return val
+    def __set__(self, bool val):
+      wa_pxd.adiabatclimate_use_make_column_p_guess_set(&self._ptr, &val)
+
+  property make_column_P_guess:
+    """ndarray[double,ndim=1], shape (ng). Initial guess for surface pressure 
+    of all gases for `make_column`.
+    """
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.adiabatclimate_make_column_p_guess_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.adiabatclimate_make_column_p_guess_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+    def __set__(self, ndarray[double, ndim=1] arr):
+      cdef int dim1
+      wa_pxd.adiabatclimate_make_column_p_guess_get_size(&self._ptr, &dim1)
+      if arr.shape[0] != dim1:
+        raise ClimaException('"make_column_P_guess" is the wrong size')
+      wa_pxd.adiabatclimate_make_column_p_guess_set(&self._ptr, &dim1, <double *>arr.data)
+
   property solve_for_T_trop:
     """bool. If True, then Tropopause temperature is non-linearly solved for such that
     it matches the skin temperature. The initial guess will always be self.T_trop.

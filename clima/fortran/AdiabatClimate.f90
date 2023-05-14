@@ -409,6 +409,53 @@ subroutine adiabatclimate_t_trop_set(ptr, val) bind(c)
   c%T_trop = val
 end subroutine
 
+subroutine adiabatclimate_use_make_column_p_guess_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  logical(c_bool), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%use_make_column_P_guess
+end subroutine
+
+subroutine adiabatclimate_use_make_column_p_guess_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  logical(c_bool), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%use_make_column_P_guess = val
+end subroutine
+
+subroutine adiabatclimate_make_column_p_guess_get_size(ptr, dim1) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  dim1 = size(c%make_column_P_guess,1)
+end subroutine
+
+subroutine adiabatclimate_make_column_p_guess_get(ptr, dim1, arr) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(out) :: arr(dim1)
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  arr = c%make_column_P_guess
+end subroutine
+
+subroutine adiabatclimate_make_column_p_guess_set(ptr, dim1, arr) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(in) :: arr(dim1)
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%make_column_P_guess = arr
+end subroutine
+
 subroutine adiabatclimate_solve_for_t_trop_get(ptr, val) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr

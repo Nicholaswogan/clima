@@ -17,6 +17,12 @@ module clima_adiabat
     real(dp) :: P_top = 1.0e-2_dp !! (dynes/cm2)
     real(dp) :: T_trop = 180.0_dp !! (T)
     real(dp), allocatable :: RH(:) !! relative humidity (ng)
+    !> If .true., then any function that calls `make_column` will
+    !> use the initial guess in `self%make_column_P_guess`
+    logical :: use_make_column_P_guess = .true.
+    !> Initial guess for surface pressure of all gases for `make_column`
+    !> routine (ng).
+    real(dp), allocatable :: make_column_P_guess(:)
 
     !> If .true., then Tropopause temperature is non-linearly solved for such that
     !> it matches the skin temperature. The initial guess will always be self%T_trop.
@@ -110,6 +116,9 @@ contains
     ! default relative humidty is 1
     allocate(c%RH(c%sp%ng))
     c%RH(:) = 1.0_dp
+
+    allocate(c%make_column_P_guess(c%sp%ng))
+    c%make_column_P_guess(:) = 1.0_dp
     
     ! There must be more than 1 species
     if (c%sp%ng == 1) then 
@@ -242,6 +251,7 @@ contains
                      self%sp, self%nz, self%planet_mass, &
                      self%planet_radius, self%P_top, self%T_trop, self%RH, &
                      self%ocean_fcns, self%ocean_args_p, &
+                     self%use_make_column_P_guess, self%make_column_P_guess, &
                      P_e, z_e, T_e, f_i_e, self%P_trop, &
                      self%N_surface, self%N_ocean, &
                      err)

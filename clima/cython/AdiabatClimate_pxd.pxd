@@ -56,6 +56,13 @@ cdef extern void adiabatclimate_p_top_set(void *ptr, double *val)
 cdef extern void adiabatclimate_t_trop_get(void *ptr, double *val)
 cdef extern void adiabatclimate_t_trop_set(void *ptr, double *val)
 
+cdef extern void adiabatclimate_use_make_column_p_guess_get(void *ptr, bool *val)
+cdef extern void adiabatclimate_use_make_column_p_guess_set(void *ptr, bool *val)
+
+cdef extern void adiabatclimate_make_column_p_guess_get_size(void *ptr, int *dim1)
+cdef extern void adiabatclimate_make_column_p_guess_get(void *ptr, int *dim1, double *val)
+cdef extern void adiabatclimate_make_column_p_guess_set(void *ptr, int *dim1, double *val)
+
 cdef extern void adiabatclimate_solve_for_t_trop_get(void *ptr, bool *val)
 cdef extern void adiabatclimate_solve_for_t_trop_set(void *ptr, bool *val)
 
