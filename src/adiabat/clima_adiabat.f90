@@ -4,6 +4,7 @@ module clima_adiabat
   use clima_radtran, only: Radtran
   use clima_eqns, only: ocean_solubility_fcn, temp_dependent_albedo_fcn
   use clima_adiabat_general, only: OceanFunction
+  use iso_c_binding, only: c_ptr, c_null_ptr
   implicit none
   private
 
@@ -27,6 +28,8 @@ module clima_adiabat
     !> Function describing how gases disolve in oceans. This allows for multiple oceans, each
     !> made of different condensed volatiles.
     type(OceanFunction), allocatable :: ocean_fcns(:)
+    !> A c-ptr which will be passed to each ocean solubility function.
+    type(c_ptr) :: ocean_args_p = c_null_ptr
     
     ! planet properties
     real(dp) :: planet_mass !! (g)
@@ -182,7 +185,7 @@ contains
     call make_profile(T_surf, P_i_surf, &
                       self%sp, self%nz, self%planet_mass, &
                       self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                      self%ocean_fcns, &
+                      self%ocean_fcns, self%ocean_args_p, &
                       P_e, z_e, T_e, f_i_e, self%P_trop, &
                       self%N_surface, self%N_ocean, &
                       err)
@@ -238,7 +241,7 @@ contains
     call make_column(T_surf, N_i_surf, &
                      self%sp, self%nz, self%planet_mass, &
                      self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                     self%ocean_fcns, &
+                     self%ocean_fcns, self%ocean_args_p, &
                      P_e, z_e, T_e, f_i_e, self%P_trop, &
                      self%N_surface, self%N_ocean, &
                      err)

@@ -11,12 +11,13 @@ module clima_eqns
     end function
 
     !> Function describing how gases dissolved in an ocean.
-    subroutine ocean_solubility_fcn(T_surf, ng, P_i, m_i) 
-      use iso_c_binding, only: c_double, c_int
+    subroutine ocean_solubility_fcn(T_surf, ng, P_i, m_i, args_p) 
+      use iso_c_binding, only: c_double, c_int, c_ptr
       real(c_double), value, intent(in) :: T_surf !! K
       integer(c_int), value, intent(in) :: ng
       real(c_double), intent(in) :: P_i(ng) !! surface pressure of all gases (bars)
       real(c_double), intent(out) :: m_i(ng) !! concentration of each gas in ocean (mol/kg)
+      type(c_ptr), value, intent(in) :: args_p !! For passing in data
     end subroutine
   end interface
     

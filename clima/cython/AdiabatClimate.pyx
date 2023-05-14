@@ -263,21 +263,22 @@ cdef class AdiabatClimate:
     cdef bytes species_b = pystring2cstring(species)
     cdef char *species_c = species_b
     cdef char err[ERR_LEN+1]
-    cdef unsigned long long int fcn_l
+    cdef uintptr_t fcn_l
     cdef wa_pxd.ocean_solubility_fcn fcn_c
 
     if isinstance(fcn, type(None)):
       fcn_l = 0
       fcn_c = NULL
     else:
-      argtypes = (ct.c_double, ct.c_int32, ct.POINTER(ct.c_double), ct.POINTER(ct.c_double))
+      argtypes = (ct.c_double, ct.c_int32, ct.POINTER(ct.c_double), ct.POINTER(ct.c_double), ct.c_void_p)
       restype = None
-      if not fcn.ctypes.argtypes == argtypes:
+      fcn_argtypes = fcn.ctypes.argtypes
+      if not (len(fcn_argtypes) == 5 and all([fcn_argtypes[i] == argtypes[i] for i in range(4)])):
         raise ClimaException("The callback function has the wrong argument types.")
       if not fcn.ctypes.restype == restype:
         raise ClimaException("The callback function has the wrong return type.")
 
-      fcn_l = <unsigned long long int> fcn.address
+      fcn_l = fcn.address
       fcn_c = <wa_pxd.ocean_solubility_fcn> fcn_l
 
     wa_pxd.adiabatclimate_set_ocean_solubility_fcn_wrapper(&self._ptr, species_c, fcn_c, err)
@@ -381,7 +382,7 @@ cdef class AdiabatClimate:
     """
     def __set__(self, object fcn):
       cdef bool set_to_null
-      cdef unsigned long long int fcn_l
+      cdef uintptr_t fcn_l
       cdef wa_pxd.temp_dependent_albedo_fcn fcn_c
       if isinstance(fcn, type(None)):
         set_to_null = True
@@ -393,7 +394,7 @@ cdef class AdiabatClimate:
           raise ClimaException("The callback function has the wrong argument types.")
         if not fcn.ctypes.restype == restype:
           raise ClimaException("The callback function has the wrong return type.")
-        fcn_l = <unsigned long long int> fcn.address
+        fcn_l = fcn.address
         fcn_c = <wa_pxd.temp_dependent_albedo_fcn> fcn_l
       wa_pxd.adiabatclimate_albedo_fcn_set(&self._ptr, &set_to_null, fcn_c)
 
@@ -411,6 +412,18 @@ cdef class AdiabatClimate:
       if arr.shape[0] != dim1:
         raise ClimaException('"RH" is the wrong size')
       wa_pxd.adiabatclimate_rh_set(&self._ptr, &dim1, <double *>arr.data)
+
+  property ocean_args_p:
+    "int or NoneType. Pointer to data that is passed to ocean solubility functions."
+    def __set__(self, object p_int):
+      cdef uintptr_t p1
+      cdef void* p
+      if isinstance(p_int, type(None)):
+        p = NULL
+      else:
+        p1 = p_int
+        p = <void *>p1
+      wa_pxd.adiabatclimate_ocean_args_p_set(&self._ptr, p)
 
   property species_names:
     "List, shape (ng). The name of each species in the model"

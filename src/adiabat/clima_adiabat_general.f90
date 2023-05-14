@@ -86,7 +86,7 @@ contains
   subroutine make_column(T_surf, N_i_surf, &
                          sp, nz, planet_mass, &
                          planet_radius, P_top, T_trop, RH, &
-                         ocean_fcns, &
+                         ocean_fcns, args_p, &
                          P, z, T, f_i, P_trop, &
                          N_surface, N_ocean, &
                          err)
@@ -94,6 +94,7 @@ contains
     use clima_useful, only: MinpackHybrd1Vars
     use clima_eqns, only: gravity, ocean_solubility_fcn
     use clima_const, only: k_boltz, N_avo
+    use iso_c_binding, only: c_ptr
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), intent(in) :: N_i_surf(:) !! (ng) moles/cm^2
 
@@ -102,6 +103,7 @@ contains
     real(dp), target, intent(in) :: planet_mass, planet_radius
     real(dp), target, intent(in) :: P_top, T_trop, RH(:)
     type(OceanFunction), intent(in) :: ocean_fcns(:)
+    type(c_ptr), value, intent(in) :: args_p
 
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
@@ -117,7 +119,7 @@ contains
     integer, allocatable :: sp_type(:)
 
     type(MinpackHybrd1Vars) :: mv
-    real(dp), parameter :: scale_factors(*) = [1.0_dp, 0.5_dp, 2.0_dp, 0.1_dp, 5.0_dp] !! Scalings for root solve guessing
+    real(dp), parameter :: scale_factors(*) = [1.0_dp, 0.5_dp, 2.0_dp, 0.1_dp, 5.0_dp, 0.01_dp] !! Scalings for root solve guessing
 
     ! allocate memory for minpack
     mv = MinpackHybrd1Vars(n=sp%ng, tol=1.0e-8_dp)
@@ -177,7 +179,7 @@ contains
       call make_profile(T_surf, P_i, &
                         sp, nz, planet_mass, &
                         planet_radius, P_top, T_trop, RH, &
-                        ocean_fcns, &
+                        ocean_fcns, args_p, &
                         P, z, T, f_i, P_trop, &
                         N_surface, N_ocean, &
                         err)
@@ -218,12 +220,13 @@ contains
   subroutine make_profile(T_surf, P_i_surf, &
                           sp, nz, planet_mass, &
                           planet_radius, P_top, T_trop, RH, &
-                          ocean_fcns, &
+                          ocean_fcns, args_p, &
                           P, z, T, f_i, P_trop, &
                           N_surface, N_ocean, &
                           err)
     use futils, only: linspace
     use clima_eqns, only: gravity, ocean_solubility_fcn
+    use iso_c_binding, only: c_ptr
 
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), intent(in) :: P_i_surf(:) !! (ng) dynes/cm2
@@ -233,6 +236,7 @@ contains
     real(dp), target, intent(in) :: planet_mass, planet_radius
     real(dp), target, intent(in) :: P_top, T_trop, RH(:)
     type(OceanFunction), intent(in) :: ocean_fcns(:)
+    type(c_ptr), value, intent(in) :: args_p
 
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
@@ -355,7 +359,7 @@ contains
 
         ! Compute mol/kg of each gas dissolved in the ocean
         allocate(m_i_cur(sp%ng))
-        call ocean_fcns(j)%fcn(T_surf, sp%ng, d%P_i_cur/1.0e6_dp, m_i_cur)
+        call ocean_fcns(j)%fcn(T_surf, sp%ng, d%P_i_cur/1.0e6_dp, m_i_cur, args_p)
         
         ! Compute mol/cm^2 of each gas dissolved in ocean
         N_ocean(j,j) = 0.0_dp ! ocean can not dissolve into itself

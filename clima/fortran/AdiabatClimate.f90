@@ -475,6 +475,15 @@ subroutine adiabatclimate_rh_set(ptr, dim1, arr) bind(c)
   c%RH = arr
 end subroutine
 
+subroutine adiabatclimate_ocean_args_p_set(ptr, p) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: p
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%ocean_args_p = p
+end subroutine
+
 subroutine adiabatclimate_species_names_get_size(ptr, dim1) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr

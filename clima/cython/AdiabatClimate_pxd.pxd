@@ -4,7 +4,7 @@ cdef extern from "<stdbool.h>":
 
 # callback signatures
 ctypedef double (*temp_dependent_albedo_fcn)(double T_surf)
-ctypedef void (*ocean_solubility_fcn)(double T_surf, int ng, double *P_i, double *m_i)
+ctypedef void (*ocean_solubility_fcn)(double T_surf, int ng, double *P_i, double *m_i, void *args_p)
 
 # allocate and destroy
 cdef extern void allocate_adiabatclimate(void *ptr);
@@ -64,6 +64,8 @@ cdef extern void adiabatclimate_albedo_fcn_set(void *ptr, bool *set_to_null, tem
 cdef extern void adiabatclimate_rh_get_size(void *ptr, int *dim1)
 cdef extern void adiabatclimate_rh_get(void *ptr, int *dim1, double *val)
 cdef extern void adiabatclimate_rh_set(void *ptr, int *dim1, double *val)
+
+cdef extern void adiabatclimate_ocean_args_p_set(void *ptr, void *p)
 
 cdef extern void adiabatclimate_species_names_get_size(void *ptr, int *dim1)
 cdef extern void adiabatclimate_species_names_get(void *ptr, int *dim1, char* species_names)

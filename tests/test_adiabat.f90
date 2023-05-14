@@ -88,12 +88,13 @@ program test
 
 contains
 
-  subroutine ocean_fcn(T_surf, ng, P_i, m_i) 
-    use iso_c_binding, only: c_double, c_int
+  subroutine ocean_fcn(T_surf, ng, P_i, m_i, args_p) 
+    use iso_c_binding, only: c_double, c_int, c_ptr
     real(c_double), value, intent(in) :: T_surf !! K
     integer(c_int), value, intent(in) :: ng
     real(c_double), intent(in) :: P_i(ng) !! bars
     real(c_double), intent(out) :: m_i(ng) !! mol/kg
+    type(c_ptr), value, intent(in) :: args_p
     m_i(1) = 0.0_dp
     m_i(2) = P_i(2)*3.4e-2_dp
     m_i(3) = P_i(3)*6.1e-4_dp
