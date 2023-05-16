@@ -19,7 +19,7 @@ setup(
     python_requires='>=3.6',
     version=version,
     license="GNU General Public License v3.0",
-    install_requires=['numpy'], 
+    install_requires=['numpy','numba'], 
     author='Nicholas Wogan',
     author_email = 'nicholaswogan@gmail.com',
     description = "Climate model of planet's atmospheres.",

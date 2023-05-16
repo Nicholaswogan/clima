@@ -250,6 +250,41 @@ cdef class AdiabatClimate:
       raise ClimaException(err.decode("utf-8").strip())
     return T_surf
 
+  def set_ocean_solubility_fcn(self, str species, object fcn):
+    """Sets a function for describing how gases dissolve in a liquid ocean.
+
+    Parameters
+    ----------
+    species : str
+        Species that the ocean is made of
+    fcn : function
+        A Numba cfunc that describes the solubility of other gases in the ocean
+    """
+    cdef bytes species_b = pystring2cstring(species)
+    cdef char *species_c = species_b
+    cdef char err[ERR_LEN+1]
+    cdef uintptr_t fcn_l
+    cdef wa_pxd.ocean_solubility_fcn fcn_c
+
+    if isinstance(fcn, type(None)):
+      fcn_l = 0
+      fcn_c = NULL
+    else:
+      argtypes = (ct.c_double, ct.c_int32, ct.POINTER(ct.c_double), ct.POINTER(ct.c_double), ct.c_void_p)
+      restype = None
+      fcn_argtypes = fcn.ctypes.argtypes
+      if not (len(fcn_argtypes) == 5 and all([fcn_argtypes[i] == argtypes[i] for i in range(4)])):
+        raise ClimaException("The callback function has the wrong argument types.")
+      if not fcn.ctypes.restype == restype:
+        raise ClimaException("The callback function has the wrong return type.")
+
+      fcn_l = fcn.address
+      fcn_c = <wa_pxd.ocean_solubility_fcn> fcn_l
+
+    wa_pxd.adiabatclimate_set_ocean_solubility_fcn_wrapper(&self._ptr, species_c, fcn_c, err)
+    if len(err.strip()) > 0:
+       raise ClimaException(err.decode("utf-8").strip())
+
   def surface_temperature_bg_gas(self, ndarray[double, ndim=1] P_i_surf, double P_surf, str bg_gas, double T_guess = 280):
     """Similar to surface_temperature. The difference is that this function imposes
     a background gas and fixed surface pressure.
@@ -330,6 +365,34 @@ cdef class AdiabatClimate:
     def __set__(self, double val):
       wa_pxd.adiabatclimate_t_trop_set(&self._ptr, &val)
 
+  property use_make_column_P_guess:
+    """bool. If True, then any function that calls `make_column` will
+    use the initial guess in `self.make_column_P_guess`
+    """
+    def __get__(self):
+      cdef bool val
+      wa_pxd.adiabatclimate_use_make_column_p_guess_get(&self._ptr, &val)
+      return val
+    def __set__(self, bool val):
+      wa_pxd.adiabatclimate_use_make_column_p_guess_set(&self._ptr, &val)
+
+  property make_column_P_guess:
+    """ndarray[double,ndim=1], shape (ng). Initial guess for surface pressure 
+    of all gases for `make_column`.
+    """
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.adiabatclimate_make_column_p_guess_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.adiabatclimate_make_column_p_guess_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+    def __set__(self, ndarray[double, ndim=1] arr):
+      cdef int dim1
+      wa_pxd.adiabatclimate_make_column_p_guess_get_size(&self._ptr, &dim1)
+      if arr.shape[0] != dim1:
+        raise ClimaException('"make_column_P_guess" is the wrong size')
+      wa_pxd.adiabatclimate_make_column_p_guess_set(&self._ptr, &dim1, <double *>arr.data)
+
   property solve_for_T_trop:
     """bool. If True, then Tropopause temperature is non-linearly solved for such that
     it matches the skin temperature. The initial guess will always be self.T_trop.
@@ -347,7 +410,7 @@ cdef class AdiabatClimate:
     """
     def __set__(self, object fcn):
       cdef bool set_to_null
-      cdef unsigned long long int fcn_l
+      cdef uintptr_t fcn_l
       cdef wa_pxd.temp_dependent_albedo_fcn fcn_c
       if isinstance(fcn, type(None)):
         set_to_null = True
@@ -359,7 +422,7 @@ cdef class AdiabatClimate:
           raise ClimaException("The callback function has the wrong argument types.")
         if not fcn.ctypes.restype == restype:
           raise ClimaException("The callback function has the wrong return type.")
-        fcn_l = <unsigned long long int> fcn.address
+        fcn_l = fcn.address
         fcn_c = <wa_pxd.temp_dependent_albedo_fcn> fcn_l
       wa_pxd.adiabatclimate_albedo_fcn_set(&self._ptr, &set_to_null, fcn_c)
 
@@ -377,6 +440,18 @@ cdef class AdiabatClimate:
       if arr.shape[0] != dim1:
         raise ClimaException('"RH" is the wrong size')
       wa_pxd.adiabatclimate_rh_set(&self._ptr, &dim1, <double *>arr.data)
+
+  property ocean_args_p:
+    "int or NoneType. Pointer to data that is passed to ocean solubility functions."
+    def __set__(self, object p_int):
+      cdef uintptr_t p1
+      cdef void* p
+      if isinstance(p_int, type(None)):
+        p = NULL
+      else:
+        p1 = p_int
+        p = <void *>p1
+      wa_pxd.adiabatclimate_ocean_args_p_set(&self._ptr, p)
 
   property species_names:
     "List, shape (ng). The name of each species in the model"
@@ -473,6 +548,15 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_densities_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr
 
+  property N_atmos:
+    "ndarray[double,ndim=1], shape (ng). Reservoir of gas in the atmosphere (mol/cm^2)"
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.adiabatclimate_n_atmos_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.adiabatclimate_n_atmos_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+  
   property N_surface:
     "ndarray[double,ndim=1], shape (ng). Reservoir of gas on surface (mol/cm^2)"
     def __get__(self):
@@ -480,6 +564,17 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_n_surface_get_size(&self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
       wa_pxd.adiabatclimate_n_surface_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+
+  property N_ocean:
+    """ndarray[double,ndim=2], shape (ng,ng). Reservoir of gas dissolved in oceans (mol/cm^2).
+    There can be multiple oceans. The gases dissolved in ocean made of species 0 is given by `N_ocean[:,0]`.
+    """
+    def __get__(self):
+      cdef int dim1, dim2
+      wa_pxd.adiabatclimate_n_ocean_get_size(&self._ptr, &dim1, &dim2)
+      cdef ndarray arr = np.empty((dim1,dim2), np.double, order="f")
+      wa_pxd.adiabatclimate_n_ocean_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr
 
 
