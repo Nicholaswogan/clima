@@ -1,5 +1,4 @@
 from skbuild import setup
-from setuptools import find_namespace_packages
 from os import path
 
 this_directory = path.abspath(path.dirname(__file__))
@@ -15,7 +14,7 @@ with open("CMakeLists.txt",'r') as fil:
             
 setup(
     name="clima",
-    packages=find_namespace_packages(),
+    packages=['clima'],
     python_requires='>=3.6',
     version=version,
     license="GNU General Public License v3.0",
