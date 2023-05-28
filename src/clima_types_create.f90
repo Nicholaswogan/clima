@@ -68,6 +68,14 @@ contains
       j = j + 1
       item => item%next
     enddo
+
+    ! check for duplicates
+    ind = check_for_duplicates(sp%atoms_names)
+    if (ind /= 0) then
+      err = '"'//trim(sp%atoms_names(ind))//'" is a duplicate atom in "'//filename//'"'
+      return
+    endif
+
     !!! done with atoms !!!
     
     !!! species !!!
@@ -134,6 +142,21 @@ contains
       j = j + 1
       item => item%next
     enddo
+    
+    ! check for duplicates
+    block
+      character(s_str_len), allocatable :: tmp_str_list(:)
+      allocate(tmp_str_list(sp%ng))
+      do i = 1,sp%ng
+        tmp_str_list(i) = sp%g(i)%name
+      enddo
+      ind = check_for_duplicates(tmp_str_list)
+      if (ind /= 0) then
+        err = '"'//sp%g(ind)%name//'" is a duplicate species in "'//filename//'"'
+        return
+      endif
+    end block
+
     !!! done with species !!!
 
     !!! Particles !!!
@@ -191,6 +214,21 @@ contains
       j = j + 1
       item => item%next
     enddo
+
+    ! check for duplicates
+    block
+      character(s_str_len), allocatable :: tmp_str_list(:)
+      allocate(tmp_str_list(sp%np))
+      do i = 1,sp%np
+        tmp_str_list(i) = sp%p(i)%name
+      enddo
+      ind = check_for_duplicates(tmp_str_list)
+      if (ind /= 0) then
+        err = '"'//sp%p(ind)%name//'" is a duplicate particle in "'//filename//'"'
+        return
+      endif
+    end block
+
     !!! done with particles !!!
 
   end subroutine
@@ -234,7 +272,7 @@ contains
       
     thermo%ntemps = tmplist%size() - 1
     if (thermo%ntemps /= 1 .and. thermo%ntemps /= 2) then
-      err = "Problem reading thermodynamic data for  "//trim(molecule_name)
+      err = "Problem reading thermodynamic data for "//trim(molecule_name)
       return
     endif
     allocate(thermo%temps(thermo%ntemps + 1))
@@ -246,7 +284,7 @@ contains
       class is (type_scalar)
         thermo%temps(j) = listitem%to_real(-1.0_dp,success)
         if (.not. success) then
-          err = "Problem reading thermodynamic data for  "//trim(molecule_name)
+          err = "Problem reading thermodynamic data for "//trim(molecule_name)
           return
         endif
       class default
