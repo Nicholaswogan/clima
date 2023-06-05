@@ -266,7 +266,7 @@ cdef class AdiabatClimate:
     cdef uintptr_t fcn_l
     cdef wa_pxd.ocean_solubility_fcn fcn_c
 
-    if isinstance(fcn, type(None)):
+    if fcn is None:
       fcn_l = 0
       fcn_c = NULL
     else:
@@ -409,13 +409,12 @@ cdef class AdiabatClimate:
     This can be used to parameterize the ice-albedo feedback.
     """
     def __set__(self, object fcn):
-      cdef bool set_to_null
       cdef uintptr_t fcn_l
       cdef wa_pxd.temp_dependent_albedo_fcn fcn_c
-      if isinstance(fcn, type(None)):
-        set_to_null = True
+      if fcn is None:
+        fcn_l = 0
+        fcn_c = NULL
       else:
-        set_to_null = False
         argtypes = (ct.c_double,)
         restype = ct.c_double
         if not fcn.ctypes.argtypes == argtypes:
@@ -424,7 +423,8 @@ cdef class AdiabatClimate:
           raise ClimaException("The callback function has the wrong return type.")
         fcn_l = fcn.address
         fcn_c = <wa_pxd.temp_dependent_albedo_fcn> fcn_l
-      wa_pxd.adiabatclimate_albedo_fcn_set(&self._ptr, &set_to_null, fcn_c)
+
+      wa_pxd.adiabatclimate_albedo_fcn_set(&self._ptr, fcn_c)
 
   property RH:
     "ndarray[double,ndim=1], shape (ng). Relative humidity of each species"
@@ -446,7 +446,7 @@ cdef class AdiabatClimate:
     def __set__(self, object p_int):
       cdef uintptr_t p1
       cdef void* p
-      if isinstance(p_int, type(None)):
+      if p_int is None:
         p = NULL
       else:
         p1 = p_int
