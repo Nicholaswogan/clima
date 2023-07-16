@@ -10,11 +10,24 @@ cdef class Radtran:
     pass
 
   def skin_temperature(self, double bond_albedo):
+    """The skin temperature
+
+    Parameters
+    ----------
+    bond_albedo : float
+        The bond albedo of a planet
+
+    Returns 
+    -------
+    float
+        The skin temperature
+    """
     cdef double T_skin
     rad_pxd.radtran_skin_temperature_wrapper(&self._ptr, &bond_albedo, &T_skin)
     return T_skin
 
   property surface_albedo:
+    "The surface albedo"
     def __get__(self):
       cdef double val
       rad_pxd.radtran_surface_albedo_get(&self._ptr, &val)
@@ -23,6 +36,7 @@ cdef class Radtran:
       rad_pxd.radtran_surface_albedo_set(&self._ptr, &val)
 
   property ir:
+    "The OpticalProperties for longwave radiative transfer"
     def __get__(self):
       cdef void *ptr1;
       rad_pxd.radtran_ir_get(&self._ptr, &ptr1)
@@ -31,6 +45,7 @@ cdef class Radtran:
       return var
 
   property sol:
+    "The OpticalProperties for shortwave radiative transfer"
     def __get__(self):
       cdef void *ptr1;
       rad_pxd.radtran_sol_get(&self._ptr, &ptr1)
@@ -39,6 +54,7 @@ cdef class Radtran:
       return var
 
   property wrk_ir:
+    "The ClimaRadtranWrk for longwave radiative transfer"
     def __get__(self):
       cdef void *ptr1;
       rad_pxd.radtran_wrk_ir_get(&self._ptr, &ptr1)
@@ -47,6 +63,7 @@ cdef class Radtran:
       return var
 
   property wrk_sol:
+    "The ClimaRadtranWrk for shortwave radiative transfer"
     def __get__(self):
       cdef void *ptr1;
       rad_pxd.radtran_wrk_sol_get(&self._ptr, &ptr1)

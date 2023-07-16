@@ -6,6 +6,9 @@ module clima
   ! constants that matter
   use clima_const, only: dp, s_str_len 
 
+  ! Callback functions
+  use clima_eqns, only: temp_dependent_albedo_fcn, ocean_solubility_fcn
+
   ! Radiative transfer classes
   use clima_radtran, only: Radtran, RadtranIR
 

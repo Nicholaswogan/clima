@@ -21,3 +21,4 @@ python_extension_module(_clima)
 
 target_link_libraries(_clima clima_c_api)
 target_include_directories(_clima PUBLIC ${NumPy_INCLUDE_DIRS})
+set_property(TARGET _clima PROPERTY LINKER_LANGUAGE Fortran)

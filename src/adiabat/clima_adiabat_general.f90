@@ -3,10 +3,16 @@ module clima_adiabat_general
   use clima_types, only: Species
   use dop853_module, only: dop853_class
   use futils, only: brent_class
+  use clima_eqns, only: ocean_solubility_fcn
   implicit none
   private
 
   public :: make_profile, make_column
+  public :: OceanFunction
+
+  type :: OceanFunction
+    procedure(ocean_solubility_fcn), nopass, pointer :: fcn => null()
+  end type
 
   type :: AdiabatProfileData
     !> Input data
@@ -80,12 +86,16 @@ contains
   subroutine make_column(T_surf, N_i_surf, &
                          sp, nz, planet_mass, &
                          planet_radius, P_top, T_trop, RH, &
-                         P, z, T, f_i, N_surface, P_trop, &
+                         ocean_fcns, args_p, &
+                         use_P_guess, P_guess, &
+                         P, z, T, f_i, P_trop, &
+                         N_surface, N_ocean, &
                          err)
     use minpack_module, only: hybrd1
     use clima_useful, only: MinpackHybrd1Vars
-    use clima_eqns, only: gravity
+    use clima_eqns, only: gravity, ocean_solubility_fcn
     use clima_const, only: k_boltz, N_avo
+    use iso_c_binding, only: c_ptr
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), intent(in) :: N_i_surf(:) !! (ng) moles/cm^2
 
@@ -93,23 +103,29 @@ contains
     integer, intent(in) :: nz
     real(dp), target, intent(in) :: planet_mass, planet_radius
     real(dp), target, intent(in) :: P_top, T_trop, RH(:)
-
+    type(OceanFunction), intent(in) :: ocean_fcns(:)
+    type(c_ptr), value, intent(in) :: args_p
+    logical, intent(in) :: use_P_guess
+    real(dp), intent(inout) :: P_guess(:)
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
-    real(dp), target, intent(out) :: N_surface(:), P_trop ! (ng)
+    real(dp), target, intent(out) :: P_trop
+    real(dp), target, intent(out) :: N_surface(:) ! (ng)
+    real(dp), target, intent(out) :: N_ocean(:,:) ! (ng,ng)
     character(:), allocatable, intent(out) :: err
 
     integer :: i, j, ii
-    real(dp) :: grav, P_sat, P_ocean
+    real(dp) :: grav
     real(dp), allocatable :: P_av(:), T_av(:), density_av(:), f_i_av(:,:), dz(:)
     real(dp), allocatable :: N_i(:), P_i(:)
     integer, allocatable :: sp_type(:)
 
     type(MinpackHybrd1Vars) :: mv
-    real(dp), parameter :: scale_factors(*) = [1.0_dp, 0.5_dp, 2.0_dp, 0.1_dp, 5.0_dp] !! Scalings for root solve guessing
+    real(dp), parameter :: scale_factors(*) = [1.0_dp, 0.5_dp, 2.0_dp, 0.1_dp, 5.0_dp, 0.01_dp] !! Scalings for root solve guessing
 
     ! allocate memory for minpack
     mv = MinpackHybrd1Vars(n=sp%ng, tol=1.0e-8_dp)
+    mv%info = 0
 
     ! allocate some work memory
     allocate(P_av(nz), T_av(nz), density_av(nz), f_i_av(nz,sp%ng), dz(nz))
@@ -119,35 +135,53 @@ contains
     ! gravity at the surface
     grav = gravity(planet_radius, planet_mass, 0.0_dp)
 
-    do ii = 1,size(scale_factors)
-
-      ! Initial guess will be crude conversion of moles/cm2 (column) to 
-      ! to dynes/cm2 (pressure). I try a few different `scale_factors` 
-      ! to this guess.
-      do i = 1,mv%n
-        mv%x(i) = log10(max(N_i_surf(i)*sp%g(i)%mass*grav*scale_factors(ii), sqrt(tiny(1.0_dp))))
-      enddo
-
-      ! attempt the root solve
-      call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
-      if (mv%info == 1) then
-        ! Success, so we exit.
-        exit
+    ! First, if a initial guess is provided, then we try it
+    if (use_P_guess) then
+      if (size(P_guess) /= sp%ng) then
+        err = 'make_column: Input "P_guess" has the wrong shape'
+        return
       endif
+      do i = 1,mv%n
+        mv%x(i) = log10(max(P_guess(i),sqrt(tiny(1.0_dp))))
+      enddo
+      ! Attempt the root solve
+      call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+    endif
 
-    enddo
+    ! If the initial guess fails, or if an initial guess is not provided
+    ! then we try to solve anyway using a variety of initial guesses.
+    if (mv%info /= 1) then
+      do ii = 1,size(scale_factors)
+
+        ! Initial guess will be crude conversion of moles/cm2 (column) to 
+        ! to dynes/cm2 (pressure). I try a few different `scale_factors` 
+        ! to this guess.
+        do i = 1,mv%n
+          mv%x(i) = log10(max(N_i_surf(i)*sp%g(i)%mass*grav*scale_factors(ii), sqrt(tiny(1.0_dp))))
+        enddo
+
+        ! Attempt the root solve
+        call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+        if (mv%info == 1) then
+          ! Success, so we exit.
+          exit
+        endif
+
+      enddo
+    endif
 
     ! If all attempted solves fail, then an error is thown.
     if (mv%info == 0 .or. mv%info > 1) then
-      err = 'hybrd1 root solve failed in make_column_water.'
+      err = 'hybrd1 root solve failed in make_column.'
       return
     elseif (mv%info < 0) then
-      err = 'hybrd1 root solve failed in make_column_water: '//err
+      err = 'hybrd1 root solve failed in make_column: '//err
       return
     endif
 
     ! call one more time with solution
     call fcn(mv%n, mv%x, mv%fvec, mv%info)
+    P_guess = 10.0**mv%x
 
   contains
     subroutine fcn(n_, x_, fvec_, iflag_)
@@ -166,7 +200,9 @@ contains
       call make_profile(T_surf, P_i, &
                         sp, nz, planet_mass, &
                         planet_radius, P_top, T_trop, RH, &
-                        P, z, T, f_i, N_surface, P_trop, &
+                        ocean_fcns, args_p, &
+                        P, z, T, f_i, P_trop, &
+                        N_surface, N_ocean, &
                         err)
       if (allocated(err)) then
         iflag_ = -1
@@ -184,38 +220,16 @@ contains
       enddo
       density_av = P_av/(k_boltz*T_av)
       do i = 1,sp%ng
+        ! mol/cm^2 in atmosphere
         N_i(i) = sum(density_av*f_i_av(:,i)*dz)/N_avo
       enddo
 
-      ! we need to know which species are saturated at the surface
-      ! and thus have surface reservoirs
-      do i = 1,sp%ng
-        P_sat = huge(1.0_dp)
-        if (allocated(sp%g(i)%sat)) then
-          if (T_surf < sp%g(i)%sat%T_critical) then
-            P_sat = RH(i)*sp%g(i)%sat%sat_pressure(T_surf)
-          endif
-        endif
-        ! determine if species are condensing, or not
-        if (P_i(i) > P_sat) then
-          sp_type(i) = CondensingSpeciesType
-        else
-          sp_type(i) = DrySpeciesType
-        endif
-      enddo
+      ! Add mol/cm^2 condensed on the surface
+      N_i(:) = N_i(:) + N_surface(:)
 
+      ! Add mol/cm^2 dissolved in an ocean
       do i = 1,sp%ng
-        if (sp_type(i) == CondensingSpeciesType) then
-          ! Figure out the "pressure" of the ocean
-          P_ocean = P_i(i) - P(1)*f_i(1,i)
-          ! convert to a column (moles/cm2)
-          N_surface(i) = P_ocean/(sp%g(i)%mass*grav)
-          ! Add the ocean to the H2O column in the atmosphere
-          N_i(i) = N_i(i) + N_surface(i)
-        else if (sp_type(i) == DrySpeciesType) then
-          ! nothing on the surface
-          N_surface(i) = 0.0_dp
-        endif
+        N_i(:) = N_i(:) + N_ocean(:,i)
       enddo
 
       ! residual
@@ -227,10 +241,13 @@ contains
   subroutine make_profile(T_surf, P_i_surf, &
                           sp, nz, planet_mass, &
                           planet_radius, P_top, T_trop, RH, &
-                          P, z, T, f_i, N_surface, P_trop, &
+                          ocean_fcns, args_p, &
+                          P, z, T, f_i, P_trop, &
+                          N_surface, N_ocean, &
                           err)
     use futils, only: linspace
-    use clima_eqns, only: gravity
+    use clima_eqns, only: gravity, ocean_solubility_fcn
+    use iso_c_binding, only: c_ptr
 
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), intent(in) :: P_i_surf(:) !! (ng) dynes/cm2
@@ -239,17 +256,19 @@ contains
     integer, intent(in) :: nz
     real(dp), target, intent(in) :: planet_mass, planet_radius
     real(dp), target, intent(in) :: P_top, T_trop, RH(:)
+    type(OceanFunction), intent(in) :: ocean_fcns(:)
+    type(c_ptr), value, intent(in) :: args_p
 
     real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
     real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
-    real(dp), target, intent(out) :: N_surface(:)
     real(dp), target, intent(out) :: P_trop !! Tropopause pressure (dynes/cm^2). 
                                             !! Value is negative if no tropopause is found.
+    real(dp), target, intent(out) :: N_surface(:), N_ocean(:,:)
     character(:), allocatable, intent(out) :: err
 
     type(AdiabatProfileData) :: d
-    integer :: i
-    real(dp) :: P_sat, grav, P_ocean
+    integer :: i, j
+    real(dp) :: P_sat, grav, P_surface_inventory
 
     ! check inputs
     if (T_surf < T_trop) then
@@ -290,6 +309,10 @@ contains
     endif
     if (size(N_surface) /= sp%ng) then
       err = 'make_profile: Input "N_surface" has the wrong dimension.'
+      return
+    endif
+    if (size(N_ocean,1) /= sp%ng .or. size(N_ocean,2) /= sp%ng) then
+      err = 'make_profile: Input "N_ocean" has the wrong dimension.'
       return
     endif
 
@@ -338,15 +361,37 @@ contains
       if (P_i_surf(i) > P_sat) then
         d%P_i_cur(i) = P_sat
         ! the pressure of the ocean is everything not in the atmosphere
-        P_ocean = P_i_surf(i) - P_sat 
+        P_surface_inventory = P_i_surf(i) - P_sat 
         ! The surface mol/cm^2 can then be computed
         ! from the "surface pressure"
-        N_surface(i) = P_ocean/(sp%g(i)%mass*grav)
+        N_surface(i) = P_surface_inventory/(sp%g(i)%mass*grav)
         d%sp_type(i) = CondensingSpeciesType
       else
         d%P_i_cur(i) = P_i_surf(i)
         N_surface(i) = 0.0_dp ! no surface reservoir if not condensing at the surface
         d%sp_type(i) = DrySpeciesType
+      endif
+    enddo
+
+    ! compute gases dissolved in oceans. This allows for multiple ocean.
+    do j = 1,sp%ng
+      if (associated(ocean_fcns(j)%fcn)) then; block
+        real(dp), allocatable :: m_i_cur(:)
+
+        ! Compute mol/kg of each gas dissolved in the ocean
+        allocate(m_i_cur(sp%ng))
+        call ocean_fcns(j)%fcn(T_surf, sp%ng, d%P_i_cur/1.0e6_dp, m_i_cur, args_p)
+        
+        ! Compute mol/cm^2 of each gas dissolved in ocean
+        N_ocean(j,j) = 0.0_dp ! ocean can not dissolve into itself
+        do i = 1,sp%ng
+          if (i /= j) then
+            N_ocean(i,j) = m_i_cur(i)*N_surface(j)*(sp%g(j)%mass/1.0e3_dp)
+          endif
+        enddo
+      endblock; else
+        ! Nothing dissolved in ocean
+        N_ocean(:,j) = 0.0_dp
       endif
     enddo
 

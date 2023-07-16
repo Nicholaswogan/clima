@@ -16,11 +16,11 @@ contains
     real(dp), allocatable :: t_eval(:)
 
     c = Climate( &
-    "../clima/data", &
     "../templates/ModernEarth/species.yaml", &
     "../templates/ModernEarth/settings.yaml", &
     "../templates/ModernEarth/Sun_now.txt", &
     "../templates/ModernEarth/atmosphere.txt", &
+    "../clima/data", &
     err)
     if (allocated(err)) then
       print*,err
@@ -30,8 +30,6 @@ contains
     allocate(t_eval(100))
     call linspace(1.0_dp,10.0_dp,t_eval)
     t_eval = 10.0_dp**t_eval
-
-    ! c%rtol = 1.0e-4
 
     success = c%evolve("ModernEarthClimate.dat", 0.0_dp, c%T_init, t_eval, .true., err) 
     if (allocated(err)) then

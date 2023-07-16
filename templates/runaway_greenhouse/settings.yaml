@@ -5,7 +5,7 @@ atmosphere-grid:
 planet:
   planet-mass: 5.972e27 # grams
   planet-radius: 6.371e8 # cm
-  number-of-zenith-angles: 1 # number of zenith angles to integrate over. 
+  number-of-zenith-angles: 4 # number of zenith angles to integrate over. 
   surface-albedo: 0.25
   # Optionally include `photon-scale-factor`. The stellar flux
   # is scaled by this factor. This is useful for modeling
@@ -28,7 +28,7 @@ optical-properties:
 
     # If you choose method RandomOverlapResortRebin, then you must supply
     # `number-of-bins`, which is the number of bins the method rebins to
-    number-of-bins: 16
+    number-of-bins: 32
 
     # Here you specify opacites. You can see avaliable opacities by looking in
     # `clima/data/` folder. `CIA`, `rayleigh`, `photolysis-xs` and `water-continuum`
@@ -53,7 +53,7 @@ optical-properties:
       water-continuum: MT_CKD 
   solar:
     k-method: RandomOverlapResortRebin
-    number-of-bins: 16
+    number-of-bins: 32
     opacities:
       k-distributions: [H2O, CO2]
       CIA: [CO2-CO2, N2-N2]

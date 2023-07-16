@@ -1,17 +1,19 @@
 program test
   use clima, only: dp
   use clima, only: AdiabatClimate
+  use clima, only: ocean_solubility_fcn
   implicit none
   
   type(AdiabatClimate) :: c
   character(:), allocatable :: err
   real(dp) :: T, OLR
   integer :: i
+  procedure(ocean_solubility_fcn), pointer :: ocean_fcn_ptr
   
-  c = AdiabatClimate('../clima/data', &
-                     '../templates/runaway_greenhouse/species.yaml', &
+  c = AdiabatClimate('../templates/runaway_greenhouse/species.yaml', &
                      '../templates/runaway_greenhouse/settings.yaml', &
                      '../templates/ModernEarth/Sun_now.txt', &
+                     '../clima/data', &
                      err)
   if (allocated(err)) then
     print*,err
@@ -65,5 +67,39 @@ program test
     print*,err
     stop 1
   endif
+
+  ocean_fcn_ptr => ocean_fcn
+  call c%set_ocean_solubility_fcn('H2O', ocean_fcn_ptr, err)
+  if (allocated(err)) then
+    print*,err
+    stop 1
+  endif
+
+  c%use_make_column_P_guess = .true.
+
+  call c%make_column(280.0_dp, &
+      [15.0e4_dp, 400e-6_dp*23.0_dp, 1.0*36.0_dp], &
+      err=err)
+  if (allocated(err)) then
+    print*,err
+    stop 1
+  endif
+
+  print*,c%N_surface+c%N_atmos+c%N_ocean(:,1)
+  print*,15.0e3_dp, 400e-6_dp*23.0_dp, 1.0*36.0_dp
+
+contains
+
+  subroutine ocean_fcn(T_surf, ng, P_i, m_i, args_p) 
+    use iso_c_binding, only: c_double, c_int, c_ptr
+    real(c_double), value, intent(in) :: T_surf !! K
+    integer(c_int), value, intent(in) :: ng
+    real(c_double), intent(in) :: P_i(ng) !! bars
+    real(c_double), intent(out) :: m_i(ng) !! mol/kg
+    type(c_ptr), value, intent(in) :: args_p
+    m_i(1) = 0.0_dp
+    m_i(2) = P_i(2)*3.4e-2_dp
+    m_i(3) = P_i(3)*6.1e-4_dp
+  end subroutine
 
 end program

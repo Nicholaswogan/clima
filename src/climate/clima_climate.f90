@@ -91,14 +91,15 @@ module clima_climate
 
 contains
 
-  function create_Climate(datadir, species_f, settings_f, star_f, atmosphere_f, err) result(c)
+  function create_Climate(species_f, settings_f, star_f, atmosphere_f, datadir, err) result(c)
     use clima_types, only: ClimaSettings, AtmosphereFile, unpack_atmospherefile
     use clima_eqns, only: vertical_grid, gravity_z
-    character(*), intent(in) :: datadir
+    
     character(*), intent(in) :: species_f
     character(*), intent(in) :: settings_f
     character(*), intent(in) :: star_f
     character(*), intent(in) :: atmosphere_f
+    character(*), intent(in) :: datadir
     character(:), allocatable, intent(out) :: err
 
     type(Climate) :: c
@@ -140,8 +141,8 @@ contains
     enddo
 
     ! create radiative transfer
-    c%rad = Radtran(datadir, c%species_names, particle_names, s, star_f, &
-                    s%number_of_zenith_angles, s%surface_albedo, c%nz_r, err)
+    c%rad = Radtran(c%species_names, particle_names, s, star_f, &
+                    s%number_of_zenith_angles, s%surface_albedo, c%nz_r, datadir, err)
     if (allocated(err)) return
 
     ! allocate memory
