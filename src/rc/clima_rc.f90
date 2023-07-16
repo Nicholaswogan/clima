@@ -141,8 +141,8 @@ contains
     endif
 
     ! create radiative transfer
-    c%rad = Radtran(datadir, c%species_names, c%particle_names, s, star_f, &
-                    s%number_of_zenith_angles, s%surface_albedo, c%nz_r, err)
+    c%rad = Radtran(c%species_names, c%particle_names, s, star_f, &
+                    s%number_of_zenith_angles, s%surface_albedo, c%nz_r, datadir, err)
     if (allocated(err)) return
 
     ! Pressure grid
