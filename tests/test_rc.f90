@@ -22,9 +22,10 @@ contains
     endif
     allocate(f_i(c%nz,c%sp%ng), T_init(c%nz))
 
-    c%T_trop = 100.0_dp
+    c%T_trop = 200.0_dp
     condensible_names = ['H2O', 'CO2']
-    condensible_P = [270.0e6_dp, 400.0_dp]
+    condensible_P = [270.0_dp, 400.0e-6_dp]
+    condensible_P = condensible_P*1.0e6_dp
     condensible_RH = [0.7_dp, 1.0_dp]
     f_i(:,1) = 1.0e-2_dp
     f_i(:,2) = 1.0e-2_dp

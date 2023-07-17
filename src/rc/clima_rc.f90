@@ -51,16 +51,17 @@ module clima_rc
     real(dp), allocatable :: pdensities(:,:) !! particle densities (particles/cm^3) (nz,np)
     real(dp), allocatable :: radii(:,:) !! particle radii (cm) (nz,np)
     real(dp), allocatable :: T(:) !! (nz)
-    real(dp) :: T_surf
-    real(dp) :: T_trop = 200.0_dp !! in/out
-    real(dp) :: P_trop
-    integer :: trop_ind
+    real(dp) :: T_surf !! surface temperature
+    real(dp) :: T_trop = 200.0_dp !! Tropopause temperature
+    real(dp) :: P_trop !! Tropopause pressure
+    integer :: trop_ind !! Tropopause index
 
-    ! Set
+    ! Information describing condensible species. These can change sometimes.
     character(s_str_len), allocatable :: condensible_names(:)
     integer, allocatable :: condensible_inds(:)
     real(dp), allocatable :: condensible_P(:)
-    integer, allocatable :: condensible_z_inds(:)
+    integer, allocatable :: condensible_z_inds(:) !! Indexes where gases begin saturation
+    real(dp), allocatable :: condensible_RH(:) !! relative humidity
 
     ! work variables for radiative transfer
     real(dp), allocatable :: T_r(:) !! (nz_r)
@@ -76,10 +77,22 @@ module clima_rc
     procedure :: surface_temperature => RadiativeConvectiveClimate_surface_temperature
 
     procedure :: initialize_stepper => RadiativeConvectiveClimate_initialize_stepper
+    
 
   end type
   interface RadiativeConvectiveClimate
     module procedure :: create_RadiativeConvectiveClimate
+  end interface
+
+  interface
+
+    module subroutine RadiativeConvectiveClimate_rhs(self, T, dTdt, err)
+      class(RadiativeConvectiveClimate), intent(inout) :: self
+      real(dp), intent(in) :: T(:)
+      real(dp), intent(out) :: dTdt(:)
+      character(:), allocatable :: err
+    end subroutine
+
   end interface
 
 contains
@@ -215,47 +228,71 @@ contains
     use clima_rc_adiabat, only: make_profile_rc
     use clima_const, only: k_boltz
     class(RadiativeConvectiveClimate), intent(inout) :: self
-    real(dp), intent(in) :: T_surf
-    character(*), intent(in) :: condensible_names(:)
-    real(dp), intent(in) :: condensible_P(:)
-    real(dp), intent(in) :: condensible_RH(:)
-    real(dp), intent(in) :: f_i(:,:)
+    real(dp), intent(in) :: T_surf !! Surface temperature (K)
+    character(*), intent(in) :: condensible_names(:) !! Species that can condense
+    real(dp), intent(in) :: condensible_P(:) !! Surface pressure "inventories" for condensible species (dynes/cm^2)
+    real(dp), intent(in) :: condensible_RH(:) !! Relative humidity of condensibles
+    real(dp), intent(in) :: f_i(:,:) !! (nz,ng)
     character(:), allocatable, intent(out) :: err
 
     integer :: i
     real(dp), allocatable :: density(:)
+    logical :: tropopause_was_reached
 
+    ! check dimensions
+    if (size(condensible_P) /= size(condensible_names)) then
+      err = 'Input "condensible_P" must have the same length as "condensible_names"'
+      return
+    endif
+    if (size(condensible_RH) /= size(condensible_names)) then
+      err = 'Input "condensible_RH" must have the same length as "condensible_names"'
+      return
+    endif
+    if (size(f_i,1) /= self%nz .or. size(f_i,2) /= self%sp%ng) then
+      err = 'Input "f_i" has the wrong shape'
+      return
+    endif
+
+    ! Copy to self
     self%T_surf = T_surf
     self%f_i = f_i
 
+    ! Sort out condensible information
     if (allocated(self%condensible_names)) then
       deallocate(self%condensible_names)
       deallocate(self%condensible_inds)
       deallocate(self%condensible_P)
       deallocate(self%condensible_z_inds)
+      deallocate(self%condensible_RH)
     endif
     allocate(self%condensible_names(size(condensible_names)))
-    allocate(self%condensible_inds(size(condensible_names)))
+    allocate(self%condensible_inds(size(condensible_names))) ! indexes of condensible species
     allocate(self%condensible_P(size(condensible_names)))
     allocate(self%condensible_z_inds(size(condensible_names)))
+    allocate(self%condensible_RH(size(condensible_names)))
     self%condensible_names = condensible_names
     self%condensible_P = condensible_P
+    self%condensible_RH = condensible_RH
     do i = 1,size(condensible_names)
       self%condensible_inds(i) = findloc(self%species_names, condensible_names(i), 1)
       if (self%condensible_inds(i) == 0) then
-        err = 'Condensible input"'//trim(condensible_names(i))//'" is not in the list of species.'
+        err = 'Condensible input "'//trim(condensible_names(i))//'" is not in the list of species.'
         return
       endif
     enddo
 
+    ! Construct and atmosphere
     call make_profile_rc( &
+      .false., .false., &
       self%sp, self%planet_mass, self%planet_radius, &
-      self%P_surf, T_surf, self%T_trop, self%nz, self%P, self%log10_delta_P, &
+      self%P_surf, T_surf, self%nz, self%P, self%log10_delta_P, &
       condensible_RH, condensible_P, self%condensible_inds, self%bg_gas_ind, &
-      self%f_i, self%P_trop, self%condensible_z_inds, self%z, self%dz, self%T, err &
+      self%f_i, self%T, self%T_trop, self%P_trop, &
+      tropopause_was_reached, self%condensible_z_inds, self%z, self%dz, err &
     ) 
     if (allocated(err)) return
 
+    ! Identify the tropopause index
     self%trop_ind = -1
     if (self%P_trop > 0.0_dp) then
       do i = 1,self%nz
@@ -266,6 +303,7 @@ contains
       enddo
     endif
 
+    ! Compute densities
     allocate(density(self%nz))
     density = self%P/(k_boltz*self%T)
     do i = 1,self%sp%ng
@@ -295,7 +333,7 @@ contains
     call check_inputs(self%nz, self%sp%ng, self%sp%np, f_i, pdensities, radii, err)
     if (allocated(err)) return
 
-    ! make profile
+    ! Construct and atmosphere
     call self%make_profile(T_surf, condensible_names, condensible_P, condensible_RH, f_i, err)
     if (allocated(err)) return
 
@@ -438,7 +476,17 @@ contains
     T_surf = self%surface_temperature(condensible_names, condensible_P, condensible_RH, &
                                       f_i, pdensities, radii, T_surf_guess, err)
     if (allocated(err)) return
-    
+
+    block
+      real(dp), allocatable :: dTdt(:)
+      real(dp), allocatable :: T(:)
+      allocate(dTdt(size(self%T)+1))
+      allocate(T(size(self%T)+1))
+      T(1) = T_surf
+      T(2:) = self%T
+      call RadiativeConvectiveClimate_rhs(self, T, dTdt, err)
+      if (allocated(err)) return
+    endblock
     ! if (allocated(self%init)) deallocate(self%init)
     ! allocate(self%init)
     ! self%init = InitialConditions(condensible_names, condensible_P, f_i, pdensities, T_init, radii)
@@ -448,7 +496,11 @@ contains
   ! function RadiativeConvectiveClimate_step(self) result(tn)
   !   class(RadiativeConvectiveClimate), intent(inout) :: self
   !   real(dp) :: tn
-  !   tn = 1.0_dp
+
+  !   ! Do one step from Radiative dT/dt.
+
+  !   ! Adjust tropopause lapse rate.
+    
   ! end function
 
   subroutine check_inputs(nz, ng, np, f_i, pdensities, radii, err)

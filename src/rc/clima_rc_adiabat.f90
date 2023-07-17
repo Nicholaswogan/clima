@@ -10,12 +10,13 @@ module clima_rc_adiabat
 
   type :: RCAdiabatData
     ! Input
+    logical :: integrate_to_P_trop
+    logical :: use_input_T_above_trop
     type(Species), pointer :: sp
     real(dp) :: planet_mass
     real(dp) :: planet_radius
     real(dp) :: P_surf !! dynes/cm^2
     real(dp) :: T_surf !! K
-    real(dp) :: T_trop
     integer :: nz
     real(dp), pointer :: P(:) !! dynes/cm^2
     real(dp), pointer :: log10_delta_P(:) !! dynes/cm^2
@@ -25,17 +26,19 @@ module clima_rc_adiabat
     integer :: bg_gas_ind !! index of bg gas
     ! Input/Output
     real(dp), pointer :: f_i(:,:)
-    ! Output
+    real(dp), pointer :: T(:) !! K
+    real(dp), pointer :: T_trop
     real(dp), pointer :: P_trop
+    ! Output
+    logical, pointer :: tropopause_was_reached
     integer, pointer :: cond_z_inds(:) !! (size(cond_inds))
     real(dp), pointer :: z(:) !! cm
     real(dp), pointer :: dz(:) !! cm
-    real(dp), pointer :: T(:) !! K
 
     integer :: stopping_reason !! Reason why we stop integration (see enum below)
     !> Index of gas that reached saturation if stopping_reason == ReachedGasSaturation
     integer :: ind_gas_reached_saturation
-    logical :: isothermal = .false.
+    logical :: above_tropopause = .false.
     logical :: search_for_roots = .true.
 
     ! work space
@@ -44,6 +47,7 @@ module clima_rc_adiabat
     integer :: ndry !! ng - ncond
     integer, allocatable :: dry_inds(:) !! (ndry)
     type(linear_interp_1d), allocatable :: f_interps(:) !! (ndry)
+    type(linear_interp_1d), allocatable :: T_interp
     integer, allocatable :: sp_type(:) !! (ncond)
     real(dp), allocatable :: L_i_cur(:) !! (ncond)
     real(dp), allocatable :: P_at_start_cond(:) !! (ncond)
@@ -90,21 +94,26 @@ module clima_rc_adiabat
 
 contains
 
-  subroutine make_profile_rc(sp, planet_mass, planet_radius, &
-                             P_surf, T_surf, T_trop, nz, P, log10_delta_P, &
+  subroutine make_profile_rc(integrate_to_P_trop, use_input_T_above_trop, &
+                             sp, planet_mass, planet_radius, &
+                             P_surf, T_surf, nz, P, log10_delta_P, &
                              RH, cond_P, cond_inds, bg_gas_ind, &
-                             f_i, P_trop, cond_z_inds, z, dz, T, err)
+                             f_i, T, T_trop, P_trop, &
+                             tropopause_was_reached, cond_z_inds, z, dz, err)
+    logical, intent(in) :: integrate_to_P_trop
+    logical, intent(in) :: use_input_T_above_trop
     type(Species), target, intent(inout) :: sp
     real(dp), target, intent(in) :: planet_mass, planet_radius
-    real(dp), target, intent(in) :: P_surf, T_surf, T_trop
+    real(dp), target, intent(in) :: P_surf, T_surf
     integer, intent(in) :: nz
     real(dp), target, intent(in) :: P(:), log10_delta_P(:) !! 
     real(dp), target, intent(in) :: RH(:), cond_P(:)
     integer, target, intent(in) :: cond_inds(:), bg_gas_ind
-    real(dp), target, intent(inout) :: f_i(:,:)
-    real(dp), target, intent(out) :: P_trop
+    real(dp), target, intent(inout) :: f_i(:,:), T(:)
+    real(dp), target, intent(inout) :: T_trop, P_trop
+    logical, target, intent(out) :: tropopause_was_reached
     integer, target, intent(out) :: cond_z_inds(:)
-    real(dp), target, intent(out) :: z(:), dz(:), T(:)
+    real(dp), target, intent(out) :: z(:), dz(:)
     character(:), allocatable, intent(out) :: err
 
     type(RCAdiabatData) :: d
@@ -114,14 +123,6 @@ contains
     ! check inputs
     if (P_surf < 0.0_dp) then
       err = 'make_profile_rc: Input "P_surf" is less than 0'
-      return
-    endif
-    if (T_surf < T_trop) then
-      err = 'make_profile_rc: Input "T_surf" is less than input "T_trop"'
-      return
-    endif
-    if (T_trop < 0.0_dp) then
-      err = 'make_profile_rc: Input "T_trop" is less than 0'
       return
     endif
     if (size(P) /= nz) then
@@ -158,6 +159,25 @@ contains
       err = 'make_profile_rc: Input "f_i" has the wrong shape'
       return
     endif
+    if (size(T) /= nz) then
+      err = 'make_profile_rc: Input "T" has the wrong shape'
+      return
+    endif
+    if (integrate_to_P_trop) then
+      if (P_trop < P(size(P)) .or. P_trop > P(1)) then
+        err = 'make_profile_rc: Input "P_trop" is not in the pressure grid.'
+        return
+      endif
+    else
+      if (T_surf < T_trop) then
+        err = 'make_profile_rc: Input "T_surf" is less than input "T_trop"'
+        return
+      endif
+      if (T_trop < 0.0_dp) then
+        err = 'make_profile_rc: Input "T_trop" is less than 0'
+        return
+      endif
+    endif
     if (size(cond_z_inds) /= size(cond_P)) then
       err = 'make_profile_rc: Input "cond_z_inds" has the wrong shape'
       return
@@ -170,19 +190,16 @@ contains
       err = 'make_profile_rc: Input "dz" has the wrong shape'
       return
     endif
-    if (size(T) /= nz) then
-      err = 'make_profile_rc: Input "T" has the wrong shape'
-      return
-    endif
 
     ! associate
     ! in
+    d%integrate_to_P_trop = integrate_to_P_trop
+    d%use_input_T_above_trop = use_input_T_above_trop
     d%sp => sp
     d%planet_mass = planet_mass
     d%planet_radius = planet_radius
     d%P_surf = P_surf
     d%T_surf = T_surf
-    d%T_trop = T_trop
     d%nz = nz
     d%P => P
     d%log10_delta_P => log10_delta_P
@@ -192,12 +209,14 @@ contains
     d%bg_gas_ind = bg_gas_ind
     ! in/out
     d%f_i => f_i
-    ! out
+    d%T => T
+    d%T_trop => T_trop
     d%P_trop => P_trop
+    ! out
+    d%tropopause_was_reached => tropopause_was_reached
     d%cond_z_inds => cond_z_inds
     d%z => z
     d%dz => dz
-    d%T => T
 
     allocate(d%log10_P(nz))
     d%log10_P = log10(d%P)
@@ -227,8 +246,8 @@ contains
       endif
     enddo
 
-    ! Initialize mixing ratio interpolators
-    call initialize_mix_interps(d, err)
+    ! Initialize interpolators
+    call initialize_interps(d, err)
     if (allocated(err)) return
 
     ! Dry species mixing ratios and pressures
@@ -284,11 +303,11 @@ contains
 
   end subroutine
 
-  subroutine initialize_mix_interps(d, err)
+  subroutine initialize_interps(d, err)
     type(RCAdiabatData), intent(inout) :: d
     character(:), allocatable, intent(out) :: err
 
-    real(dp), allocatable :: tmp_log10_P(:), tmp_log10_f_i(:)
+    real(dp), allocatable :: tmp_log10_P(:), tmp_log10_f_i(:), tmp_T(:)
     integer :: i, j, ierr
 
     allocate(tmp_log10_P(d%nz+2))
@@ -303,7 +322,7 @@ contains
 
       tmp_log10_f_i(1) = log10(d%f_i(1,j))
       tmp_log10_f_i(2:d%nz+1) = log10(d%f_i(:,j))
-      tmp_log10_f_i(2:d%nz+2) = log10(d%f_i(d%nz,j))
+      tmp_log10_f_i(d%nz+2) = log10(d%f_i(d%nz,j))
       tmp_log10_f_i(:) = tmp_log10_f_i(d%nz+2:1:-1)
       call d%f_interps(i)%initialize(tmp_log10_P, tmp_log10_f_i, ierr)
       if (ierr /= 0) then
@@ -311,6 +330,22 @@ contains
         return
       endif
     enddo
+
+    if (d%use_input_T_above_trop) then
+      allocate(tmp_T(d%nz+2))
+
+      tmp_T(1) = d%T_surf
+      tmp_T(2:d%nz+1) = d%T(:)
+      tmp_T(d%nz+2) = d%T(d%nz)
+      tmp_T(:) = tmp_T(d%nz+2:1:-1)
+
+      allocate(d%T_interp)
+      call d%T_interp%initialize(tmp_log10_P, tmp_T, ierr)
+      if (ierr /= 0) then
+        err = 'Failed to initialize T interpolator'
+        return
+      endif
+    endif
 
   end subroutine
 
@@ -331,7 +366,7 @@ contains
     d%f_i_integ(1,:) = d%f_i_cur(:)
     d%T_integ(1) = d%T_surf
     d%z_integ(1) = 0.0_dp
-    d%P_trop = -1.0_dp
+    d%tropopause_was_reached = .false.
     d%stopping_reason = ReachedPtop
     if (.not. status_ok) then
       err = 'dop853 initialization failed'
@@ -358,9 +393,14 @@ contains
         Pn = d%P_root
         u = d%u_root
         d%sp_type(:) = DrySpeciesType
-        d%isothermal = .true.
+        d%above_tropopause = .true.
         d%search_for_roots = .false.
-        d%P_trop = d%P_root
+        d%tropopause_was_reached = .true.
+        if (d%integrate_to_P_trop) then
+          d%T_trop = u(1) ! set tropopause temperature
+        else
+          d%P_trop = d%P_root ! set tropopause pressure
+        endif
         d%stopping_reason = ReachedPtop
       elseif (d%stopping_reason == ReachedGasSaturation) then
         Pn = d%P_root
@@ -485,7 +525,11 @@ contains
 
       if (d%P_integ(d%j) <= P_old .and. d%P_integ(d%j) >= PP) then
         do while (d%P_integ(d%j) >= PP)
-          d%T_integ(d%j) = self%contd8(1, d%P_integ(d%j))
+          if (d%use_input_T_above_trop .and. d%above_tropopause) then
+            call d%T_interp%evaluate(log10(d%P_integ(d%j)), d%T_integ(d%j))
+          else
+            d%T_integ(d%j) = self%contd8(1, d%P_integ(d%j))
+          endif
           d%z_integ(d%j) = self%contd8(2, d%P_integ(d%j))
           call mixing_ratios(d, d%P_integ(d%j), d%T_integ(d%j), d%f_i_integ(d%j,:), f_dry, d%err)
           if (allocated(d%err)) then
@@ -561,7 +605,11 @@ contains
     enddo
 
     ! also stop at tropopause
-    gout(1) = T - d%T_trop
+    if (d%integrate_to_P_trop) then
+      gout(1) = P - d%P_trop
+    else
+      gout(1) = T - d%T_trop
+    endif
 
   end subroutine
 
@@ -632,6 +680,7 @@ contains
     real(dp) :: first_sumation, second_sumation, Beta_i
     real(dp) :: grav
     real(dp) :: dlnT_dlnP, dT_dP, dz_dP
+    real(dp) :: TT
     logical :: found
     integer :: i, j
     real(dp), parameter :: Rgas_si = Rgas_cgs/1.0e7_dp ! ideal gas constant in SI units (J/(mol*K))
@@ -647,7 +696,7 @@ contains
       mubar = mubar + d%f_i_cur(i)*d%sp%g(i)%mass
     enddo
 
-    if (d%isothermal) then
+    if (d%above_tropopause) then
     dT_dP = 0.0_dp
     else
     ! Latent heat
@@ -685,7 +734,6 @@ contains
     enddo
     cp_dry = cp_dry + d%cp_i_cur(d%bg_gas_ind)*(d%f_i_cur(d%bg_gas_ind)/f_dry)
 
-    
     ! Two sums in Equation 1 of Graham et al. (2021)
     first_sumation = 0.0_dp
     second_sumation = 0.0_dp
@@ -710,9 +758,15 @@ contains
     dT_dP = dlnT_dlnP*(T/P)
     endif
 
+    if (d%use_input_T_above_trop .and. d%above_tropopause) then
+      call d%T_interp%evaluate(log10(P), TT)
+    else
+      TT = T
+    endif
+
     ! rate of change of altitude
     grav = gravity(d%planet_radius, d%planet_mass, z)
-    dz_dP = -(Rgas_cgs*T)/(grav*P*mubar)
+    dz_dP = -(Rgas_cgs*TT)/(grav*P*mubar)
 
     du(:) = [dT_dP, dz_dP]
 
