@@ -42,6 +42,7 @@ module clima_rc
   
     ! State of the atmosphere
     real(dp), allocatable :: P(:) !! grid-center pressure (dynes/cm^2)
+    real(dp), allocatable :: delta_P(:) !! Thickness of each pressure layer (dynes/cm^2)
     real(dp), allocatable :: log10_P(:) !! log space 
     real(dp), allocatable :: log10_delta_P(:) !! thickness of each pressure layer (dynes/cm^2)
     real(dp), allocatable :: z(:) !! nz
@@ -86,10 +87,10 @@ module clima_rc
 
   interface
 
-    module subroutine RadiativeConvectiveClimate_rhs(self, T, dTdt, err)
+    module subroutine RadiativeConvectiveClimate_rhs(self, T, dT_dt, err)
       class(RadiativeConvectiveClimate), intent(inout) :: self
       real(dp), intent(in) :: T(:)
-      real(dp), intent(out) :: dTdt(:)
+      real(dp), intent(out) :: dT_dt(:)
       character(:), allocatable :: err
     end subroutine
 
@@ -160,6 +161,7 @@ contains
 
     ! Pressure grid
     allocate(c%P(c%nz))
+    allocate(c%delta_P(c%nz))
     allocate(c%log10_P(c%nz))
     allocate(c%log10_delta_P(c%nz))
     c%log10_delta_P = (log10(c%P_surf) - log10(c%P_top))/c%nz
@@ -168,6 +170,9 @@ contains
       c%log10_P(i) = c%log10_P(i-1) - c%log10_delta_P(1)
     enddo
     c%P = 10.0_dp**c%log10_P
+    do i = 1,c%nz
+      c%delta_P(i) = 10.0_dp**(c%log10_P(i) + 0.5_dp*c%log10_delta_P(i)) - 10.0_dp**(c%log10_P(i) - 0.5_dp*c%log10_delta_P(i))
+    enddo
 
     ! allocate
     allocate(c%z(c%nz))
@@ -478,13 +483,13 @@ contains
     if (allocated(err)) return
 
     block
-      real(dp), allocatable :: dTdt(:)
+      real(dp), allocatable :: dT_dt(:)
       real(dp), allocatable :: T(:)
-      allocate(dTdt(size(self%T)+1))
+      allocate(dT_dt(size(self%T)+1))
       allocate(T(size(self%T)+1))
       T(1) = T_surf
       T(2:) = self%T
-      call RadiativeConvectiveClimate_rhs(self, T, dTdt, err)
+      call RadiativeConvectiveClimate_rhs(self, T, dT_dt, err)
       if (allocated(err)) return
     endblock
     ! if (allocated(self%init)) deallocate(self%init)
