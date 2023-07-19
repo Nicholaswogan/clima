@@ -8,18 +8,6 @@ module clima_rc
 
   public :: RadiativeConvectiveClimate
 
-  type :: InitialConditions
-    character(s_str_len), allocatable :: condensible_names(:)
-    real(dp), allocatable :: condensible_P(:)
-    real(dp), allocatable :: f_i(:,:)
-    real(dp), allocatable :: T_init(:)
-    real(dp), allocatable :: pdensities(:,:)
-    real(dp), allocatable :: radii(:,:)
-  end type
-  interface InitialConditions
-    module procedure :: create_InitialConditions
-  end interface
-
   type, extends(ODEStepper) :: ODEStepper_custom
     type(RadiativeConvectiveClimate), pointer :: c => null()
   end type
@@ -446,28 +434,6 @@ contains
       endif
       fvec_(1) = ISR - OLR
     end subroutine
-  end function
-
-  function create_InitialConditions(condensible_names, condensible_P, f_i, pdensities, T_init, radii) result(init)
-    character(*), intent(in) :: condensible_names(:)
-    real(dp), intent(in) :: condensible_P(:)
-    real(dp), intent(in) :: f_i(:,:)
-    real(dp), intent(in) :: T_init(:)
-    real(dp), optional, intent(in) :: pdensities(:,:)
-    real(dp), optional, intent(in) :: radii(:,:)
-    type(InitialConditions) :: init
-
-    init%condensible_names = condensible_names
-    init%condensible_P = condensible_P
-    init%f_i = f_i
-    init%T_init = T_init
-    if (present(pdensities)) then
-      init%pdensities = pdensities
-    endif 
-    if (present(radii)) then
-      init%radii = radii
-    endif 
-
   end function
 
   subroutine RadiativeConvectiveClimate_initialize_stepper(self, condensible_names, condensible_P, condensible_RH, &
