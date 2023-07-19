@@ -2,6 +2,7 @@ module clima_rc
   use clima_types, only: Species
   use clima_radtran, only: Radtran
   use clima_const, only: dp, s_str_len
+  use clima_ode, only: ODEStepper
   implicit none
   private
 
@@ -18,6 +19,10 @@ module clima_rc
   interface InitialConditions
     module procedure :: create_InitialConditions
   end interface
+
+  type, extends(ODEStepper) :: ODEStepper_custom
+    type(RadiativeConvectiveClimate), pointer :: c => null()
+  end type
 
   type :: RadiativeConvectiveClimate
 
@@ -71,6 +76,9 @@ module clima_rc
     real(dp), allocatable :: dz_r(:) !! nz_r
     real(dp), allocatable :: pdensities_r(:,:) !! (nz_r,np)
     real(dp), allocatable :: radii_r(:,:) !! (nz_r,np)
+
+    ! ODE stepper
+    type(ODEStepper_custom), allocatable :: ode
 
   contains
     procedure :: make_profile => RadiativeConvectiveClimate_make_profile
@@ -465,7 +473,7 @@ contains
   subroutine RadiativeConvectiveClimate_initialize_stepper(self, condensible_names, condensible_P, condensible_RH, &
                                                            f_i, pdensities, radii, T_surf_guess, err)
     use clima_rc_adiabat, only: make_profile_rc
-    class(RadiativeConvectiveClimate), intent(inout) :: self
+    class(RadiativeConvectiveClimate), target, intent(inout) :: self
     character(*), intent(in) :: condensible_names(:)
     real(dp), intent(in) :: condensible_P(:)
     real(dp), intent(in) :: condensible_RH(:)
@@ -476,37 +484,68 @@ contains
     character(:), allocatable, intent(out) :: err
 
     real(dp) :: T_surf
+    real(dp), allocatable :: u(:)
+    integer :: ierr
 
-    ! Initial guess
+    ! Initial guess. This sets everything in the atmosphere, including `self%trop_ind`
     T_surf = self%surface_temperature(condensible_names, condensible_P, condensible_RH, &
                                       f_i, pdensities, radii, T_surf_guess, err)
     if (allocated(err)) return
 
-    block
-      real(dp), allocatable :: dT_dt(:)
-      real(dp), allocatable :: T(:)
-      allocate(dT_dt(size(self%T)+1))
-      allocate(T(size(self%T)+1))
-      T(1) = T_surf
-      T(2:) = self%T
-      call RadiativeConvectiveClimate_rhs(self, T, dT_dt, err)
-      if (allocated(err)) return
-    endblock
-    ! if (allocated(self%init)) deallocate(self%init)
-    ! allocate(self%init)
-    ! self%init = InitialConditions(condensible_names, condensible_P, f_i, pdensities, T_init, radii)
+    ! Initialize ODE stepper.
+    allocate(u(self%nz+1))
+    u(1) = T_surf
+    u(2:) = self%T
+    if (allocated(self%ode)) deallocate(self%ode)
+    allocate(self%ode)
+    self%ode%c => self ! associate pointer to self
+    call self%ode%initialize(ODEStepper_rhs, 0.0_dp, u, ierr) ! initialize at t = 0
+    if (ierr < 0) then
+      err = "ODEStepper failed to initialize"
+      return
+    endif
 
   end subroutine
 
-  ! function RadiativeConvectiveClimate_step(self) result(tn)
-  !   class(RadiativeConvectiveClimate), intent(inout) :: self
-  !   real(dp) :: tn
+  subroutine ODEStepper_rhs(self, t, u, du, ierr)
+    class(ODEStepper), intent(inout) :: self
+    real(dp), intent(in) :: t
+    real(dp), intent(in) :: u(:)
+    real(dp), intent(out) :: du(:)
+    integer, intent(out) :: ierr
 
-  !   ! Do one step from Radiative dT/dt.
+    character(:), allocatable :: err
 
-  !   ! Adjust tropopause lapse rate.
+    ierr = 0
+    select type (self)
+    class is (ODEStepper_custom)
+      call RadiativeConvectiveClimate_rhs(self%c, u, du, err)
+      if (allocated(err)) then
+        ierr = -1
+        return
+      endif
+    end select
+
+  end subroutine
+
+  function RadiativeConvectiveClimate_step(self, err) result(tn)
+    class(RadiativeConvectiveClimate), intent(inout) :: self
+    character(:), allocatable, intent(out) :: err
+    real(dp) :: tn
+
+    integer :: ierr
+
+    ! Do one step from Radiative dT/dt.
+    call self%ode%step(ierr)
+    if (ierr < 0) then
+      err = 'ODE integration step failed'
+      return
+    endif
+
+    ! Convective adjustment
     
-  ! end function
+    
+  end function
 
   subroutine check_inputs(nz, ng, np, f_i, pdensities, radii, err)
     integer, intent(in) :: nz, ng, np

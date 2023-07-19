@@ -7,6 +7,7 @@ set(BASE_SOURCES
   ${CMAKE_CURRENT_BINARY_DIR}/clima_version.f90
   clima_const.f90
   clima_useful.f90
+  clima_ode.f90
   clima_eqns.f90
   clima_saturationdata.f90
   clima_eqns_water.f90
