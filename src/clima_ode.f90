@@ -18,11 +18,11 @@ module clima_ode
     real(dp) :: h !! current stepsize
 
     ! settings
-    real(dp) :: rtol = 1.0e-3_dp !! relative tolerance
+    real(dp) :: rtol = 1.0e-4_dp !! relative tolerance
     real(dp) :: atol = 1.0e-6_dp !! absolute tolerance 
     real(dp) :: facmax = 3.0_dp
     real(dp) :: facmin = 0.3_dp
-    real(dp) :: safety_factor = 0.8_dp
+    real(dp) :: safety_factor = 0.7_dp
     integer :: max_error_test_failures = 10
 
     ! statistics for solver

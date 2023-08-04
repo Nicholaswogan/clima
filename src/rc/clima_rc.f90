@@ -32,6 +32,11 @@ module clima_rc
     real(dp) :: planet_radius !! cm
     real(dp) :: P_surf !! dynes/cm^2
     real(dp) :: P_top = 1.0e2_dp !! Pressure at top of the atmosphere (dynes/cm^2)
+
+    ! ground properties
+    real(dp) :: cp_ground = 4.182e7_dp ! H2O, erg/(g*K)
+    real(dp) :: rho_ground = 1.0_dp ! H2O, g/cm3
+    real(dp) :: dz_ground = 50.0_dp ! cm
   
     ! State of the atmosphere
     real(dp), allocatable :: P(:) !! grid-center pressure (dynes/cm^2)
@@ -74,6 +79,7 @@ module clima_rc
     procedure :: surface_temperature => RadiativeConvectiveClimate_surface_temperature
 
     procedure :: initialize_stepper => RadiativeConvectiveClimate_initialize_stepper
+    procedure :: step => RadiativeConvectiveClimate_step
     
 
   end type
@@ -87,6 +93,12 @@ module clima_rc
       class(RadiativeConvectiveClimate), intent(inout) :: self
       real(dp), intent(in) :: T(:)
       real(dp), intent(out) :: dT_dt(:)
+      character(:), allocatable :: err
+    end subroutine
+
+    module subroutine RadiativeConvectiveClimate_convective_adjustment(self, T, err)
+      class(RadiativeConvectiveClimate), intent(inout) :: self
+      real(dp), intent(inout) :: T(:)
       character(:), allocatable :: err
     end subroutine
 
@@ -471,6 +483,26 @@ contains
       return
     endif
 
+
+    block
+      real(dp) :: tn
+
+      open(unit=2,file='test.dat',form='unformatted',status='replace')
+      write(2) self%nz
+      write(2) self%P
+      write(2) self%ode%t
+      write(2) self%ode%u
+
+      do
+        tn = self%step(err)
+        if (allocated(err)) return
+        print*,tn, self%ode%u(1), self%f_i(1,1)
+
+        write(2) self%ode%t
+        write(2) self%ode%u
+      enddo
+    end block
+
   end subroutine
 
   subroutine ODEStepper_rhs(self, t, u, du, ierr)
@@ -507,9 +539,17 @@ contains
       err = 'ODE integration step failed'
       return
     endif
+    ! Call right hand side at the new u. 
+    call self%ode%fcn(self%ode%t, self%ode%u, self%ode%du, ierr)
+    if (ierr < 0) then
+      err = 'ODE integration step failed'
+      return
+    endif
+    tn = self%ode%t ! output time
 
     ! Convective adjustment
-    
+    call RadiativeConvectiveClimate_convective_adjustment(self, self%ode%u, err)
+    if (allocated(err)) return
     
   end function
 

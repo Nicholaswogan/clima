@@ -30,7 +30,7 @@ contains
     f_i(:,1) = 1.0e-2_dp
     f_i(:,2) = 1.0e-2_dp
     f_i(:,3) = 9.0e-1_dp
-    f_i(:,4) = 1.0e-10_dp
+    f_i(:,4) = 1.0e-6_dp
     f_i(:,5) = 1.0e-10_dp
     f_i(:,6) = 1.0e-10_dp
     call c%initialize_stepper(condensible_names, condensible_P, condensible_RH, f_i, T_surf_guess = 280.0_dp, err=err)
@@ -38,7 +38,6 @@ contains
       print*,err
       stop 1
     endif
-    print*,c%T_surf
 
   end subroutine
 end program
