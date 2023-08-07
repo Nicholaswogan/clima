@@ -352,9 +352,9 @@ contains
       ! compute saturation vapor pressures
       P_sat = huge(1.0_dp)
       if (allocated(d%sp%g(i)%sat)) then
-        if (T_surf < d%sp%g(i)%sat%T_critical) then
+        ! if (T_surf < d%sp%g(i)%sat%T_critical) then
           P_sat = d%RH(i)*d%sp%g(i)%sat%sat_pressure(T_surf)
-        endif
+        ! endif
       endif
 
       ! determine if species are condensing, or not
@@ -640,9 +640,9 @@ contains
       ! compute saturation vapor pressures
       P_sat = huge(1.0_dp)
       if (allocated(d%sp%g(i)%sat)) then
-        if (T < d%sp%g(i)%sat%T_critical) then
+        ! if (T < d%sp%g(i)%sat%T_critical) then
           P_sat = d%RH(i)*d%sp%g(i)%sat%sat_pressure(T)
-        endif
+        ! endif
       endif
 
       if (d%sp_type(i) == CondensingSpeciesType) then

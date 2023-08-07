@@ -20,11 +20,15 @@ module clima_saturationdata
     real(dp) :: a_v, b_v
     !> Latent heat fit parameters for sublimation (no units)
     real(dp) :: a_s, b_s
+    !> Non-physical latent heat fit parameters for super-critical gas (no units)
+    real(dp) :: a_c, b_c
 
   contains
+    procedure :: latent_heat_crit
     procedure :: latent_heat_vap
     procedure :: latent_heat_sub
     procedure :: latent_heat
+    procedure :: sat_pressure_crit
     procedure :: sat_pressure_vap
     procedure :: sat_pressure_sub
     procedure :: sat_pressure
@@ -34,6 +38,16 @@ module clima_saturationdata
   end interface
 
 contains
+
+  !> Latent heat of condensation above the critical point.
+  !> This is non-physical. Its to approximate transitions in atmospheres
+  !> between super-critical and sub-critical gases.
+  function latent_heat_crit(self, T) result(L)
+    class(SaturationData), intent(inout) :: self
+    real(dp), intent(in) :: T !! K
+    real(dp) :: L !! erg/g
+    L = self%a_c + self%b_c*T
+  end function  
 
   !> Latent heat of vaporization
   function latent_heat_vap(self, T) result(L)
@@ -56,13 +70,29 @@ contains
     class(SaturationData), intent(inout) :: self
     real(dp), intent(in) :: T !! K
     real(dp) :: L !! erg/g
-    if (T > self%T_triple) then
+    if (T >= self%T_critical) then
+      L = self%latent_heat_crit(T) ! non-physical approximation
+    elseif (T > self%T_triple .and. T < self%T_critical) then
       L = self%latent_heat_vap(T)
     else ! (T <= T_triple) then
       L = self%latent_heat_sub(T)
     endif
   end function
 
+  !> Saturation pressure of a super-critical gas.
+  !> This is non-physical. Its to approximate transitions in atmospheres
+  !> between super-critical and sub-critical gases.
+  function sat_pressure_crit(self, T) result(p_sat)
+    use clima_const, only: Rgas
+    class(SaturationData), intent(inout) :: self
+    real(dp), intent(in) :: T !! K
+    real(dp) :: p_sat !! dynes/cm2
+    real(dp) :: tmp
+    tmp = (integral_fcn(self%a_v, self%b_v, self%T_critical) - integral_fcn(self%a_v, self%b_v, self%T_ref)) + &
+          (integral_fcn(self%a_c, self%b_c, T) - integral_fcn(self%a_c, self%b_c, self%T_critical))
+    p_sat = self%P_ref*exp((self%mu/Rgas)*(tmp))
+  end function
+  
   !> Saturation pressure over liquid
   function sat_pressure_vap(self, T) result(p_sat)
     use clima_const, only: Rgas
@@ -91,7 +121,9 @@ contains
     class(SaturationData), intent(inout) :: self
     real(dp), intent(in) :: T !! K
     real(dp) :: p_sat !! dynes/cm2
-    if (T > self%T_triple) then
+    if (T >= self%T_critical) then
+      p_sat = self%sat_pressure_crit(T) ! non-physical
+    elseif (T > self%T_triple .and. T < self%T_critical) then
       p_sat = self%sat_pressure_vap(T)
     else ! (T <= T_triple) then
       p_sat = self%sat_pressure_sub(T)
@@ -187,6 +219,17 @@ contains
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
 
     sat%b_s = tmpdict%get_real('b',error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+
+    ! non-physical parameters to approximate atmospheric transitions from super-critical
+    ! to sub-critical states.
+    tmpdict => s%get_dictionary("super-critical",.true.,error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+
+    sat%a_c = tmpdict%get_real('a',error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+
+    sat%b_c = tmpdict%get_real('b',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
 
     ! test evaluations
