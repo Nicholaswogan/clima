@@ -347,6 +347,26 @@ cdef class AdiabatClimate:
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
 
+  def heat_redistribution_parameters(self):
+    """For considering a tidally locked planet. This function computes key parameters for
+    Equation (10) in Koll (2022), ApJ. The function must be called after calling a function
+    `self.TOA_fluxes`, because it uses atmosphere properties, and radiative properties.
+
+    Returns
+    -------
+    tuple
+        The tuple has three elements: `(tau_LW, k_term, f_term)`. 
+        `tau_LW` is the long wavelength optical depth.
+        `k_term` is the k term in Equation (10).
+        `f_term` is the heat redistribution parameter, f in Equation (10)
+    """
+    cdef char err[ERR_LEN+1];
+    cdef double tau_LW, k_term, f_term;
+    wa_pxd.adiabatclimate_heat_redistribution_parameters_wrapper(&self._ptr, &tau_LW, &k_term, &f_term, err)
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
+    return tau_LW, k_term, f_term
+
   property P_top:
     "float. Pressure of the top of the atmosphere (dynes/cm^2)"
     def __get__(self):
@@ -576,6 +596,53 @@ cdef class AdiabatClimate:
       cdef ndarray arr = np.empty((dim1,dim2), np.double, order="f")
       wa_pxd.adiabatclimate_n_ocean_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr
+
+  property tidally_locked_dayside:
+    """bool. If True, then will attempt to compute the climate corresponding to the
+    observed dayside temperature of a tidally locked planet.
+    """
+    def __get__(self):
+      cdef bool val
+      wa_pxd.adiabatclimate_tidally_locked_dayside_get(&self._ptr, &val)
+      return val
+    def __set__(self, bool val):
+      wa_pxd.adiabatclimate_tidally_locked_dayside_set(&self._ptr, &val)
+
+  property L:
+    "float. Circulation's horizontal scale (cm)."
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_l_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_l_set(&self._ptr, &val)
+
+  property chi:
+    "float. Heat engine efficiency term (no units)."
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_chi_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_chi_set(&self._ptr, &val)
+
+  property n_LW:
+    "float. = 1 or 2 (no units)."
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_n_lw_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_n_lw_set(&self._ptr, &val)
+
+  property Cd:
+    "float. Drag coefficient (no units)."
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_cd_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_cd_set(&self._ptr, &val)
 
 
 

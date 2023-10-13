@@ -865,9 +865,9 @@ contains
     use clima_eqns, only: k_term_heat_redistribution, f_heat_redistribution, &
                           gravity, heat_capacity_eval, planck_fcn
     class(AdiabatClimate), intent(inout) :: self
-    real(dp), intent(out) :: tau_LW
-    real(dp), intent(out) :: k_term
-    real(dp), intent(out) :: f_term
+    real(dp), intent(out) :: tau_LW !! Long wavelength optical depth
+    real(dp), intent(out) :: k_term !! k term in Equation (10)
+    real(dp), intent(out) :: f_term !! The heat redistribution parameter, f in Equation (10)
     character(:), allocatable, intent(out) :: err
 
     integer :: i

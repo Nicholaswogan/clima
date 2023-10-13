@@ -49,6 +49,8 @@ cdef extern void adiabatclimate_to_regular_grid_wrapper(void *ptr, char *err)
 
 cdef extern void adiabatclimate_out2atmosphere_txt_wrapper(void *ptr, char *filename, int *nz, double *eddy, bool *overwrite, bool *clip, char *err)
 
+cdef extern void adiabatclimate_heat_redistribution_parameters_wrapper(void *ptr, double *tau_LW, double *k_term, double *f_term, char *err)
+
 # getters and setters
 cdef extern void adiabatclimate_p_top_get(void *ptr, double *val)
 cdef extern void adiabatclimate_p_top_set(void *ptr, double *val)
@@ -109,6 +111,21 @@ cdef extern void adiabatclimate_n_surface_get(void *ptr, int *dim1, double *arr)
 
 cdef extern void adiabatclimate_n_ocean_get_size(void *ptr, int *dim1, int *dim2)
 cdef extern void adiabatclimate_n_ocean_get(void *ptr, int *dim1, int *dim2, double *arr)
+
+cdef extern void adiabatclimate_tidally_locked_dayside_get(void *ptr, bool *val)
+cdef extern void adiabatclimate_tidally_locked_dayside_set(void *ptr, bool *val)
+
+cdef extern void adiabatclimate_l_get(void *ptr, double *val)
+cdef extern void adiabatclimate_l_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_chi_get(void *ptr, double *val)
+cdef extern void adiabatclimate_chi_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_n_lw_get(void *ptr, double *val)
+cdef extern void adiabatclimate_n_lw_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_cd_get(void *ptr, double *val)
+cdef extern void adiabatclimate_cd_set(void *ptr, double *val)
 
 cdef extern void adiabatclimate_rad_get(void *ptr, void *ptr1)
 
