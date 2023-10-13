@@ -273,6 +273,7 @@ contains
           do j = 1,size(zenith_u)
             rz%fup1 = 0.0_dp
             rz%fdn1 = 0.0_dp
+            rz%tau_band = 0.0_dp
             call k_loops(op, zenith_u(j), surface_albedo, cols, rw%ks, rz, iks, 1)
             rz%fup2(:) = rz%fup2(:) + rz%fup1(:)*zenith_weights(j)
             rz%fdn2(:) = rz%fdn2(:) + rz%fdn1(:)*zenith_weights(j)
@@ -297,6 +298,10 @@ contains
         n = nz+2-i
         fup_a(i,l) = rz%fup2(n)
         fdn_a(i,l) = rz%fdn2(n)
+      enddo
+      do i = 1,nz
+        n = nz+1-i
+        rw%tau_band(i,l) = rz%tau_band(n) ! band optical thickness
       enddo
       
     enddo
@@ -374,6 +379,7 @@ contains
     do ii = 1,size(zenith_u)
     rz%fup1 = 0.0_dp
     rz%fdn1 = 0.0_dp
+    rz%tau_band = 0.0_dp
     
     do i = 1,op%k(1)%ngauss
       ! This will only work if all ktables have the exact same number of
@@ -409,6 +415,9 @@ contains
       ! k-coeff weights (kset%wbin(i))
       rz%fup1(:) = rz%fup1(:) + rz%fup(:)*op%k(1)%weights(i)
       rz%fdn1(:) = rz%fdn1(:) + rz%fdn(:)*op%k(1)%weights(i)
+
+      ! Save the optical thickness in the band.
+      rz%tau_band(:) = rz%tau_band(:) + rz%tau(:)*op%k(1)%weights(i)
 
     enddo
 
@@ -501,6 +510,7 @@ contains
     do ii = 1,size(zenith_u)
     rz%fup1 = 0.0_dp
     rz%fdn1 = 0.0_dp
+    rz%tau_band = 0.0_dp
     
     ! loop over mixed k-coeffs
     do i = 1,kset%nbin
@@ -533,6 +543,9 @@ contains
       ! k-coeff weights (kset%wbin(i))
       rz%fup1 = rz%fup1 + rz%fup*kset%wbin(i)
       rz%fdn1 = rz%fdn1 + rz%fdn*kset%wbin(i)
+
+      ! Save the optical thickness in the band.
+      rz%tau_band(:) = rz%tau_band(:) + rz%tau(:)*kset%wbin(i)
       
     enddo
 
@@ -605,6 +618,9 @@ contains
         
         rz%fup1 = rz%fup1 + rz%fup*gauss_weight
         rz%fdn1 = rz%fdn1 + rz%fdn*gauss_weight
+
+        ! Save the optical thickness in the band.
+        rz%tau_band(:) = rz%tau_band(:) + rz%tau(:)*gauss_weight
         
       else
         ! go into a deeper loop

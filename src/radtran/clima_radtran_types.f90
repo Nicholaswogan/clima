@@ -159,6 +159,9 @@ module clima_radtran_types
     real(dp), allocatable :: w0(:,:)
     real(dp), allocatable :: qext(:,:)
     real(dp), allocatable :: gt(:,:)
+
+    !> The optical thickness in each band
+    real(dp), allocatable :: tau_band(:,:) ! (nz,nw)
     
     ! work arrays that are needed only if
     ! k_method == k_RandomOverlapResortRebin
@@ -200,6 +203,9 @@ module clima_radtran_types
     real(dp), allocatable :: tau(:)
     real(dp), allocatable :: w0(:)
     real(dp), allocatable :: gt(:)
+
+    real(dp), allocatable :: tau_band(:) !! band optical thickness.
+  
     real(dp), allocatable :: amean(:)
     real(dp), allocatable :: fup1(:)
     real(dp), allocatable :: fdn1(:)
