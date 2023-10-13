@@ -63,6 +63,16 @@ module clima_adiabat
     !> reservoir of gas dissolved in oceans in mol/cm^2 (ng, ng). There can be multiple oceans.
     !> The gases dissolved in ocean made of species 1 is given by `N_ocean(:,1)`.
     real(dp), allocatable :: N_ocean(:,:) 
+
+    ! Heat re-distribution terms for Equation (10) in Koll (2020), ApJ when
+    ! considering tidally locked planets. Default values are from the paper.
+    !> If true, then will attempt to compute the climate corresponding to the
+    !> observed dayside temperature of a tidally locked planet.
+    logical :: tidally_locked_dayside = .false.
+    real(dp) :: L !! = planet radius. Circulation’s horizontal scale (cm)
+    real(dp) :: chi = 0.2_dp !! Heat engine efficiency term (no units)
+    real(dp) :: n_LW = 2.0_dp !! = 1 or 2 (no units)
+    real(dp) :: Cd = 1.9e-3_dp !! Drag coefficient (no units)
     
   contains
     ! Constructs atmospheres
@@ -81,6 +91,8 @@ module clima_adiabat
     procedure :: set_ocean_solubility_fcn => AdiabatClimate_set_ocean_solubility_fcn
     procedure :: to_regular_grid => AdiabatClimate_to_regular_grid
     procedure :: out2atmosphere_txt => AdiabatClimate_out2atmosphere_txt
+    ! For tidally locked planets
+    procedure :: heat_redistribution_parameters => AdiabatClimate_heat_redistribution_parameters
   end type
   
   interface AdiabatClimate
@@ -164,6 +176,9 @@ contains
     allocate(c%P(c%nz), c%T(c%nz), c%f_i(c%nz,c%sp%ng), c%z(c%nz), c%dz(c%nz))
     allocate(c%densities(c%nz,c%sp%ng))
     allocate(c%N_atmos(c%sp%ng),c%N_surface(c%sp%ng),c%N_ocean(c%sp%ng,c%sp%ng))
+
+    ! Heat redistribution parameter
+    c%L = c%planet_radius
     
   end function
   
@@ -472,7 +487,7 @@ contains
       real(dp), intent(in) :: x_(n_)
       real(dp), intent(out) :: fvec_(n_)
       integer, intent(inout) :: iflag_
-      real(dp) :: T, ISR, OLR
+      real(dp) :: T, ISR, OLR, rad_enhancement
       T = 10.0_dp**x_(1)
       if (self%solve_for_T_trop) then
         self%T_trop = 10.0_dp**x_(2)
@@ -482,12 +497,31 @@ contains
         iflag_ = -1
         return
       endif
-      fvec_(1) = ISR - OLR
+      rad_enhancement = 1.0_dp
+      if (self%tidally_locked_dayside) then; block
+        real(dp) :: tau_LW, k_term, f_term
+        call self%heat_redistribution_parameters(tau_LW, k_term, f_term, err)
+        if (allocated(err)) then
+          iflag_ = -1
+          return
+        endif
+        ! Increase the stellar flux, because we are computing the climate of
+        ! observed dayside.
+        rad_enhancement = 4.0_dp*f_term
+      endblock; endif
+      fvec_(1) = ISR*rad_enhancement - OLR
 
       if (self%solve_for_T_trop) then; block
-        real(dp) :: bond_albedo
+        use clima_eqns, only: skin_temperature
+        real(dp) :: bond_albedo, stellar_radiation
+        integer :: i
         bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
-        fvec_(2) = self%rad%skin_temperature(bond_albedo) - self%T_trop
+        stellar_radiation = 0.0_dp
+        do i = 1,self%rad%sol%nw
+          stellar_radiation = stellar_radiation + self%rad%photons_sol(i)*(self%rad%sol%freq(i) - self%rad%sol%freq(i+1))
+        enddo
+        stellar_radiation = stellar_radiation/1.0e3_dp
+        fvec_(2) = skin_temperature(stellar_radiation*rad_enhancement, bond_albedo) - self%T_trop
       endblock; endif
     end subroutine
     
@@ -538,7 +572,7 @@ contains
       real(dp), intent(in) :: x_(n_)
       real(dp), intent(out) :: fvec_(n_)
       integer, intent(inout) :: iflag_
-      real(dp) :: T, ISR, OLR
+      real(dp) :: T, ISR, OLR, rad_enhancement
       T = 10.0_dp**x_(1)
       if (self%solve_for_T_trop) then
         self%T_trop = 10.0_dp**x_(2)
@@ -548,12 +582,31 @@ contains
         iflag_ = -1
         return
       endif
-      fvec_(1) = ISR - OLR
+      rad_enhancement = 1.0_dp
+      if (self%tidally_locked_dayside) then; block
+        real(dp) :: tau_LW, k_term, f_term
+        call self%heat_redistribution_parameters(tau_LW, k_term, f_term, err)
+        if (allocated(err)) then
+          iflag_ = -1
+          return
+        endif
+        ! Increase the stellar flux, because we are computing the climate of
+        ! observed dayside.
+        rad_enhancement = 4.0_dp*f_term
+      endblock; endif
+      fvec_(1) = ISR*rad_enhancement - OLR
 
       if (self%solve_for_T_trop) then; block
-        real(dp) :: bond_albedo
+        use clima_eqns, only: skin_temperature
+        real(dp) :: bond_albedo, stellar_radiation
+        integer :: i
         bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
-        fvec_(2) = self%rad%skin_temperature(bond_albedo) - self%T_trop
+        stellar_radiation = 0.0_dp
+        do i = 1,self%rad%sol%nw
+          stellar_radiation = stellar_radiation + self%rad%photons_sol(i)*(self%rad%sol%freq(i) - self%rad%sol%freq(i+1))
+        enddo
+        stellar_radiation = stellar_radiation/1.0e3_dp
+        fvec_(2) = skin_temperature(stellar_radiation*rad_enhancement, bond_albedo) - self%T_trop
       endblock; endif
     end subroutine
     
@@ -607,7 +660,7 @@ contains
       real(dp), intent(in) :: x_(n_)
       real(dp), intent(out) :: fvec_(n_)
       integer, intent(inout) :: iflag_
-      real(dp) :: T, ISR, OLR
+      real(dp) :: T, ISR, OLR, rad_enhancement
       T = 10.0_dp**x_(1)
       if (self%solve_for_T_trop) then
         self%T_trop = 10.0_dp**x_(2)
@@ -617,12 +670,31 @@ contains
         iflag_ = -1
         return
       endif
-      fvec_(1) = ISR - OLR
+      rad_enhancement = 1.0_dp
+      if (self%tidally_locked_dayside) then; block
+        real(dp) :: tau_LW, k_term, f_term
+        call self%heat_redistribution_parameters(tau_LW, k_term, f_term, err)
+        if (allocated(err)) then
+          iflag_ = -1
+          return
+        endif
+        ! Increase the stellar flux, because we are computing the climate of
+        ! observed dayside.
+        rad_enhancement = 4.0_dp*f_term
+      endblock; endif
+      fvec_(1) = ISR*rad_enhancement - OLR
 
       if (self%solve_for_T_trop) then; block
-        real(dp) :: bond_albedo
+        use clima_eqns, only: skin_temperature
+        real(dp) :: bond_albedo, stellar_radiation
+        integer :: i
         bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
-        fvec_(2) = self%rad%skin_temperature(bond_albedo) - self%T_trop
+        stellar_radiation = 0.0_dp
+        do i = 1,self%rad%sol%nw
+          stellar_radiation = stellar_radiation + self%rad%photons_sol(i)*(self%rad%sol%freq(i) - self%rad%sol%freq(i+1))
+        enddo
+        stellar_radiation = stellar_radiation/1.0e3_dp
+        fvec_(2) = skin_temperature(stellar_radiation*rad_enhancement, bond_albedo) - self%T_trop
       endblock; endif
     end subroutine
   end function
@@ -783,6 +855,84 @@ contains
     
     close(2)
     
+  end subroutine
+
+  !> For considering a tidally locked planet. This function computes key parameters for
+  !> Equation (10) in Koll (2022), ApJ. The function must be called after calling a function
+  !> `self%TOA_fluxes`, because it uses atmosphere properties, and radiative properties.
+  subroutine AdiabatClimate_heat_redistribution_parameters(self, tau_LW, k_term, f_term, err)
+    use clima_const, only: c_light
+    use clima_eqns, only: k_term_heat_redistribution, f_heat_redistribution, &
+                          gravity, heat_capacity_eval, planck_fcn
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(out) :: tau_LW
+    real(dp), intent(out) :: k_term
+    real(dp), intent(out) :: f_term
+    character(:), allocatable, intent(out) :: err
+
+    integer :: i
+
+    real(dp) :: bond_albedo, Teq
+    real(dp) :: grav
+    real(dp) :: mubar
+    logical :: found
+    real(dp) ::  cp_tmp, cp
+
+    ! equilibrium temperature
+    bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
+    Teq = self%rad%equilibrium_temperature(bond_albedo)
+    
+    ! gravity
+    grav = gravity(self%planet_radius, self%planet_mass, 0.0_dp)
+
+    ! mean molecular weight at surface
+    mubar = 0.0_dp
+    do i = 1,self%sp%ng
+      mubar = mubar + self%f_i(1,i)*self%sp%g(i)%mass
+    enddo
+
+    ! heat capacity at surface
+    cp = tiny(0.0_dp)
+    do i = 1,self%sp%ng
+      call heat_capacity_eval(self%sp%g(i)%thermo, self%T_surf, found, cp_tmp) ! J/(mol*K)
+      if (.not. found) then
+        err = "Failed to compute heat capacity"
+        return
+      endif
+      ! J/(mol*K)
+      cp = cp + cp_tmp*self%f_i(1,i) ! J/(mol*K)
+    enddo
+    ! J/(mol*K) * (mol/kg) = J/(kg*K)
+    cp = cp*(1.0_dp/(mubar*1.0e-3_dp))
+    ! J/(kg*K) * (erg/J) * (kg/g) = erg/(g*K)
+    cp = cp*1.0e4_dp
+
+    ! tau_LW. Computed with Equation (13) in Koll (2020), ApJ
+    block
+      real(dp) :: numerator, denominator, dlambda, tau_lambda, bplank, avg_freq, avg_lam
+      numerator = 0.0_dp
+      denominator = 0.0_dp
+      do i = 1,self%rad%ir%nw
+        dlambda = self%rad%ir%wavl(i+1) - self%rad%ir%wavl(i) ! Width of a wavelength bin (nm)
+        tau_lambda = sum(self%rad%wrk_ir%rx%tau_band(:,i)) ! IR optical depth
+
+        avg_freq = 0.5_dp*(self%rad%ir%freq(i) + self%rad%ir%freq(i+1))
+        avg_lam = (c_light*1.0e9_dp/avg_freq) ! (m/s) * (nm/m) * (s) = nm
+
+        bplank = planck_fcn(avg_freq, self%T_surf) ! (mW sr^−1 m^−2 Hz^-1)
+        bplank = bplank * (avg_freq/avg_lam) ! (mW sr^−1 m^−2 Hz^-1) * (Hz/nm) = (mW sr^−1 m^−2 nm^-1)
+
+        ! integrate the numerator
+        numerator = numerator + exp(-tau_lambda)*bplank*dlambda
+        ! integrate the denominator
+        denominator = denominator + bplank*dlambda
+      enddo
+      tau_LW = - log(numerator/denominator)
+    endblock
+
+    k_term = k_term_heat_redistribution(self%L, grav, self%chi, mubar, cp, self%n_LW, self%Cd)
+    f_term = f_heat_redistribution(tau_LW, self%P_surf, Teq, k_term)
+
   end subroutine
   
 end module

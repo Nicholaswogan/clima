@@ -250,4 +250,41 @@ contains
     T_skin = equilibrium_temperature(stellar_radiation, bond_albedo)*(0.5_dp)**(0.25_dp)
   end function
 
+  !> k term in Equation (10) of Koll (2022), ApJ
+  pure function k_term_heat_redistribution(L, grav, chi, mubar, cp, n_LW, Cd) result(k)
+    use clima_const, only: sigma_si, Rgas
+    real(dp), intent(in) :: L !! Circulation’s horizontal scale (cm)
+    real(dp), intent(in) :: grav !! Surface gravity (cm/s^2)
+    real(dp), intent(in) :: chi !! Heat engine efficiency term (no units)
+    real(dp), intent(in) :: mubar !! Mean molar weight (g/mol)
+    real(dp), intent(in) :: cp !! Heat capacity (erg/(g*K))
+    real(dp), intent(in) :: n_LW !! = 1 or 2 (no units)
+    real(dp), intent(in) :: Cd !! Drag coefficient (no units)
+    real(dp) :: k !! k term
+
+    real(dp) :: R_bar, Beta
+    real(dp), parameter :: sigma_cgs = sigma_si*1.0e3_dp ! Convert to cgs
+
+    R_bar = Rgas/mubar
+    Beta = R_bar/(cp*n_LW)
+    k = (L*grav)/(chi*Beta*cp) * ((Cd*sigma_cgs**2.0_dp)/R_bar)**(1.0_dp/3.0_dp) &
+        * (1.0e6_dp)**(-2.0_dp/3.0_dp) * (600.0_dp)**(4.0_dp/3.0_dp)
+
+  end function
+
+  !> The heat redistribution parameter `f` from Equation (10) in Koll (2022), ApJ.
+  pure function f_heat_redistribution(tau_LW, Ps, Teq, k) result(f)
+    real(dp), intent(in) :: tau_LW !! Long wavelength optical depth
+    real(dp), intent(in) :: Ps !! Surface pressure (dynes/cm^2)
+    real(dp), intent(in) :: Teq !! Planetary equilibrium temperature (K)
+    real(dp), intent(in) :: k !! k term
+
+    real(dp) :: f
+
+    f = (2.0_dp/3.0_dp) - (5.0_dp/12.0_dp) &
+        * (tau_LW**(1.0_dp/3.0_dp) * (Ps/1.0e6_dp)**(2.0_dp/3.0_dp)*(Teq/600.0_dp)**(-4.0_dp/3.0_dp)) &
+        / (k + tau_LW**(1.0_dp/3.0_dp) * (Ps/1.0e6_dp)**(2.0_dp/3.0_dp)*(Teq/600.0_dp)**(-4.0_dp/3.0_dp))
+
+  end function
+
 end module

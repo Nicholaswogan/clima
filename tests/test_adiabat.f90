@@ -21,6 +21,7 @@ program test
   endif
 
   c%solve_for_T_trop = .true.
+  c%tidally_locked_dayside = .true.
     
   T = c%surface_temperature( &
       [270.0e6_dp, 400e-6_dp*1.0e6_dp, 1.0e6_dp], &
@@ -31,6 +32,7 @@ program test
   endif
 
   print*,T, c%T_trop
+  c%tidally_locked_dayside = .false.
 
   T = c%surface_temperature_column( &
       [15.0e3_dp, 400e-6_dp*23.0_dp, 1.0*36.0_dp], &
