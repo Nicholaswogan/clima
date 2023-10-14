@@ -17,7 +17,7 @@ contains
                    P, T_surface, T, densities, dz, &
                    pdensities, radii, &
                    rw, rz, &
-                   fup_a, fdn_a, fup_n, fdn_n) result(ierr)
+                   fup_a, fdn_a, fup_n, fdn_n, tau_band) result(ierr)
     use clima_radtran_types, only: RadiateXSWrk, RadiateZWrk, Ksettings
     use clima_radtran_types, only: OpticalProperties, Kcoefficients
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
@@ -52,6 +52,7 @@ contains
                                                     !! at the edges of the vertical grid
     real(dp), intent(out) :: fup_n(:), fdn_n(:) !! (nz+1) mW/m2 at the edges of the vertical grid 
                                                 !! (integral of fup_a and fdn_a over wavelength grid)
+    real(dp), intent(out) :: tau_band(:,:) !! (nz,nw) The optical depth of each layer
     integer :: ierr !! if ierr /= 0 on return, then there was an error
 
     type(Ksettings), pointer :: kset
@@ -301,7 +302,7 @@ contains
       enddo
       do i = 1,nz
         n = nz+1-i
-        rw%tau_band(i,l) = rz%tau_band(n) ! band optical thickness
+        tau_band(i,l) = rz%tau_band(n) ! band optical thickness
       enddo
       
     enddo

@@ -103,9 +103,6 @@ contains
     allocate(rw%w0(nz,op%npart))
     allocate(rw%qext(nz,op%npart))
     allocate(rw%gt(nz,op%npart))
-
-    ! The band optical thickness
-    allocate(rw%tau_band(nz,op%nw))
     
     ! if there are k-distributions
     ! then we need to allocate some work arrays

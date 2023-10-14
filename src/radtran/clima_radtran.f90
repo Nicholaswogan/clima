@@ -14,14 +14,14 @@ module clima_radtran
     type(RadiateXSWrk) :: rx
     type(RadiateZWrk) :: rz
     
-    !! (nz+1,nw) mW/m2/Hz in each wavelength bin
-    !! at the edges of the vertical grid
-    real(dp), allocatable :: fup_a(:,:)
-    real(dp), allocatable :: fdn_a(:,:)
-    !! (nz+1) mW/m2 at the edges of the vertical grid 
-    !! (integral of fup_a and fdn_a over wavelength grid)
-    real(dp), allocatable :: fup_n(:)
-    real(dp), allocatable :: fdn_n(:) 
+    !> (nz+1,nw) mW/m2/Hz in each wavelength bin
+    !> at the edges of the vertical grid
+    real(dp), allocatable :: fup_a(:,:), fdn_a(:,:)
+    !> (nz+1) mW/m2 at the edges of the vertical grid 
+    !> (integral of fup_a and fdn_a over wavelength grid)
+    real(dp), allocatable :: fup_n(:), fdn_n(:)
+    !> Band optical thickness (nz,nw)
+    real(dp), allocatable :: tau_band(:,:)
     
   end type
 
@@ -170,6 +170,7 @@ contains
     allocate(rad%wrk_ir%fdn_a(nz+1, rad%ir%nw))
     allocate(rad%wrk_ir%fup_n(nz+1))
     allocate(rad%wrk_ir%fdn_n(nz+1))
+    allocate(rad%wrk_ir%tau_band(nz,rad%ir%nw))
 
   end function
   
@@ -199,7 +200,7 @@ contains
                    P, T_surface, T, densities, dz, &
                    pdensities, radii, &
                    wrk%rx, wrk%rz, &
-                   wrk%fup_a, wrk%fdn_a, wrk%fup_n, wrk%fdn_n)
+                   wrk%fup_a, wrk%fdn_a, wrk%fup_n, wrk%fdn_n, wrk%tau_band)
     if (ierr /= 0) then
       err = 'Input particle radii are outside the data range.'
       return
@@ -326,6 +327,7 @@ contains
     allocate(rad%wrk_ir%fdn_a(nz+1, rad%ir%nw))
     allocate(rad%wrk_ir%fup_n(nz+1))
     allocate(rad%wrk_ir%fdn_n(nz+1))
+    allocate(rad%wrk_ir%tau_band(nz,rad%ir%nw))
 
     ! Solar work arrays
     rad%wrk_sol%rx = RadiateXSWrk(rad%sol, nz)
@@ -334,6 +336,7 @@ contains
     allocate(rad%wrk_sol%fdn_a(nz+1, rad%sol%nw))
     allocate(rad%wrk_sol%fup_n(nz+1))
     allocate(rad%wrk_sol%fdn_n(nz+1))
+    allocate(rad%wrk_sol%tau_band(nz,rad%sol%nw))
 
     ! total flux
     allocate(rad%f_total(nz+1))
@@ -371,7 +374,7 @@ contains
                   P, T_surface, T, densities, dz, &
                   pdensities, radii, &
                   wrk_ir%rx, wrk_ir%rz, &
-                  wrk_ir%fup_a, wrk_ir%fdn_a, wrk_ir%fup_n, wrk_ir%fdn_n)
+                  wrk_ir%fup_a, wrk_ir%fdn_a, wrk_ir%fup_n, wrk_ir%fdn_n, wrk_ir%tau_band)
     if (ierr /= 0) then
       err = 'Input particle radii are outside the data range.'
       return
@@ -383,7 +386,7 @@ contains
                    P, T_surface, T, densities, dz, &
                    pdensities, radii, &
                    wrk_sol%rx, wrk_sol%rz, &
-                   wrk_sol%fup_a, wrk_sol%fdn_a, wrk_sol%fup_n, wrk_sol%fdn_n)
+                   wrk_sol%fup_a, wrk_sol%fdn_a, wrk_sol%fup_n, wrk_sol%fdn_n, wrk_sol%tau_band)
     if (ierr /= 0) then
       err = 'Input particle radii are outside the data range.'
       return

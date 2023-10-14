@@ -914,7 +914,7 @@ contains
       denominator = 0.0_dp
       do i = 1,self%rad%ir%nw
         dlambda = self%rad%ir%wavl(i+1) - self%rad%ir%wavl(i) ! Width of a wavelength bin (nm)
-        tau_lambda = sum(self%rad%wrk_ir%rx%tau_band(:,i)) ! IR optical depth
+        tau_lambda = sum(self%rad%wrk_ir%tau_band(:,i)) ! IR optical depth
 
         avg_freq = 0.5_dp*(self%rad%ir%freq(i) + self%rad%ir%freq(i+1))
         avg_lam = (c_light*1.0e9_dp/avg_freq) ! (m/s) * (nm/m) * (s) = nm
