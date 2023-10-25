@@ -21,6 +21,7 @@ module clima_types
     integer :: nbins
     
     character(s_str_len), allocatable :: k_distributions(:)
+    logical, allocatable :: cia_bool
     character(s_str_len), allocatable :: cia(:)
     character(s_str_len), allocatable :: rayleigh(:)
     logical, allocatable :: rayleigh_bool

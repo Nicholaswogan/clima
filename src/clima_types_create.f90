@@ -876,16 +876,28 @@ contains
     endif
     
     ! CIA
-    tmp => opacities%get_list("CIA", required=.false., error=io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (associated(tmp)) then
-      call unpack_string_list(filename, tmp, op%cia, err)
-      if (allocated(err)) return
-      ind = check_for_duplicates(op%cia)
-      if (ind /= 0) then
-        err = '"'//trim(op%cia(ind))//'" is a duplicate in '//trim(tmp%path)
+    node => opacities%get("CIA")
+    if (associated(node)) then
+      select type (node)
+      class is (type_list)
+        call unpack_string_list(filename, node, op%cia, err)
+        if (allocated(err)) return
+        ind = check_for_duplicates(op%cia)
+        if (ind /= 0) then
+          err = '"'//trim(op%cia(ind))//'" is a duplicate in '//trim(node%path)
+          return
+        endif
+      class is (type_scalar)
+        allocate(op%cia_bool)
+        op%cia_bool = node%to_logical(default=.true.,success=success)
+        if (.not. success) then
+          err = 'Failed to convert "'//trim(node%path)//'" to logical'
+          return
+        endif
+      class default
+        err = '"'//trim(node%path)//'" must be a list or a scalar.'
         return
-      endif
+      end select
     endif
     
     ! rayleigh

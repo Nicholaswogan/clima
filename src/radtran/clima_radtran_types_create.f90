@@ -202,7 +202,7 @@ contains
     integer :: i, j, ind1, ind2
     type(type_dictionary), pointer :: root_dict
     type(type_key_value_pair), pointer :: pair
-    character(s_str_len), allocatable :: tmp_str_list(:)
+    character(s_str_len), allocatable :: tmp_str_list(:), cia_list(:)
     logical :: tmp_bool, file_exists
     
     op%op_type = optype
@@ -273,31 +273,73 @@ contains
     !!!!!!!!!!!
     !!! CIA !!!
     !!!!!!!!!!!
-    if (allocated(sop%cia)) then
-      op%ncia = size(sop%cia)
+    tmp_bool = .false.
+    if (allocated(sop%cia_bool)) tmp_bool = sop%cia_bool
+
+    if (allocated(sop%cia) .or. tmp_bool) then
+
+      if (tmp_bool) then; block
+        character(s_str_len), allocatable :: cia_combos(:)
+        ! Make a list of all possible CIA combos
+        allocate(cia_combos(size(species_names)*size(species_names)))
+        do i = 1,size(species_names)
+          do j = 1,size(species_names)
+            cia_combos(j + (i-1)*size(species_names)) = trim(species_names(i))//'-'//trim(species_names(j))
+          enddo
+        enddo
+
+        ! Look to see if the files / data exist 
+        j = 0
+        do i = 1,size(cia_combos)
+          filename = datadir//"/CIA/"//trim(cia_combos(i))//".h5"
+          inquire(file=filename, exist=file_exists)
+          if (file_exists) j = j + 1
+        enddo
+
+        ! Make a list of avaliable data files
+        op%ncia = j
+        if (allocated(cia_list)) deallocate(cia_list)
+        allocate(cia_list(op%ncia))
+        j = 1
+        do i = 1,size(cia_combos)
+          filename = datadir//"/CIA/"//trim(cia_combos(i))//".h5"
+          inquire(file=filename, exist=file_exists)
+          if (file_exists) then
+            cia_list(j) = cia_combos(i)
+            j = j + 1
+          endif
+        enddo
+
+      endblock; else
+        op%ncia = size(sop%cia)
+        if (allocated(cia_list)) deallocate(cia_list)
+        allocate(cia_list(op%ncia))
+        cia_list = sop%cia
+      endif
+
       allocate(op%cia(op%ncia))
-      
+
       do i = 1,op%ncia
         
-        j = index(sop%cia(i), "-")
+        j = index(cia_list(i), "-")
         if (j == 0) then
           err = 'missing "-" in CIA species "'//trim(sop%cia(i))//'"'
           return
         endif
-        ind1 = findloc(species_names, trim(sop%cia(i)(1:j-1)), 1)
-        ind2 = findloc(species_names, trim(sop%cia(i)(j+1:)), 1)
+        ind1 = findloc(species_names, trim(cia_list(i)(1:j-1)), 1)
+        ind2 = findloc(species_names, trim(cia_list(i)(j+1:)), 1)
         if (ind1 == 0) then
-          err = 'Species "'//trim(sop%cia(i)(1:j-1))//'" in optical property '// &
+          err = 'Species "'//trim(cia_list(i)(1:j-1))//'" in optical property '// &
                 '"CIA" is not in the list of species.'
           return
         endif
         if (ind2 == 0) then
-          err = 'Species "'//trim(sop%cia(i)(j+1:))//'" in optical property '// &
+          err = 'Species "'//trim(cia_list(i)(j+1:))//'" in optical property '// &
                 '"CIA" is not in the list of species.'
           return
         endif
         
-        filename = datadir//"/CIA/"//trim(sop%cia(i))//".h5"
+        filename = datadir//"/CIA/"//trim(cia_list(i))//".h5"
         op%cia(i) = create_CIAXsection(filename, [ind1, ind2], op%wavl, err)
         if (allocated(err)) return
         
@@ -469,13 +511,13 @@ contains
     if (allocated(sop%water_continuum)) then
 
       ! Make sure water continuum is not already accounted for with CIA
-      if (allocated(sop%cia)) then
+      if (allocated(cia_list)) then
         do i = 1,op%ncia
-          if (trim(sop%cia(i)) == 'H2O-H2O') then
+          if (trim(cia_list(i)) == 'H2O-H2O') then
             err = 'Optical property "water-continuum" is on, but water '// &
                   'continuum is already accounted for with H2O-H2O CIA.'
             return
-          elseif (trim(sop%cia(i)) == 'H2O-N2') then
+          elseif (trim(cia_list(i)) == 'H2O-N2') then
             err = 'Optical property "water-continuum" is on, but water '// &
                   'continuum is already accounted for with H2O-N2 CIA.'
             return
