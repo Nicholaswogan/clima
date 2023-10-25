@@ -467,6 +467,22 @@ contains
     !!! Continuum !!!
     !!!!!!!!!!!!!!!!!
     if (allocated(sop%water_continuum)) then
+
+      ! Make sure water continuum is not already accounted for with CIA
+      if (allocated(sop%cia)) then
+        do i = 1,op%ncia
+          if (trim(sop%cia(i)) == 'H2O-H2O') then
+            err = 'Optical property "water-continuum" is on, but water '// &
+                  'continuum is already accounted for with H2O-H2O CIA.'
+            return
+          elseif (trim(sop%cia(i)) == 'H2O-N2') then
+            err = 'Optical property "water-continuum" is on, but water '// &
+                  'continuum is already accounted for with H2O-N2 CIA.'
+            return
+          endif
+        enddo
+      endif
+
       allocate(op%cont)
       filename = datadir//"/water_continuum/"//trim(sop%water_continuum)//".h5"
       op%cont = create_WaterContinuum(sop%water_continuum, filename, species_names, op%wavl, err)
