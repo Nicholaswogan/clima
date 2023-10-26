@@ -829,9 +829,8 @@ contains
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     
     ! k-distributions
-    tmp => opacities%get_list("k-distributions",required=.false., error=io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (associated(tmp)) then
+    node => opacities%get("k-distributions")
+    if (associated(node)) then
 
       ! k-distribution settings
       ! ability to rebin k-coefficients in the files, before any calculations
@@ -850,10 +849,10 @@ contains
         endif
       endif
       
+      ! get k-method, and check that it is valid
       op%k_method = op_dict%get_string("k-method", error=io_err)
       if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
       op%k_method = trim(op%k_method)
-      
       if (op%k_method == "RandomOverlapResortRebin") then
         op%nbins = op_dict%get_integer("number-of-bins", error=io_err)
         if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
@@ -865,14 +864,28 @@ contains
         err = 'k-method "'//op%k_method//'" in "'//filename//'" is not an option.'
         return
       endif
-      
-      call unpack_string_list(filename, tmp, op%k_distributions, err)
-      if (allocated(err)) return
-      ind = check_for_duplicates(op%k_distributions)
-      if (ind /= 0) then
-        err = '"'//trim(op%k_distributions(ind))//'" is a duplicate in '//trim(tmp%path)
+
+      ! Which k-distributions to consider
+      select type (node)
+      class is (type_list)
+        call unpack_string_list(filename, node, op%k_distributions, err)
+        if (allocated(err)) return
+        ind = check_for_duplicates(op%k_distributions)
+        if (ind /= 0) then
+          err = '"'//trim(op%k_distributions(ind))//'" is a duplicate in '//trim(node%path)
+          return
+        endif
+      class is (type_scalar)
+        allocate(op%k_distributions_bool)
+        op%k_distributions_bool = node%to_logical(default=.true.,success=success)
+        if (.not. success) then
+          err = 'Failed to convert "'//trim(node%path)//'" to logical'
+          return
+        endif
+      class default
+        err = '"'//trim(node%path)//'" must be a list or a scalar.'
         return
-      endif
+      end select
     endif
     
     ! CIA

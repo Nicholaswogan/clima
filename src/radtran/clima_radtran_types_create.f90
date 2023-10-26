@@ -222,19 +222,58 @@ contains
     !!!!!!!!!!!!!!!!!!!!!!!
     !!! k-distributions !!!
     !!!!!!!!!!!!!!!!!!!!!!!
-    if (allocated(sop%k_distributions)) then
+    tmp_bool = .false.
+    if (allocated(sop%k_distributions_bool)) tmp_bool = sop%k_distributions_bool
+
+    if (allocated(sop%k_distributions) .or. tmp_bool) then
+
+      if (tmp_bool) then
+
+        ! Look to see if the files / data exist 
+        j = 0
+        do i = 1,size(species_names)
+          filename = datadir//"/kdistributions/"//trim(species_names(i))//".h5"
+          inquire(file=filename, exist=file_exists)
+          if (file_exists) j = j + 1
+        enddo
+
+        if (j == 0) then
+          err = 'No k-distribution data was found, but at least one k-distribution '// &
+                'is needed.'
+          return
+        endif
+
+        ! Make a list of avaliable data files
+        op%nk = j
+        if (allocated(tmp_str_list)) deallocate(tmp_str_list)
+        allocate(tmp_str_list(op%nk))
+        j = 1
+        do i = 1,size(species_names)
+          filename = datadir//"/kdistributions/"//trim(species_names(i))//".h5"
+          inquire(file=filename, exist=file_exists)
+          if (file_exists) then
+            tmp_str_list(j) = species_names(i)
+            j = j + 1
+          endif
+        enddo
+
+      else
+        op%nk = size(sop%k_distributions)
+        if (allocated(tmp_str_list)) deallocate(tmp_str_list)
+        allocate(tmp_str_list(op%nk))
+        tmp_str_list = sop%k_distributions
+      endif
       
       ! k distributions settings
       op%kset = create_Ksettings(sop)
       
-      op%nk = size(sop%k_distributions)
       allocate(op%k(op%nk))
       
       do i = 1,op%nk
-        filename = datadir//"/kdistributions/"//trim(sop%k_distributions(i))//".h5"
-        ind1 = findloc(species_names, trim(sop%k_distributions(i)), 1)
+        filename = datadir//"/kdistributions/"//trim(tmp_str_list(i))//".h5"
+        ind1 = findloc(species_names, trim(tmp_str_list(i)), 1)
         if (ind1 == 0) then
-          err = 'Species "'//trim(sop%k_distributions(i))//'" in optical property '// &
+          err = 'Species "'//trim(tmp_str_list(i))//'" in optical property '// &
                 '"k-distributions" is not in the list of species.'
           return
         endif
@@ -265,9 +304,12 @@ contains
       endif
       
     else
+      op%nk = 0
+    endif
+
+    if (op%nk == 0) then
       err = "You must specify at least one k-distribution in the settings file."
       return
-      ! op%nk = 0
     endif
     
     !!!!!!!!!!!
@@ -378,6 +420,7 @@ contains
           endif
           pair => pair%next
         enddo
+        if (allocated(tmp_str_list)) deallocate(tmp_str_list)
         allocate(tmp_str_list(i))
         i = 1
         pair => root_dict%first

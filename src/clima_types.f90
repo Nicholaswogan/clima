@@ -20,6 +20,7 @@ module clima_types
     character(:), allocatable :: k_method
     integer :: nbins
     
+    logical, allocatable :: k_distributions_bool
     character(s_str_len), allocatable :: k_distributions(:)
     logical, allocatable :: cia_bool
     character(s_str_len), allocatable :: cia(:)
