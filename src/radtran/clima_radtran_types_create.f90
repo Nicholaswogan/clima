@@ -512,17 +512,18 @@ contains
 
       ! Make sure water continuum is not already accounted for with CIA
       if (allocated(cia_list)) then
-        do i = 1,op%ncia
-          if (trim(cia_list(i)) == 'H2O-H2O') then
-            err = 'Optical property "water-continuum" is on, but water '// &
-                  'continuum is already accounted for with H2O-H2O CIA.'
-            return
-          elseif (trim(cia_list(i)) == 'H2O-N2') then
-            err = 'Optical property "water-continuum" is on, but water '// &
+        ind1 = findloc(cia_list, 'H2O-H2O', 1)
+        if (ind1 /= 0) then
+          err = 'Optical property "water-continuum" is set, but self water '// &
+                'continuum is already accounted for with H2O-H2O CIA.'
+          return
+        endif
+        ind1 = findloc(cia_list, 'H2O-N2', 1)
+        if (ind1 /= 0) then
+          err = 'Optical property "water-continuum" is set, but foreign water '// &
                   'continuum is already accounted for with H2O-N2 CIA.'
-            return
-          endif
-        enddo
+          return
+        endif
       endif
 
       allocate(op%cont)
