@@ -91,7 +91,6 @@ module clima_radtran
     procedure :: skin_temperature => Radtran_skin_temperature
     procedure :: equilibrium_temperature => Radtran_equilibrium_temperature
     procedure :: opacities2yaml => Radtran_opacities2yaml
-    procedure :: print_opacities => Radtran_print_opacities
   end type
 
   interface Radtran
@@ -466,50 +465,23 @@ contains
     line = line//'optical-properties:'
     out = out//line
 
-    out = out//'\n'
+    out = out//new_line('(a)')
     line = '  '
     line = line//'ir:'
     out = out//line
 
-    out = out//'\n'
+    out = out//new_line('(a)')
     out = out//self%ir%opacities2yaml()
 
-    out = out//'\n'
+    out = out//new_line('(a)')
     line = '  '
     line = line//'solar:'
     out = out//line
 
-    out = out//'\n'
+    out = out//new_line('(a)')
     out = out//self%sol%opacities2yaml()
 
   end function
-
-  subroutine Radtran_print_opacities(self)
-    use iso_fortran_env, only: output_unit
-    class(Radtran), target, intent(inout) :: self
-    character(:), allocatable :: out
-
-    integer :: i
-    logical :: skip_next
-
-    out = self%opacities2yaml()
-
-    skip_next = .false.
-    do i = 1,len(out)-1
-      if (out(i:i+1) == '\n') then
-        write(output_unit,'(a)')
-        skip_next = .true.
-      else
-        if (.not. skip_next) then
-          write(output_unit,'(a)',advance='no') out(i:i)
-        else
-          skip_next = .false.
-        endif
-      endif
-    enddo
-    write(output_unit,'(a)') out(len(out):len(out))
-
-  end subroutine
 
   !!!!!!!!!!!!!!!!!
   !!! Utilities !!!

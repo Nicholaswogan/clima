@@ -26,6 +26,14 @@ cdef class Radtran:
     rad_pxd.radtran_skin_temperature_wrapper(&self._ptr, &bond_albedo, &T_skin)
     return T_skin
 
+  def opacities2yaml(self):
+    cdef int out_len
+    cdef void *out_cp
+    rad_pxd.radtran_opacities2yaml_wrapper_1(&self._ptr, &out_len, &out_cp)
+    cdef ndarray out_c = np.empty(out_len + 1, 'S1')
+    rad_pxd.radtran_opacities2yaml_wrapper_2(&self._ptr, &out_cp, &out_len, <char *>out_c.data)
+    return out_c[:-1].tobytes().decode()
+    
   property surface_albedo:
     "The surface albedo"
     def __get__(self):

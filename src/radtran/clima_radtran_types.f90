@@ -263,7 +263,7 @@ contains
     out = out//line
 
     if (self%kset%k_method == k_RandomOverlapResortRebin) then
-      out = out//'\n'
+      out = out//new_line('(a)')
       write(tmp_str,'(i0)') self%kset%nbin
       line = '    '
       line = line//'number-of-bins: '//trim(tmp_str)
@@ -271,20 +271,20 @@ contains
     endif
 
     if (allocated(self%kset%new_num_k_bins)) then
-      out = out//'\n'
+      out = out//new_line('(a)')
       write(tmp_str,'(i0)') self%kset%new_num_k_bins
       line = '    '
       line = line//'new-num-k-bins: '//trim(tmp_str)
       out = out//line
     endif
 
-    out = out//'\n'
+    out = out//new_line('(a)')
     line = '    '
     line = line//'opacities:'
     out = out//line
 
     if (allocated(self%k)) then
-      out = out//'\n'
+      out = out//new_line('(a)')
       line = '      '
       line = line//'k-distributions: ['
       do i = 1,self%nk
@@ -298,7 +298,7 @@ contains
     endif
 
     if (allocated(self%cia)) then
-      out = out//'\n'
+      out = out//new_line('(a)')
       line = '      '
       line = line//'CIA: ['
       do i = 1,self%ncia
@@ -313,7 +313,7 @@ contains
     endif
 
     if (allocated(self%ray)) then
-      out = out//'\n'
+      out = out//new_line('(a)')
       line = '      '
       line = line//'rayleigh: ['
       do i = 1,self%nray
@@ -327,7 +327,7 @@ contains
     endif
 
     if (allocated(self%pxs)) then
-      out = out//'\n'
+      out = out//new_line('(a)')
       line = '      '
       line = line//'photolysis-xs: ['
       do i = 1,self%npxs
@@ -341,14 +341,14 @@ contains
     endif
 
     if (allocated(self%cont)) then
-      out = out//'\n'
+      out = out//new_line('(a)')
       line = '      '
       line = line//'water-continuum: '//self%cont%model
       out = out//line
     endif
 
     if (allocated(self%part)) then
-      out = out//'\n'
+      out = out//new_line('(a)')
       line = '      '
       line = line//'particle-xs: ['
       do i = 1,self%npart

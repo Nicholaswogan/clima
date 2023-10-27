@@ -72,6 +72,7 @@ contains
   end subroutine
 
   subroutine test_Radtran()
+    use iso_fortran_env, only: output_unit
     use clima, only: Radtran
     use clima_types, only: AtmosphereFile, unpack_atmospherefile
     use clima_eqns, only: vertical_grid
@@ -144,7 +145,7 @@ contains
     write(1) rad%photons_sol
     close(1)
 
-    call rad%print_opacities()
+    write(output_unit,'(a)') rad%opacities2yaml()
 
   end subroutine
   
