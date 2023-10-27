@@ -144,6 +144,8 @@ contains
     write(1) rad%photons_sol
     close(1)
 
+    call rad%print_opacities()
+
   end subroutine
   
 end program

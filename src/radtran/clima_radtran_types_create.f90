@@ -164,6 +164,13 @@ contains
     type(Ksettings) :: kset
     
     real(dp), allocatable :: tmp(:) ! dummy variable.
+
+    if (allocated(sop%new_num_k_bins)) then
+      allocate(kset%new_num_k_bins)
+      kset%new_num_k_bins = sop%new_num_k_bins
+    endif
+
+    kset%k_method_name = sop%k_method
     
     ! method for mixing k-distributions.
     if (sop%k_method == "RandomOverlapResortRebin") then
@@ -218,7 +225,12 @@ contains
     op%nw = size(op%wavl) - 1
     allocate(op%freq(size(op%wavl)))
     op%freq = c_light/(op%wavl*1.0e-9_dp)
-    
+
+    allocate(op%species_names(size(species_names)))
+    op%species_names = species_names
+    allocate(op%particle_names(size(particle_names)))
+    op%particle_names = particle_names
+
     !!!!!!!!!!!!!!!!!!!!!!!
     !!! k-distributions !!!
     !!!!!!!!!!!!!!!!!!!!!!!
@@ -540,7 +552,7 @@ contains
         endif
         
         filename = datadir//"/aerosol_xsections/"//sop%particle_xs(i)%dat//"/mie_"//sop%particle_xs(i)%dat//'.dat'
-        op%part(i) = create_ParticleXsection(filename, ind1, op%wavl, err)
+        op%part(i) = create_ParticleXsection(filename, ind1, sop%particle_xs(i)%dat, op%wavl, err)
         if (allocated(err)) return
         
       enddo
@@ -618,10 +630,11 @@ contains
     
   end subroutine
 
-  function create_ParticleXsection(filename, p_ind, wavl, err) result(part)
+  function create_ParticleXsection(filename, p_ind, dat_name, wavl, err) result(part)
     use futils, only: addpnt, inter2
     character(*), intent(in) :: filename
     integer, intent(in) :: p_ind
+    character(*), intent(in) :: dat_name
     real(dp), intent(in) :: wavl(:)
     character(:), allocatable, intent(out) :: err
 
@@ -637,6 +650,7 @@ contains
     integer :: i, j, io, ierr
 
     part%p_ind = p_ind
+    part%dat_name = trim(dat_name)
     
     open(2,file=filename,form="unformatted",status='old',iostat=io)
     if (io /= 0) then
@@ -822,6 +836,8 @@ contains
     real(dp), parameter :: rdelta = 1.0e-4_dp
     
     type(hdf5_file) :: h
+
+    cont%model = trim(model)
     
     ! Look for H2O
     ind = findloc(species_names,"H2O",1)

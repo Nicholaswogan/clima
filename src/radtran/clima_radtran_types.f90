@@ -1,7 +1,7 @@
 
 module clima_radtran_types
   use iso_c_binding
-  use clima_const, only: dp
+  use clima_const, only: dp, s_str_len
   use linear_interpolation_module, only: linear_interp_1d, linear_interp_2d
   implicit none
   public
@@ -51,6 +51,7 @@ module clima_radtran_types
   end type
 
   type :: ParticleXsection
+    character(:), allocatable :: dat_name
     integer :: p_ind
     integer :: nrad
     real(dp), allocatable :: radii(:) ! cm
@@ -61,6 +62,7 @@ module clima_radtran_types
   end type
   
   type :: WaterContinuum
+    character(:), allocatable :: model
     integer :: LH2O ! index of H2O
     integer :: ntemp ! number of temperatures
     real(dp), allocatable :: temp(:) ! (ntemp) Kelvin
@@ -76,8 +78,10 @@ module clima_radtran_types
   end enum
   
   type :: Ksettings
+    integer, allocatable :: new_num_k_bins
     ! approach to combining k-distributions
-    integer :: k_method 
+    character(:), allocatable :: k_method_name ! name
+    integer :: k_method ! enum (see above)
     ! if k_method == k_RandomOverlapResortRebin
     ! then these are the weights we are re-binning to.
     integer :: nbin = -1
@@ -94,6 +98,10 @@ module clima_radtran_types
     integer :: nw
     real(dp), allocatable :: wavl(:)
     real(dp), allocatable :: freq(:)
+
+    ! Copy of species and particle names
+    character(s_str_len), allocatable :: species_names(:)
+    character(s_str_len), allocatable :: particle_names(:)
     
     ! K-distributions (e.g. H2O)
     integer :: ngauss_max = -1
@@ -120,7 +128,9 @@ module clima_radtran_types
     ! Water Continuum absorption. Can only be a thing if H2O is a species
     ! and if there are other gases in the atmosphere.
     type(WaterContinuum), allocatable :: cont
-    
+
+  contains
+    procedure :: opacities2yaml => OpticalProperties_opacities2yaml
   end type
   
   interface
@@ -234,5 +244,124 @@ module clima_radtran_types
       character(:), allocatable, intent(out) :: err
     end subroutine
   end interface
+
+contains
+  
+  function OpticalProperties_opacities2yaml(self) result(out)
+    use clima_const, only: 
+    class(OpticalProperties), intent(inout) :: self
+    character(:), allocatable :: out
+
+    character(:), allocatable :: line
+    character(s_str_len) :: tmp_str
+    integer :: i
+
+    out = ''
+
+    line = '    '
+    line = line//'k-method: '//self%kset%k_method_name
+    out = out//line
+
+    if (self%kset%k_method == k_RandomOverlapResortRebin) then
+      out = out//'\n'
+      write(tmp_str,'(i0)') self%kset%nbin
+      line = '    '
+      line = line//'number-of-bins: '//trim(tmp_str)
+      out = out//line
+    endif
+
+    if (allocated(self%kset%new_num_k_bins)) then
+      out = out//'\n'
+      write(tmp_str,'(i0)') self%kset%new_num_k_bins
+      line = '    '
+      line = line//'new-num-k-bins: '//trim(tmp_str)
+      out = out//line
+    endif
+
+    out = out//'\n'
+    line = '    '
+    line = line//'opacities:'
+    out = out//line
+
+    if (allocated(self%k)) then
+      out = out//'\n'
+      line = '      '
+      line = line//'k-distributions: ['
+      do i = 1,self%nk
+        line = line//trim(self%species_names(self%k(i)%sp_ind))
+        if (i /= self%nk) then
+          line = line//', '
+        endif
+      enddo
+      line = line//']'
+      out = out//line
+    endif
+
+    if (allocated(self%cia)) then
+      out = out//'\n'
+      line = '      '
+      line = line//'CIA: ['
+      do i = 1,self%ncia
+        line = line//trim(self%species_names(self%cia(i)%sp_ind(1)))// &
+                '-'//trim(self%species_names(self%cia(i)%sp_ind(2)))
+        if (i /= self%ncia) then
+          line = line//', '
+        endif
+      enddo
+      line = line//']'
+      out = out//line
+    endif
+
+    if (allocated(self%ray)) then
+      out = out//'\n'
+      line = '      '
+      line = line//'rayleigh: ['
+      do i = 1,self%nray
+        line = line//trim(self%species_names(self%ray(i)%sp_ind(1)))
+        if (i /= self%nray) then
+          line = line//', '
+        endif
+      enddo
+      line = line//']'
+      out = out//line
+    endif
+
+    if (allocated(self%pxs)) then
+      out = out//'\n'
+      line = '      '
+      line = line//'photolysis-xs: ['
+      do i = 1,self%npxs
+        line = line//trim(self%species_names(self%pxs(i)%sp_ind(1)))
+        if (i /= self%npxs) then
+          line = line//', '
+        endif
+      enddo
+      line = line//']'
+      out = out//line
+    endif
+
+    if (allocated(self%cont)) then
+      out = out//'\n'
+      line = '      '
+      line = line//'water-continuum: '//self%cont%model
+      out = out//line
+    endif
+
+    if (allocated(self%part)) then
+      out = out//'\n'
+      line = '      '
+      line = line//'particle-xs: ['
+      do i = 1,self%npart
+        line = line//'{name: '//trim(self%particle_names(self%part(i)%p_ind))
+        line = line//', data: '//trim(self%part(i)%dat_name)//'}'
+        if (i /= self%npart) then
+          line = line//', '
+        endif
+      enddo
+      line = line//']'
+      out = out//line
+    endif
+
+  end function
   
 end module
