@@ -352,9 +352,7 @@ contains
       ! compute saturation vapor pressures
       P_sat = huge(1.0_dp)
       if (allocated(d%sp%g(i)%sat)) then
-        if (T_surf < d%sp%g(i)%sat%T_critical) then
-          P_sat = d%RH(i)*d%sp%g(i)%sat%sat_pressure(T_surf)
-        endif
+        P_sat = d%RH(i)*d%sp%g(i)%sat%sat_pressure(T_surf)
       endif
 
       ! determine if species are condensing, or not
@@ -640,9 +638,7 @@ contains
       ! compute saturation vapor pressures
       P_sat = huge(1.0_dp)
       if (allocated(d%sp%g(i)%sat)) then
-        if (T < d%sp%g(i)%sat%T_critical) then
-          P_sat = d%RH(i)*d%sp%g(i)%sat%sat_pressure(T)
-        endif
+        P_sat = d%RH(i)*d%sp%g(i)%sat%sat_pressure(T)
       endif
 
       if (d%sp_type(i) == CondensingSpeciesType) then
@@ -703,13 +699,13 @@ contains
     f_moist = 0.0_dp
     do i = 1,d%sp%ng
       if (d%sp_type(i) == CondensingSpeciesType) then
-        f_i_layer(i) = d%RH(i)*d%sp%g(i)%sat%sat_pressure(T)/P
+        f_i_layer(i) = min(d%RH(i)*d%sp%g(i)%sat%sat_pressure(T)/P,1.0_dp)
         f_moist = f_moist + f_i_layer(i)
       endif
     enddo
 
     ! fraction of the atmosphere that is dry
-    f_dry = 1.0_dp - f_moist
+    f_dry = max(1.0_dp - f_moist, 1.0e-40_dp)
     ! mixing ratios of dry species
     do i = 1,d%sp%ng
       if (d%sp_type(i) == DrySpeciesType) then

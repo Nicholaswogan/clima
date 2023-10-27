@@ -22,6 +22,7 @@ species:
     T-critical: 647.0
     vaporization: {a: 2.841421e+10, b: -1.399732e+07}
     sublimation: {a: 2.746884e+10, b: 4.181527e+06}
+    super-critical: {a: 1.793161e+12, b: 0.0}
   note: From the NIST database
 - name: CO2
   composition: {C: 1, O: 2}
@@ -40,6 +41,7 @@ species:
     T-critical: 304.13
     vaporization: {a: 4.656475e+09, b: -3.393595e+06}
     sublimation: {a: 6.564668e+09, b: -3.892217e+06}
+    super-critical: {a: 1.635908e+11, b: 0.0}
   note: From the NIST database
 - name: N2
   composition: {N: 2}
