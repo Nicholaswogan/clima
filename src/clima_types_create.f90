@@ -271,7 +271,7 @@ contains
     if (allocated(io_err)) then; err = trim(infile)//trim(io_err%message); return; endif
       
     thermo%ntemps = tmplist%size() - 1
-    if (thermo%ntemps /= 1 .and. thermo%ntemps /= 2) then
+    if (thermo%ntemps < 1) then
       err = "Problem reading thermodynamic data for "//trim(molecule_name)
       return
     endif
