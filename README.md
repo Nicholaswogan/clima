@@ -1,10 +1,22 @@
 # Clima
 
-**NOTE: Clima has not been published in a peer-reviewed journal yet. Please do not use this model in a paper that will be published. Wait for me to publish the model first, so you are able to cite it. Email me if you have questions (wogan@uw.edu)**
-
-`Clima` is a radiative transfer code and a climate model. It is currently under construction.
+`Clima` is a radiative transfer code and a climate model.
 
 ## Installation
+
+### Conda
+
+Clima is a module of the `photochem` package, which can be installed via conda:
+
+`conda install -c conda-forge photochem`
+
+You can then import `clima`.
+
+```python
+from photochem import clima
+```
+
+### From source
 
 You need a Fortran compiler (`gfortran>=9.30`, [install instructions here](https://fortran-lang.org/learn/os_setup/install_gfortran)) and C compiler (e.g. install with `conda install -c conda-forge clang`)
 
@@ -30,11 +42,7 @@ python -m pip install --no-deps --no-build-isolation . -v
 
 If your installation fails, and it is not clear why, please raise an issue.
 
-## Contact
-
-If you have questions email me: wogan@uw.edu
-
-## Funding and Acknowledgements
+## Funding, acknowledgements and publications
 
 Funding for the development of Clima comes from
 - [The Virtual Planetary Laboratory](https://depts.washington.edu/naivpl/content/welcome-virtual-planetary-laboratory)
@@ -49,3 +57,7 @@ This model was build in collaboration with
 - Eric Wolf
 - Sandra Bastelberger
 - Shawn Domagal-Goldman
+
+Publications that use clima
+- [DOI: 10.3847/PSJ/aced83](https://doi.org/10.3847/PSJ/aced83)
+
