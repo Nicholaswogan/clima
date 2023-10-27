@@ -579,6 +579,60 @@ subroutine adiabatclimate_species_names_get(ptr, dim1, species_names) bind(c)
   
 end subroutine
 
+subroutine adiabatclimate_rtol_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%rtol
+end subroutine
+
+subroutine adiabatclimate_rtol_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%rtol = val
+end subroutine
+
+subroutine adiabatclimate_atol_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%atol
+end subroutine
+
+subroutine adiabatclimate_atol_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%atol = val
+end subroutine
+
+subroutine adiabatclimate_tol_make_column_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%tol_make_column
+end subroutine
+
+subroutine adiabatclimate_tol_make_column_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%tol_make_column = val
+end subroutine
+
 subroutine adiabatclimate_p_surf_get(ptr, val) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr

@@ -491,6 +491,33 @@ cdef class AdiabatClimate:
       var._ptr = ptr1
       return var
 
+  property rtol:
+    "float. Relative tolerance of integration."
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_rtol_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_rtol_set(&self._ptr, &val)
+  
+  property atol:
+    "float. Absolute tolerance of integration."
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_atol_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_atol_set(&self._ptr, &val)
+
+  property tol_make_column:
+    "float. Tolerance for nonlinear solve in make_column."
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_tol_make_column_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_tol_make_column_set(&self._ptr, &val)
+
   property P_surf:
     "float. Surface pressure (dynes/cm^2)"
     def __get__(self):

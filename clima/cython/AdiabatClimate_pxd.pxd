@@ -79,6 +79,15 @@ cdef extern void adiabatclimate_ocean_args_p_set(void *ptr, void *p)
 cdef extern void adiabatclimate_species_names_get_size(void *ptr, int *dim1)
 cdef extern void adiabatclimate_species_names_get(void *ptr, int *dim1, char* species_names)
 
+cdef extern void adiabatclimate_rtol_get(void *ptr, double *val)
+cdef extern void adiabatclimate_rtol_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_atol_get(void *ptr, double *val)
+cdef extern void adiabatclimate_atol_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_tol_make_column_get(void *ptr, double *val)
+cdef extern void adiabatclimate_tol_make_column_set(void *ptr, double *val)
+
 cdef extern void adiabatclimate_p_surf_get(void *ptr, double *val)
 
 cdef extern void adiabatclimate_p_trop_get(void *ptr, double *val)

@@ -47,6 +47,14 @@ module clima_adiabat
     
     ! Radiative transfer
     type(Radtran) :: rad
+
+    ! tolerances
+    !> Relative tolerance of integration
+    real(dp) :: rtol = 1.0e-12_dp
+    !> Absolute tolerance of integration
+    real(dp) :: atol = 1.0e-12_dp
+    !> Tolerance for nonlinear solve in make_column
+    real(dp) :: tol_make_column = 1.0e-8_dp
     
     ! State of the atmosphere
     real(dp) :: P_surf !! Surface pressure (dynes/cm^2)
@@ -209,6 +217,7 @@ contains
     call make_profile(T_surf, P_i_surf, &
                       self%sp, self%nz, self%planet_mass, &
                       self%planet_radius, self%P_top, self%T_trop, self%RH, &
+                      self%rtol, self%atol, &
                       self%ocean_fcns, self%ocean_args_p, &
                       P_e, z_e, T_e, f_i_e, self%P_trop, &
                       self%N_surface, self%N_ocean, &
@@ -265,6 +274,7 @@ contains
     call make_column(T_surf, N_i_surf, &
                      self%sp, self%nz, self%planet_mass, &
                      self%planet_radius, self%P_top, self%T_trop, self%RH, &
+                     self%rtol, self%atol, self%tol_make_column, &
                      self%ocean_fcns, self%ocean_args_p, &
                      self%use_make_column_P_guess, self%make_column_P_guess, &
                      P_e, z_e, T_e, f_i_e, self%P_trop, &

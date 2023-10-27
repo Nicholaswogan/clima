@@ -23,6 +23,8 @@ module clima_adiabat_general
     real(dp), pointer :: T_trop
     real(dp), pointer :: RH(:)
     real(dp), pointer :: T_surf
+    real(dp), pointer :: rtol
+    real(dp), pointer :: atol
     !> Ouput
     real(dp), pointer :: P(:)
     real(dp), pointer :: z(:)
@@ -86,6 +88,7 @@ contains
   subroutine make_column(T_surf, N_i_surf, &
                          sp, nz, planet_mass, &
                          planet_radius, P_top, T_trop, RH, &
+                         rtol, atol, tol_make_column, &
                          ocean_fcns, args_p, &
                          use_P_guess, P_guess, &
                          P, z, T, f_i, P_trop, &
@@ -103,6 +106,7 @@ contains
     integer, intent(in) :: nz
     real(dp), target, intent(in) :: planet_mass, planet_radius
     real(dp), target, intent(in) :: P_top, T_trop, RH(:)
+    real(dp), target, intent(in) :: rtol, atol, tol_make_column
     type(OceanFunction), intent(in) :: ocean_fcns(:)
     type(c_ptr), value, intent(in) :: args_p
     logical, intent(in) :: use_P_guess
@@ -124,7 +128,7 @@ contains
     real(dp), parameter :: scale_factors(*) = [1.0_dp, 0.5_dp, 2.0_dp, 0.1_dp, 5.0_dp, 0.01_dp] !! Scalings for root solve guessing
 
     ! allocate memory for minpack
-    mv = MinpackHybrd1Vars(n=sp%ng, tol=1.0e-8_dp)
+    mv = MinpackHybrd1Vars(n=sp%ng, tol=tol_make_column)
     mv%info = 0
 
     ! allocate some work memory
@@ -200,6 +204,7 @@ contains
       call make_profile(T_surf, P_i, &
                         sp, nz, planet_mass, &
                         planet_radius, P_top, T_trop, RH, &
+                        rtol, atol, &
                         ocean_fcns, args_p, &
                         P, z, T, f_i, P_trop, &
                         N_surface, N_ocean, &
@@ -241,6 +246,7 @@ contains
   subroutine make_profile(T_surf, P_i_surf, &
                           sp, nz, planet_mass, &
                           planet_radius, P_top, T_trop, RH, &
+                          rtol, atol, &
                           ocean_fcns, args_p, &
                           P, z, T, f_i, P_trop, &
                           N_surface, N_ocean, &
@@ -256,6 +262,7 @@ contains
     integer, intent(in) :: nz
     real(dp), target, intent(in) :: planet_mass, planet_radius
     real(dp), target, intent(in) :: P_top, T_trop, RH(:)
+    real(dp), target, intent(in) :: rtol, atol
     type(OceanFunction), intent(in) :: ocean_fcns(:)
     type(c_ptr), value, intent(in) :: args_p
 
@@ -325,6 +332,8 @@ contains
     d%T_trop => T_trop
     d%RH => RH
     d%T_surf => T_surf
+    d%rtol => rtol
+    d%atol => atol
     ! outputs
     d%P => P
     d%z => z
@@ -440,7 +449,7 @@ contains
     u = [d%T_surf, 0.0_dp]
     Pn = d%P_surf
     do
-      call dop%integrate(Pn, u, d%P_top, [1.0e-9_dp], [1.0e-9_dp], iout=2, idid=idid)
+      call dop%integrate(Pn, u, d%P_top, [d%rtol], [d%atol], iout=2, idid=idid)
       if (allocated(d%err)) then
         err = d%err
         return
