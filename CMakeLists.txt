@@ -9,9 +9,8 @@ set(CMAKE_Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 include(cmake/CPM.cmake)
 
 # options
-if (NOT DEFINED SKBUILD)
-  set(SKBUILD OFF CACHE STRING )
-endif()
+option(SKBUILD "Should be ON of being build by skbuild, 
+and OFF of being build by regular cmake" OFF)
 message(STATUS "The project is built using scikit-build: ${SKBUILD}")
 
 option(BUILD_EXECUTABLES "if ON, then will build the
