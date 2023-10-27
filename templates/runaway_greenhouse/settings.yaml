@@ -33,20 +33,20 @@ optical-properties:
     # Here you specify opacites. You can see avaliable opacities by looking in
     # `clima/data/` folder. `CIA`, `rayleigh`, `photolysis-xs` and `water-continuum`
     # are optional. If you omit these keys then these opacities will not be included.
-    # `k-distributions` is a required key for now.
+    # `k-distributions` is the only required key. For most keys you can optionally 
+    # do `k-distributions: true`, which will activate all possible opacities in that
+    # category.
     opacities:
-     # k-distributions
+      # k-distributions
       k-distributions: [H2O, CO2]
 
       # CIA opacities
       CIA: [CO2-CO2, N2-N2]
 
-      # Rayleigh scattering. You can optionally do
-      # rayleigh: true
-      # which activates all possible rayleigh species
+      # Rayleigh scattering.
       rayleigh: [H2O, CO2, N2]
 
-      # Potolysis cross sections. Specify true/false or a list of species
+      # Potolysis cross sections.
       photolysis-xs: false
 
       # MT_CKD H2O continuum.

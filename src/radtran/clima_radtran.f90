@@ -419,6 +419,7 @@ contains
 
   end subroutine
 
+  !> The skin temperature
   function Radtran_skin_temperature(self, bond_albedo) result(T_skin)
     use clima_eqns, only: skin_temperature
     class(Radtran), target, intent(inout) :: self
@@ -436,6 +437,7 @@ contains
     T_skin = skin_temperature(stellar_radiation, bond_albedo)
   end function
 
+  !> The equilibrium temperature
   function Radtran_equilibrium_temperature(self, bond_albedo) result(T_eq)
     use clima_eqns, only: equilibrium_temperature
     class(Radtran), target, intent(inout) :: self
@@ -453,6 +455,7 @@ contains
     T_eq = equilibrium_temperature(stellar_radiation, bond_albedo)
   end function
 
+  !> Returns a yaml string representing all opacities in the model.
   function Radtran_opacities2yaml(self) result(out)
     class(Radtran), target, intent(inout) :: self
     character(:), allocatable :: out

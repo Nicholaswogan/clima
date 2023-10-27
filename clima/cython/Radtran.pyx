@@ -27,6 +27,13 @@ cdef class Radtran:
     return T_skin
 
   def opacities2yaml(self):
+    """Returns a yaml string representing all opacities in the model.
+
+    Returns 
+    -------
+    str
+        string representing all opacities.
+    """
     cdef int out_len
     cdef void *out_cp
     rad_pxd.radtran_opacities2yaml_wrapper_1(&self._ptr, &out_len, &out_cp)
