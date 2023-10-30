@@ -76,8 +76,28 @@ cdef extern void adiabatclimate_rh_set(void *ptr, int *dim1, double *val)
 
 cdef extern void adiabatclimate_ocean_args_p_set(void *ptr, void *p)
 
+cdef extern void adiabatclimate_tidally_locked_dayside_get(void *ptr, bool *val)
+cdef extern void adiabatclimate_tidally_locked_dayside_set(void *ptr, bool *val)
+
+cdef extern void adiabatclimate_l_get(void *ptr, double *val)
+cdef extern void adiabatclimate_l_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_chi_get(void *ptr, double *val)
+cdef extern void adiabatclimate_chi_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_n_lw_get(void *ptr, double *val)
+cdef extern void adiabatclimate_n_lw_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_cd_get(void *ptr, double *val)
+cdef extern void adiabatclimate_cd_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_surface_heat_flow_get(void *ptr, double *val)
+cdef extern void adiabatclimate_surface_heat_flow_set(void *ptr, double *val)
+
 cdef extern void adiabatclimate_species_names_get_size(void *ptr, int *dim1)
 cdef extern void adiabatclimate_species_names_get(void *ptr, int *dim1, char* species_names)
+
+cdef extern void adiabatclimate_rad_get(void *ptr, void *ptr1)
 
 cdef extern void adiabatclimate_rtol_get(void *ptr, double *val)
 cdef extern void adiabatclimate_rtol_set(void *ptr, double *val)
@@ -121,21 +141,5 @@ cdef extern void adiabatclimate_n_surface_get(void *ptr, int *dim1, double *arr)
 cdef extern void adiabatclimate_n_ocean_get_size(void *ptr, int *dim1, int *dim2)
 cdef extern void adiabatclimate_n_ocean_get(void *ptr, int *dim1, int *dim2, double *arr)
 
-cdef extern void adiabatclimate_tidally_locked_dayside_get(void *ptr, bool *val)
-cdef extern void adiabatclimate_tidally_locked_dayside_set(void *ptr, bool *val)
-
-cdef extern void adiabatclimate_l_get(void *ptr, double *val)
-cdef extern void adiabatclimate_l_set(void *ptr, double *val)
-
-cdef extern void adiabatclimate_chi_get(void *ptr, double *val)
-cdef extern void adiabatclimate_chi_set(void *ptr, double *val)
-
-cdef extern void adiabatclimate_n_lw_get(void *ptr, double *val)
-cdef extern void adiabatclimate_n_lw_set(void *ptr, double *val)
-
-cdef extern void adiabatclimate_cd_get(void *ptr, double *val)
-cdef extern void adiabatclimate_cd_set(void *ptr, double *val)
-
-cdef extern void adiabatclimate_rad_get(void *ptr, void *ptr1)
 
 

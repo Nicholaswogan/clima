@@ -550,6 +550,114 @@ subroutine adiabatclimate_ocean_args_p_set(ptr, p) bind(c)
   c%ocean_args_p = p
 end subroutine
 
+subroutine adiabatclimate_tidally_locked_dayside_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  logical(c_bool), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%tidally_locked_dayside
+end subroutine
+
+subroutine adiabatclimate_tidally_locked_dayside_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  logical(c_bool), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%tidally_locked_dayside = val
+end subroutine
+
+subroutine adiabatclimate_l_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%L
+end subroutine
+
+subroutine adiabatclimate_l_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%L = val
+end subroutine
+
+subroutine adiabatclimate_chi_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%chi
+end subroutine
+
+subroutine adiabatclimate_chi_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%chi = val
+end subroutine
+
+subroutine adiabatclimate_n_lw_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%n_LW
+end subroutine
+
+subroutine adiabatclimate_n_lw_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%n_LW = val
+end subroutine
+
+subroutine adiabatclimate_cd_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%Cd
+end subroutine
+
+subroutine adiabatclimate_cd_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%Cd = val
+end subroutine
+
+subroutine adiabatclimate_surface_heat_flow_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%surface_heat_flow
+end subroutine
+
+subroutine adiabatclimate_surface_heat_flow_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%surface_heat_flow = val
+end subroutine
+
 subroutine adiabatclimate_species_names_get_size(ptr, dim1) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr
@@ -577,6 +685,15 @@ subroutine adiabatclimate_species_names_get(ptr, dim1, species_names) bind(c)
   enddo
   species_names(dim1*s_str_len+1) = c_null_char
   
+end subroutine
+
+subroutine adiabatclimate_rad_get(ptr, ptr1) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), intent(out) :: ptr1
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  ptr1 = c_loc(c%rad)
 end subroutine
 
 subroutine adiabatclimate_rtol_get(ptr, val) bind(c)
@@ -832,103 +949,4 @@ subroutine adiabatclimate_densities_get(ptr, dim1, dim2, arr) bind(c)
   type(AdiabatClimate), pointer :: c
   call c_f_pointer(ptr, c)
   arr = c%densities
-end subroutine
-
-subroutine adiabatclimate_tidally_locked_dayside_get(ptr, val) bind(c)
-  use clima, only: AdiabatClimate
-  type(c_ptr), intent(in) :: ptr
-  logical(c_bool), intent(out) :: val
-  type(AdiabatClimate), pointer :: c
-  call c_f_pointer(ptr, c)
-  val = c%tidally_locked_dayside
-end subroutine
-
-subroutine adiabatclimate_tidally_locked_dayside_set(ptr, val) bind(c)
-  use clima, only: AdiabatClimate
-  type(c_ptr), intent(in) :: ptr
-  logical(c_bool), intent(in) :: val
-  type(AdiabatClimate), pointer :: c
-  call c_f_pointer(ptr, c)
-  c%tidally_locked_dayside = val
-end subroutine
-
-subroutine adiabatclimate_l_get(ptr, val) bind(c)
-  use clima, only: AdiabatClimate
-  type(c_ptr), intent(in) :: ptr
-  real(c_double), intent(out) :: val
-  type(AdiabatClimate), pointer :: c
-  call c_f_pointer(ptr, c)
-  val = c%L
-end subroutine
-
-subroutine adiabatclimate_l_set(ptr, val) bind(c)
-  use clima, only: AdiabatClimate
-  type(c_ptr), intent(in) :: ptr
-  real(c_double), intent(in) :: val
-  type(AdiabatClimate), pointer :: c
-  call c_f_pointer(ptr, c)
-  c%L = val
-end subroutine
-
-subroutine adiabatclimate_chi_get(ptr, val) bind(c)
-  use clima, only: AdiabatClimate
-  type(c_ptr), intent(in) :: ptr
-  real(c_double), intent(out) :: val
-  type(AdiabatClimate), pointer :: c
-  call c_f_pointer(ptr, c)
-  val = c%chi
-end subroutine
-
-subroutine adiabatclimate_chi_set(ptr, val) bind(c)
-  use clima, only: AdiabatClimate
-  type(c_ptr), intent(in) :: ptr
-  real(c_double), intent(in) :: val
-  type(AdiabatClimate), pointer :: c
-  call c_f_pointer(ptr, c)
-  c%chi = val
-end subroutine
-
-subroutine adiabatclimate_n_lw_get(ptr, val) bind(c)
-  use clima, only: AdiabatClimate
-  type(c_ptr), intent(in) :: ptr
-  real(c_double), intent(out) :: val
-  type(AdiabatClimate), pointer :: c
-  call c_f_pointer(ptr, c)
-  val = c%n_LW
-end subroutine
-
-subroutine adiabatclimate_n_lw_set(ptr, val) bind(c)
-  use clima, only: AdiabatClimate
-  type(c_ptr), intent(in) :: ptr
-  real(c_double), intent(in) :: val
-  type(AdiabatClimate), pointer :: c
-  call c_f_pointer(ptr, c)
-  c%n_LW = val
-end subroutine
-
-subroutine adiabatclimate_cd_get(ptr, val) bind(c)
-  use clima, only: AdiabatClimate
-  type(c_ptr), intent(in) :: ptr
-  real(c_double), intent(out) :: val
-  type(AdiabatClimate), pointer :: c
-  call c_f_pointer(ptr, c)
-  val = c%Cd
-end subroutine
-
-subroutine adiabatclimate_cd_set(ptr, val) bind(c)
-  use clima, only: AdiabatClimate
-  type(c_ptr), intent(in) :: ptr
-  real(c_double), intent(in) :: val
-  type(AdiabatClimate), pointer :: c
-  call c_f_pointer(ptr, c)
-  c%Cd = val
-end subroutine
-
-subroutine adiabatclimate_rad_get(ptr, ptr1) bind(c)
-  use clima, only: AdiabatClimate
-  type(c_ptr), intent(in) :: ptr
-  type(c_ptr), intent(out) :: ptr1
-  type(AdiabatClimate), pointer :: c
-  call c_f_pointer(ptr, c)
-  ptr1 = c_loc(c%rad)
 end subroutine

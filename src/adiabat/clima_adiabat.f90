@@ -36,6 +36,19 @@ module clima_adiabat
     type(OceanFunction), allocatable :: ocean_fcns(:)
     !> A c-ptr which will be passed to each ocean solubility function.
     type(c_ptr) :: ocean_args_p = c_null_ptr
+
+    ! Heat re-distribution terms for Equation (10) in Koll (2020), ApJ when
+    ! considering tidally locked planets. Default values are from the paper.
+    !> If true, then will attempt to compute the climate corresponding to the
+    !> observed dayside temperature of a tidally locked planet.
+    logical :: tidally_locked_dayside = .false.
+    real(dp) :: L !! = planet radius. Circulation’s horizontal scale (cm)
+    real(dp) :: chi = 0.2_dp !! Heat engine efficiency term (no units)
+    real(dp) :: n_LW = 2.0_dp !! = 1 or 2 (no units)
+    real(dp) :: Cd = 1.9e-3_dp !! Drag coefficient (no units)
+
+    !> Heat flow from the surface into the atmosphere (mW/m^2)
+    real(dp) :: surface_heat_flow = 0.0_dp
     
     ! planet properties
     real(dp) :: planet_mass !! (g)
@@ -71,16 +84,6 @@ module clima_adiabat
     !> reservoir of gas dissolved in oceans in mol/cm^2 (ng, ng). There can be multiple oceans.
     !> The gases dissolved in ocean made of species 1 is given by `N_ocean(:,1)`.
     real(dp), allocatable :: N_ocean(:,:) 
-
-    ! Heat re-distribution terms for Equation (10) in Koll (2020), ApJ when
-    ! considering tidally locked planets. Default values are from the paper.
-    !> If true, then will attempt to compute the climate corresponding to the
-    !> observed dayside temperature of a tidally locked planet.
-    logical :: tidally_locked_dayside = .false.
-    real(dp) :: L !! = planet radius. Circulation’s horizontal scale (cm)
-    real(dp) :: chi = 0.2_dp !! Heat engine efficiency term (no units)
-    real(dp) :: n_LW = 2.0_dp !! = 1 or 2 (no units)
-    real(dp) :: Cd = 1.9e-3_dp !! Drag coefficient (no units)
     
   contains
     ! Constructs atmospheres
@@ -519,7 +522,7 @@ contains
         ! observed dayside.
         rad_enhancement = 4.0_dp*f_term
       endblock; endif
-      fvec_(1) = ISR*rad_enhancement - OLR
+      fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
 
       if (self%solve_for_T_trop) then; block
         use clima_eqns, only: skin_temperature
@@ -604,7 +607,7 @@ contains
         ! observed dayside.
         rad_enhancement = 4.0_dp*f_term
       endblock; endif
-      fvec_(1) = ISR*rad_enhancement - OLR
+      fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
 
       if (self%solve_for_T_trop) then; block
         use clima_eqns, only: skin_temperature
@@ -692,7 +695,7 @@ contains
         ! observed dayside.
         rad_enhancement = 4.0_dp*f_term
       endblock; endif
-      fvec_(1) = ISR*rad_enhancement - OLR
+      fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
 
       if (self%solve_for_T_trop) then; block
         use clima_eqns, only: skin_temperature
