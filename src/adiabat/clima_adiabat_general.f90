@@ -420,6 +420,11 @@ contains
     call integrate(d, err)
     if (allocated(err)) return
 
+    if (any(z < 0.0_dp)) then
+      err = '"make_profile" yielded negative altitudes.'
+      return
+    endif
+
   end subroutine
 
   subroutine integrate(d, err)
