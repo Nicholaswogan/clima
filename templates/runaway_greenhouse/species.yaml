@@ -55,4 +55,42 @@ species:
     data:
     - [26.09, 8.22, -1.98, 0.16, 0.04, -7.99, 221.02]
   note: From the NIST database
+- name: H2
+  composition: {H: 2}
+  thermo:
+    model: Shomate
+    temperature-ranges: [0.0, 1000.0, 2500.0, 6000.0]
+    data:
+    - [33.066178, -11.36342, 11.432816, -2.772874, -0.158558, -9.980797,
+      172.708]
+    - [18.563083, 12.257357, -2.859786, 0.268238, 1.97799, -1.147438, 156.2881]
+    - [43.41356, -4.293079, 1.272428, -0.096876, -20.53386, -38.51515, 162.0814]
+  note: From the NIST database
+- name: CH4
+  composition: {C: 1, H: 4}
+  thermo:
+    model: Shomate
+    temperature-ranges: [0.0, 1300.0, 6000.0]
+    data:
+    - [-0.703029, 108.4773, -42.52157, 5.862788, 0.678565, -76.84376, 158.7163]
+    - [85.81217, 11.26467, -2.114146, 0.13819, -26.42221, -153.5327, 224.4143]
+  note: From the NIST database
+- name: CO
+  composition: {C: 1, O: 1}
+  thermo:
+    model: Shomate
+    temperature-ranges: [0.0, 1300.0, 6000.0]
+    data:
+    - [25.56759, 6.09613, 4.054656, -2.671301, 0.131021, -118.0089, 227.3665]
+    - [35.1507, 1.300095, -0.205921, 0.01355, -3.28278, -127.8375, 231.712]
+  note: From the NIST database
+- name: O2
+  composition: {O: 2}
+  thermo:
+    model: Shomate
+    temperature-ranges: [0.0, 6000.0]
+    data:
+    - [29.659, 6.137261, -1.186521, 0.09578, -0.219663, -9.861391, 237.948]
+  note: From the NIST database
+
 

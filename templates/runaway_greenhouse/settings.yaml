@@ -3,8 +3,8 @@ atmosphere-grid:
   number-of-layers: 100 # number of atmospheric layers
   
 planet:
-  planet-mass: 5.972e27 # grams
-  planet-radius: 6.371e8 # cm
+  planet-mass: 5.972e27 # Earth mass (grams)
+  planet-radius: 6.371e8 # Earth radius (cm)
   number-of-zenith-angles: 4 # number of zenith angles to integrate over. 
   surface-albedo: 0.25
   # Optionally include `photon-scale-factor`. The stellar flux
@@ -33,29 +33,11 @@ optical-properties:
     # Here you specify opacites. You can see avaliable opacities by looking in
     # `clima/data/` folder. `CIA`, `rayleigh`, `photolysis-xs` and `water-continuum`
     # are optional. If you omit these keys then these opacities will not be included.
-    # `k-distributions` is the only required key. For most keys you can optionally 
-    # do `k-distributions: true`, which will activate all possible opacities in that
-    # category.
-    opacities:
-      # k-distributions
-      k-distributions: [H2O, CO2]
-
-      # CIA opacities
-      CIA: [CO2-CO2, N2-N2]
-
-      # Rayleigh scattering.
-      rayleigh: [H2O, CO2, N2]
-
-      # Potolysis cross sections.
-      photolysis-xs: false
-
-      # MT_CKD H2O continuum.
-      water-continuum: MT_CKD 
+    # `k-distributions` is the only required key. The simplest way to set opacities
+    # is to just to turn them `on`, as shown below, which will use all available 
+    # opacities
+    opacities: {k-distributions: on, CIA: on, rayleigh: on}
   solar:
     k-method: RandomOverlapResortRebin
     number-of-bins: 32
-    opacities:
-      k-distributions: [H2O, CO2]
-      CIA: [CO2-CO2, N2-N2]
-      rayleigh: [H2O, CO2, N2]
-      water-continuum: MT_CKD
+    opacities: {k-distributions: on, CIA: on, rayleigh: on}
