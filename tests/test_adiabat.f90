@@ -11,8 +11,8 @@ program test
   integer :: i
   procedure(ocean_solubility_fcn), pointer :: ocean_fcn_ptr
   
-  c = AdiabatClimate('../templates/runaway_greenhouse/species.yaml', &
-                     '../templates/runaway_greenhouse/settings.yaml', &
+  c = AdiabatClimate('../templates/AdiabatClimate/species.yaml', &
+                     '../templates/AdiabatClimate/Earth/settings.yaml', &
                      '../templates/ModernEarth/Sun_now.txt', &
                      '../clima/data', &
                      err)
