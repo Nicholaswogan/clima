@@ -421,7 +421,8 @@ contains
     if (allocated(err)) return
 
     if (any(z < 0.0_dp)) then
-      err = '"make_profile" yielded negative altitudes.'
+      err = '"make_profile" yielded negative altitudes. '// &
+            'This may be caused by the lack of a hydrostatic solution to the entered atmosphere.'
       return
     endif
 
