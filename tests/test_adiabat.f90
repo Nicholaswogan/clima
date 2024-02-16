@@ -15,7 +15,7 @@ program test
                      '../templates/AdiabatClimate/Earth/settings.yaml', &
                      '../templates/ModernEarth/Sun_now.txt', &
                      '../clima/data', &
-                     err)
+                     err=err)
   if (allocated(err)) then
     print*,err
     stop 1
