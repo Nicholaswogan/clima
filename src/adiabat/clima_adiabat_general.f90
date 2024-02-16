@@ -122,7 +122,6 @@ contains
     real(dp) :: grav
     real(dp), allocatable :: P_av(:), T_av(:), density_av(:), f_i_av(:,:), dz(:)
     real(dp), allocatable :: N_i(:), P_i(:)
-    integer, allocatable :: sp_type(:)
 
     type(MinpackHybrd1Vars) :: mv
     real(dp), parameter :: scale_factors(*) = [1.0_dp, 0.5_dp, 2.0_dp, 0.1_dp, 5.0_dp, 0.01_dp] !! Scalings for root solve guessing
@@ -134,7 +133,6 @@ contains
     ! allocate some work memory
     allocate(P_av(nz), T_av(nz), density_av(nz), f_i_av(nz,sp%ng), dz(nz))
     allocate(N_i(sp%ng), P_i(sp%ng))
-    allocate(sp_type(sp%ng))
     
     ! gravity at the surface
     grav = gravity(planet_radius, planet_mass, 0.0_dp)

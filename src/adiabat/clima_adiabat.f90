@@ -60,6 +60,13 @@ module clima_adiabat
     
     ! Radiative transfer
     type(Radtran) :: rad
+    logical :: double_radiative_grid
+    integer :: nz_r
+    ! Work space for radiative transfer
+    real(dp), allocatable :: T_r(:)
+    real(dp), allocatable :: P_r(:)
+    real(dp), allocatable :: densities_r(:,:)
+    real(dp), allocatable :: dz_r(:)
 
     ! tolerances
     !> Relative tolerance of integration
@@ -104,6 +111,9 @@ module clima_adiabat
     procedure :: out2atmosphere_txt => AdiabatClimate_out2atmosphere_txt
     ! For tidally locked planets
     procedure :: heat_redistribution_parameters => AdiabatClimate_heat_redistribution_parameters
+
+    ! Private methods
+    procedure, private :: copy_atm_to_radiative_grid => AdiabatClimate_copy_atm_to_radiative_grid
   end type
   
   interface AdiabatClimate
@@ -112,12 +122,13 @@ module clima_adiabat
   
 contains
   
-  function create_AdiabatClimate(species_f, settings_f, star_f, data_dir, err) result(c)
+  function create_AdiabatClimate(species_f, settings_f, star_f, data_dir, double_radiative_grid, err) result(c)
     use clima_types, only: ClimaSettings 
     character(*), intent(in) :: species_f !! Species yaml file
     character(*), intent(in) :: settings_f !! Settings yaml file
     character(*), intent(in) :: star_f !! Star text file
     character(*), intent(in) :: data_dir !! Directory with radiative transfer data
+    logical, optional, intent(in) :: double_radiative_grid
     character(:), allocatable, intent(out) :: err
     
     type(AdiabatClimate) :: c
@@ -174,10 +185,21 @@ contains
       err = '"surface-albedo" is missing from file "'//settings_f//'"'
       return
     endif
-    
+
+    if (present(double_radiative_grid)) then
+      c%double_radiative_grid = double_radiative_grid
+    else
+      c%double_radiative_grid = .true.
+    endif
+    if (c%double_radiative_grid) then
+      c%nz_r = c%nz*2
+    else
+      c%nz_r = c%nz
+    endif
+    allocate(c%T_r(c%nz_r),c%P_r(c%nz_r),c%densities_r(c%nz_r,c%sp%ng),c%dz_r(c%nz_r))
     ! Make radiative transfer with list of species, from species file
     ! and the optical-properties from the settings file
-    c%rad = Radtran(c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz, data_dir, err)
+    c%rad = Radtran(c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz_r, data_dir, err)
     if (allocated(err)) return
 
     ! allocate ocean functions
@@ -378,6 +400,34 @@ contains
       fvec_(1) = self%P_surf - P_surf
     end subroutine
   end subroutine
+
+  !> Copies the atmosphere to the data used for radiative transfer
+  subroutine AdiabatClimate_copy_atm_to_radiative_grid(self)
+    class(AdiabatClimate), intent(inout) :: self
+    integer :: i
+
+    if (self%double_radiative_grid) then
+      do i = 1,self%nz
+        self%T_r(2*(i-1)+1) = self%T(i)
+        self%T_r(2*(i-1)+2) = self%T(i)
+
+        self%P_r(2*(i-1)+1) = self%P(i)
+        self%P_r(2*(i-1)+2) = self%P(i)
+
+        self%densities_r(2*(i-1)+1,:) = self%densities(i,:)
+        self%densities_r(2*(i-1)+2,:) = self%densities(i,:)
+
+        self%dz_r(2*(i-1)+1) = 0.5_dp*self%dz(i)
+        self%dz_r(2*(i-1)+2) = 0.5_dp*self%dz(i)
+      enddo
+    else
+      self%T_r = self%T
+      self%P_r = self%P
+      self%densities_r = self%densities
+      self%dz_r = self%dz
+    endif
+
+  end subroutine
   
   !> Calls `make_profile`, then does radiative transfer on the constructed atmosphere
   subroutine AdiabatClimate_TOA_fluxes(self, T_surf, P_i_surf, ISR, OLR, err)
@@ -398,7 +448,8 @@ contains
     endif
     
     ! Do radiative transfer
-    call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
+    call self%copy_atm_to_radiative_grid()
+    call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
     
   end subroutine
@@ -422,7 +473,8 @@ contains
     endif
     
     ! Do radiative transfer
-    call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
+    call self%copy_atm_to_radiative_grid()
+    call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
 
   end subroutine
@@ -448,7 +500,8 @@ contains
     endif
     
     ! Do radiative transfer
-    call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
+    call self%copy_atm_to_radiative_grid()
+    call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
     
   end subroutine
@@ -528,7 +581,7 @@ contains
         use clima_eqns, only: skin_temperature
         real(dp) :: bond_albedo, stellar_radiation
         integer :: i
-        bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
+        bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
         stellar_radiation = 0.0_dp
         do i = 1,self%rad%sol%nw
           stellar_radiation = stellar_radiation + self%rad%photons_sol(i)*(self%rad%sol%freq(i) - self%rad%sol%freq(i+1))
@@ -613,7 +666,7 @@ contains
         use clima_eqns, only: skin_temperature
         real(dp) :: bond_albedo, stellar_radiation
         integer :: i
-        bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
+        bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
         stellar_radiation = 0.0_dp
         do i = 1,self%rad%sol%nw
           stellar_radiation = stellar_radiation + self%rad%photons_sol(i)*(self%rad%sol%freq(i) - self%rad%sol%freq(i+1))
@@ -701,7 +754,7 @@ contains
         use clima_eqns, only: skin_temperature
         real(dp) :: bond_albedo, stellar_radiation
         integer :: i
-        bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
+        bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
         stellar_radiation = 0.0_dp
         do i = 1,self%rad%sol%nw
           stellar_radiation = stellar_radiation + self%rad%photons_sol(i)*(self%rad%sol%freq(i) - self%rad%sol%freq(i+1))
@@ -892,7 +945,7 @@ contains
     real(dp) ::  cp_tmp, cp
 
     ! equilibrium temperature
-    bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
+    bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
     Teq = self%rad%equilibrium_temperature(bond_albedo)
     
     ! gravity
