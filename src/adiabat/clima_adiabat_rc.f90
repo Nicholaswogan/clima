@@ -1,47 +1,44 @@
-module clima_adiabat_general
+module clima_adiabat_rc
   use clima_const, only: dp
   use clima_types, only: Species
   use dop853_module, only: dop853_class
   use futils, only: brent_class
   use clima_eqns, only: ocean_solubility_fcn
+  use clima_adiabat_general, only: OceanFunction, DrySpeciesType, CondensingSpeciesType
+  use linear_interpolation_module, only: linear_interp_1d
   implicit none
-  private
 
-  public :: make_profile, make_column
-  public :: OceanFunction
-  public :: DrySpeciesType, CondensingSpeciesType
-
-  type :: OceanFunction
-    procedure(ocean_solubility_fcn), nopass, pointer :: fcn => null()
-  end type
-
-  type :: AdiabatProfileData
-    !> Input data
+  type :: AdiabatRCProfileData
+    ! Input data
+    real(dp), pointer :: T_surf
     type(Species), pointer :: sp
+    integer, pointer :: nz
     real(dp), pointer :: planet_mass
     real(dp), pointer :: planet_radius
     real(dp), pointer :: P_top
-    real(dp), pointer :: T_trop
     real(dp), pointer :: RH(:)
-    real(dp), pointer :: T_surf
     real(dp), pointer :: rtol
     real(dp), pointer :: atol
-    !> Ouput
+    ! Ouput
     real(dp), pointer :: P(:)
     real(dp), pointer :: z(:)
-    real(dp), pointer :: T(:)
     real(dp), pointer :: f_i(:,:)
-    real(dp), pointer :: P_trop
+    real(dp), pointer :: lapse_rate(:)
+
+    ! For interpolating the input T profile.
+    type(linear_interp_1d) :: T
+    real(dp), allocatable :: P_interp(:)
+    real(dp), allocatable :: T_interp(:)
 
     real(dp) :: P_surf !! surface pressure from inputs
 
     !> indicates whether species is dry or condensing (length ng)
     integer, allocatable :: sp_type(:)
-    integer :: stopping_reason !! Reason why we stop integration (see enum below)
-    !> Index of gas that reached saturation if stopping_reason == ReachedGasSaturation
-    integer :: ind_gas_reached_saturation
+    integer :: stopping_reason !! Reason why we stop integration
+    !> Index of root
+    integer :: ind_root
 
-    !> Work space for root finding. All length (ng+1)
+    !> Work space for root finding. All length (ng)
     real(dp), allocatable :: gout(:)
     real(dp), allocatable :: gout_old(:)
     real(dp), allocatable :: gout_tmp(:)
@@ -49,236 +46,81 @@ module clima_adiabat_general
     real(dp), allocatable :: P_roots(:)
     !> When we find a root, and exit integration, these
     !> guys will give use the root
-    real(dp) :: P_root 
-    real(dp) :: u_root(2)
+    real(dp) :: P_root  = huge(1.0_dp)
+    real(dp) :: u_root(1)
+    real(dp) :: epsj = 1.0e-8
 
     !> Keeps track of how the dry atmosphere is partitioned
     !> between different species
     real(dp), allocatable :: f_i_dry(:)
 
-    !> index for saving T, z and mixing ratios
+    !> index for saving z, mixing ratios, and lapse rate
     integer :: j
 
-    !> work variables. All dimension (ng)
+    ! work variables. All dimension (ng)
     real(dp), allocatable :: P_i_cur(:)
     real(dp), allocatable :: f_i_cur(:)
     real(dp), allocatable :: cp_i_cur(:)
     real(dp), allocatable :: L_i_cur(:)
-    
+
     !> This helps us propogate error messages outside of the integration
     character(:), allocatable :: err
-    
+
   end type
 
   ! stopping_reason
   enum, bind(c)
-    enumerator :: ReachedPtop, ReachedTropopause, ReachedGasSaturation
+    enumerator :: ReachedPtop, ReachedRoot
   end enum
 
-  ! sp_type
-  enum, bind(c)
-    enumerator :: DrySpeciesType, CondensingSpeciesType
-  end enum
-
-  type, extends(dop853_class) :: dop853_custom
-    type(AdiabatProfileData), pointer :: d => NULL()
+  type, extends(dop853_class) :: dop853_rc
+    type(AdiabatRCProfileData), pointer :: d => NULL()
   end type
 
 contains
 
-  subroutine make_column(T_surf, N_i_surf, &
-                         sp, nz, planet_mass, &
-                         planet_radius, P_top, T_trop, RH, &
-                         rtol, atol, tol_make_column, &
-                         ocean_fcns, args_p, &
-                         use_P_guess, P_guess, &
-                         P, z, T, f_i, P_trop, &
-                         N_surface, N_ocean, &
-                         err)
-    use minpack_module, only: hybrd1
-    use clima_useful, only: MinpackHybrd1Vars
-    use clima_eqns, only: gravity, ocean_solubility_fcn
-    use clima_const, only: k_boltz, N_avo
-    use iso_c_binding, only: c_ptr
-    real(dp), target, intent(in) :: T_surf !! K
-    real(dp), intent(in) :: N_i_surf(:) !! (ng) moles/cm^2
+  ! inputs: P_i_surf, T_surf, T in each grid cell, P_top, planet_mass, planet_radius, nz, sp, ocean_fcns
+  !         indexes where convection is occuring
 
-    type(Species), target, intent(inout) :: sp
-    integer, intent(in) :: nz
-    real(dp), target, intent(in) :: planet_mass, planet_radius
-    real(dp), target, intent(in) :: P_top, T_trop, RH(:)
-    real(dp), target, intent(in) :: rtol, atol, tol_make_column
-    type(OceanFunction), intent(in) :: ocean_fcns(:)
-    type(c_ptr), value, intent(in) :: args_p
-    logical, intent(in) :: use_P_guess
-    real(dp), intent(inout) :: P_guess(:)
-    real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
-    real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
-    real(dp), target, intent(out) :: P_trop
-    real(dp), target, intent(out) :: N_surface(:) ! (ng)
-    real(dp), target, intent(out) :: N_ocean(:,:) ! (ng,ng)
-    character(:), allocatable, intent(out) :: err
+  ! outputs: Pressure, mixing ratios, z, lapse rate everywhere
 
-    integer :: i, j, ii
-    real(dp) :: grav
-    real(dp), allocatable :: P_av(:), T_av(:), density_av(:), f_i_av(:,:), dz(:)
-    real(dp), allocatable :: N_i(:), P_i(:)
-
-    type(MinpackHybrd1Vars) :: mv
-    real(dp), parameter :: scale_factors(*) = [1.0_dp, 0.5_dp, 2.0_dp, 0.1_dp, 5.0_dp, 0.01_dp] !! Scalings for root solve guessing
-
-    ! allocate memory for minpack
-    mv = MinpackHybrd1Vars(n=sp%ng, tol=tol_make_column)
-    mv%info = 0
-
-    ! allocate some work memory
-    allocate(P_av(nz), T_av(nz), density_av(nz), f_i_av(nz,sp%ng), dz(nz))
-    allocate(N_i(sp%ng), P_i(sp%ng))
-    
-    ! gravity at the surface
-    grav = gravity(planet_radius, planet_mass, 0.0_dp)
-
-    ! First, if a initial guess is provided, then we try it
-    if (use_P_guess) then
-      if (size(P_guess) /= sp%ng) then
-        err = 'make_column: Input "P_guess" has the wrong shape'
-        return
-      endif
-      do i = 1,mv%n
-        mv%x(i) = log10(max(P_guess(i),sqrt(tiny(1.0_dp))))
-      enddo
-      ! Attempt the root solve
-      call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
-    endif
-
-    ! If the initial guess fails, or if an initial guess is not provided
-    ! then we try to solve anyway using a variety of initial guesses.
-    if (mv%info /= 1) then
-      do ii = 1,size(scale_factors)
-
-        ! Initial guess will be crude conversion of moles/cm2 (column) to 
-        ! to dynes/cm2 (pressure). I try a few different `scale_factors` 
-        ! to this guess.
-        do i = 1,mv%n
-          mv%x(i) = log10(max(N_i_surf(i)*sp%g(i)%mass*grav*scale_factors(ii), sqrt(tiny(1.0_dp))))
-        enddo
-
-        ! Attempt the root solve
-        call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
-        if (mv%info == 1) then
-          ! Success, so we exit.
-          exit
-        endif
-
-      enddo
-    endif
-
-    ! If all attempted solves fail, then an error is thown.
-    if (mv%info == 0 .or. mv%info > 1) then
-      err = 'hybrd1 root solve failed in make_column.'
-      return
-    elseif (mv%info < 0) then
-      err = 'hybrd1 root solve failed in make_column: '//err
-      return
-    endif
-
-    ! call one more time with solution
-    call fcn(mv%n, mv%x, mv%fvec, mv%info)
-    P_guess = 10.0**mv%x
-
-  contains
-    subroutine fcn(n_, x_, fvec_, iflag_)
-      use ieee_arithmetic, only: ieee_positive_inf, ieee_value
-      integer, intent(in) :: n_
-      real(dp), intent(in) :: x_(n_)
-      real(dp), intent(out) :: fvec_(n_)
-      integer, intent(inout) :: iflag_
-
-      P_i(:) = 10.0_dp**x_(:)
-      if (any(P_i == ieee_value(1.0_dp, ieee_positive_inf))) then
-        err = 'ininity values were encountered.'
-        iflag_ = -1
-        return
-      endif
-      call make_profile(T_surf, P_i, &
-                        sp, nz, planet_mass, &
-                        planet_radius, P_top, T_trop, RH, &
-                        rtol, atol, &
-                        ocean_fcns, args_p, &
-                        P, z, T, f_i, P_trop, &
-                        N_surface, N_ocean, &
-                        err)
-      if (allocated(err)) then
-        iflag_ = -1
-        return
-      endif
-
-      ! Compute the columns by splitting grid into cells
-      do i = 1,nz
-        P_av(i) = P(2*i)
-        T_av(i) = T(2*i)
-        dz(i) = z(2*i+1) - z(2*i-1)
-        do j = 1,sp%ng
-          f_i_av(i,j) = f_i(2*i,j)
-        enddo
-      enddo
-      density_av = P_av/(k_boltz*T_av)
-      do i = 1,sp%ng
-        ! mol/cm^2 in atmosphere
-        N_i(i) = sum(density_av*f_i_av(:,i)*dz)/N_avo
-      enddo
-
-      ! Add mol/cm^2 condensed on the surface
-      N_i(:) = N_i(:) + N_surface(:)
-
-      ! Add mol/cm^2 dissolved in an ocean
-      do i = 1,sp%ng
-        N_i(:) = N_i(:) + N_ocean(:,i)
-      enddo
-
-      ! residual
-      fvec_(:) = N_i - N_i_surf
-
-    end subroutine
-  end subroutine
-
-  subroutine make_profile(T_surf, P_i_surf, &
-                          sp, nz, planet_mass, &
-                          planet_radius, P_top, T_trop, RH, &
-                          rtol, atol, &
-                          ocean_fcns, args_p, &
-                          P, z, T, f_i, P_trop, &
-                          N_surface, N_ocean, &
-                          err)
+  subroutine make_profile_rc(T_surf, T, P_i_surf, &
+                             sp, nz, planet_mass, &
+                             planet_radius, P_top, RH, &
+                             rtol, atol, &
+                             ocean_fcns, args_p, &
+                             P, z, f_i, lapse_rate, &
+                             N_surface, N_ocean, &
+                             err)
     use futils, only: linspace
     use clima_eqns, only: gravity, ocean_solubility_fcn
     use iso_c_binding, only: c_ptr
 
     real(dp), target, intent(in) :: T_surf !! K
+    real(dp), target, intent(in) :: T(:) !! (nz)
     real(dp), intent(in) :: P_i_surf(:) !! (ng) dynes/cm2
 
     type(Species), target, intent(inout) :: sp
-    integer, intent(in) :: nz
+    integer, target, intent(in) :: nz
     real(dp), target, intent(in) :: planet_mass, planet_radius
-    real(dp), target, intent(in) :: P_top, T_trop, RH(:)
+    real(dp), target, intent(in) :: P_top, RH(:)
     real(dp), target, intent(in) :: rtol, atol
     type(OceanFunction), intent(in) :: ocean_fcns(:)
     type(c_ptr), value, intent(in) :: args_p
 
-    real(dp), target, intent(out) :: P(:), z(:), T(:) ! (ng)
-    real(dp), target, intent(out) :: f_i(:,:) ! (nz,ng)
-    real(dp), target, intent(out) :: P_trop !! Tropopause pressure (dynes/cm^2). 
-                                            !! Value is negative if no tropopause is found.
+    real(dp), target, intent(out) :: P(:), z(:)
+    real(dp), target, intent(out) :: f_i(:,:)
+    real(dp), target, intent(out) :: lapse_rate(:)
     real(dp), target, intent(out) :: N_surface(:), N_ocean(:,:)
     character(:), allocatable, intent(out) :: err
 
-    type(AdiabatProfileData) :: d
-    integer :: i, j
+    type(AdiabatRCProfileData) :: d
+    integer :: i, j, ierr
     real(dp) :: P_sat, grav, P_surface_inventory
 
     ! check inputs
-    if (T_surf < T_trop) then
-      err = 'make_profile: Input "T_surf" is less than input "T_trop"'
+    if (size(T) /= nz) then
+      err = 'make_profile: Input "T" has the wrong shape'
       return
     endif
     if (any(P_i_surf < 0.0_dp)) then
@@ -287,10 +129,6 @@ contains
     endif
     if (size(P_i_surf) /= sp%ng) then
       err = 'make_profile: Input "P_i_surf" has the wrong shape'
-      return
-    endif
-    if (T_trop < 0.0_dp) then
-      err = 'make_profile: Input "T_trop" is less than 0'
       return
     endif
     if (size(RH) /= sp%ng) then
@@ -305,12 +143,12 @@ contains
       err = 'make_profile: Input "z" has the wrong shape'
       return
     endif
-    if (size(T) /= 2*nz+1) then
-      err = 'make_profile: Input "T" has the wrong shape'
-      return
-    endif
     if (size(f_i, 1) /= 2*nz+1 .or. size(f_i, 2) /= sp%ng) then
       err = 'make_profile: Input "f_i" has the wrong shape'
+      return
+    endif
+    if (size(lapse_rate) /= 2*nz+1) then
+      err = 'make_profile: Input "lapse_rate" has the wrong shape'
       return
     endif
     if (size(N_surface) /= sp%ng) then
@@ -324,28 +162,28 @@ contains
 
     ! associate
     ! inputs
+    d%T_surf => T_surf
     d%sp => sp
+    d%nz => nz
     d%planet_mass => planet_mass
     d%planet_radius => planet_radius
     d%P_top => P_top
-    d%T_trop => T_trop
     d%RH => RH
-    d%T_surf => T_surf
     d%rtol => rtol
     d%atol => atol
     ! outputs
     d%P => P
     d%z => z
-    d%T => T
     d%f_i => f_i
-    d%P_trop => P_trop
-    ! allocate
+    d%lapse_rate => lapse_rate
+
+    ! allocate work memory
     allocate(d%sp_type(sp%ng))
-    allocate(d%gout(sp%ng+1))
-    allocate(d%gout_old(sp%ng+1))
-    allocate(d%gout_tmp(sp%ng+1))
-    allocate(d%P_roots(sp%ng+1))
-    allocate(d%root_found(sp%ng+1))
+    allocate(d%gout(sp%ng))
+    allocate(d%gout_old(sp%ng))
+    allocate(d%gout_tmp(sp%ng))
+    allocate(d%P_roots(sp%ng))
+    allocate(d%root_found(sp%ng))
     allocate(d%f_i_dry(sp%ng))
     allocate(d%P_i_cur(sp%ng))
     allocate(d%f_i_cur(sp%ng))
@@ -356,7 +194,6 @@ contains
     grav = gravity(planet_radius, planet_mass, 0.0_dp)
 
     do i = 1,d%sp%ng
-
       ! compute saturation vapor pressures
       P_sat = huge(1.0_dp)
       if (allocated(d%sp%g(i)%sat)) then
@@ -415,34 +252,44 @@ contains
     P(1) = d%P_surf
     P(2*nz+1) = P_top
 
-    ! integrate
-    call integrate(d, err)
-    if (allocated(err)) return
-
-    if (any(z < 0.0_dp)) then
-      err = '"make_profile" yielded negative altitudes. '// &
-            'This may be caused by the lack of a hydrostatic solution to the entered atmosphere.'
+    ! Initialize the T interpolator
+    allocate(d%T_interp(nz+1),d%P_interp(nz+1))
+    d%T_interp(1) = T_surf
+    d%P_interp(1) = log10(d%P_surf)
+    do i = 1,nz
+      d%T_interp(i+1) = T(i)
+      d%P_interp(i+1) = log10(P(2*i))
+    enddo
+    d%T_interp = d%T_interp(size(d%T_interp):1:-1)
+    d%P_interp = d%P_interp(size(d%P_interp):1:-1)
+    call d%T%initialize(d%P_interp, d%T_interp, ierr)
+    if (ierr /= 0) then
+      err = 'Failed to initialize interpolator in "make_profile_rc"'
       return
     endif
+
+    call integrate(d, err)
+    if (allocated(err)) return
 
   end subroutine
 
   subroutine integrate(d, err)
-    type(AdiabatProfileData), target, intent(inout) :: d
+    type(AdiabatRCProfileData), target, intent(inout) :: d
     character(:), allocatable, intent(out) :: err
 
-    type(dop853_custom) :: dop
+    type(dop853_rc) :: dop
     logical :: status_ok
-    integer :: i, idid
-    real(dp) :: Pn, u(2)
+    integer :: idid
+    real(dp) :: Pn, u(1), T_root
     character(6) :: tmp_char
 
-    call dop%initialize(fcn=right_hand_side_dop, solout=solout_dop, n=2, &
-                        iprint=0, icomp=[1,2], status_ok=status_ok)
+    call dop%initialize(fcn=right_hand_side_dop, solout=solout_dop, n=1, &
+                        iprint=0, icomp=[1], status_ok=status_ok)
     dop%d => d
     d%j = 2
+    ! Surface values
+    d%lapse_rate(1) = general_adiabat_lapse_rate(d, d%P_surf)
     d%f_i(1,:) = d%f_i_cur(:)
-    d%T(1) = d%T_surf
     d%z(1) = 0.0_dp
     d%stopping_reason = ReachedPtop
     if (.not. status_ok) then
@@ -451,7 +298,7 @@ contains
     endif
 
     ! intial conditions
-    u = [d%T_surf, 0.0_dp]
+    u = [d%z(1)]
     Pn = d%P_surf
     do
       call dop%integrate(Pn, u, d%P_top, [d%rtol], [d%atol], iout=2, idid=idid)
@@ -465,46 +312,28 @@ contains
         return
       endif 
 
-      if (d%stopping_reason == ReachedPtop .or. &
-          d%stopping_reason == ReachedTropopause) then
+      if (d%stopping_reason == ReachedPtop) then
         exit
-      elseif (d%stopping_reason == ReachedGasSaturation) then; block
+      elseif (d%stopping_reason == ReachedRoot) then; block
         real(dp) :: f_dry
-
-        Pn = d%P_root
-        u = d%u_root
-        call mixing_ratios(d, Pn, u(1), d%f_i_cur, f_dry)
-        d%sp_type(d%ind_gas_reached_saturation) = CondensingSpeciesType
+        ! A root was hit. We restart integration
+        Pn = d%P_root ! root pressure
+        u = d%u_root ! root altitude
+        call d%T%evaluate(log10(Pn), T_root)
+        call mixing_ratios(d, Pn, T_root, d%f_i_cur, f_dry) ! get mixing ratios at the root
+        if (d%sp_type(d%ind_root) == DrySpeciesType) then
+          ! A gas has reached saturation.
+          d%sp_type(d%ind_root) = CondensingSpeciesType
+        elseif (d%sp_type(d%ind_root) == CondensingSpeciesType) then
+          ! A gas has reached a cold trap
+          d%sp_type(:) = DrySpeciesType
+        endif
         call update_f_i_dry(d, Pn, d%f_i_cur)
         d%stopping_reason = ReachedPtop
 
       endblock; endif
 
     enddo
-
-    if (d%stopping_reason == ReachedPtop) then
-      d%P_trop = -1.0_dp ! no tropopause identified
-    elseif (d%stopping_reason == ReachedTropopause) then; block
-      real(dp) :: mubar, f_dry
-
-      call mixing_ratios(d, d%P_root, d%u_root(1), d%f_i_cur, f_dry)
-
-      ! Propopause pressure
-      d%P_trop = d%P_root
-
-      ! Values above the tropopause
-      mubar = 0.0_dp
-      do i = 1,d%sp%ng
-        mubar = mubar + d%f_i_cur(i)*d%sp%g(i)%mass
-      enddo
-      do i = d%j,size(d%z)
-        d%T(i) = d%T_trop
-        d%f_i(i,:) = d%f_i_cur(:)
-        d%z(i) = altitude_vs_P(d%P(i), d%T_trop, mubar, d%P_root, &
-                 d%u_root(2), d%planet_mass, d%planet_radius) 
-      enddo
-
-    endblock; endif
 
   end subroutine
 
@@ -517,18 +346,17 @@ contains
     integer,intent(inout)             :: irtrn
     real(dp),intent(out)              :: xout
     
-    type(AdiabatProfileData), pointer :: d
-    real(dp) :: T_cur, z_cur, P_cur, P_old
-    real(dp) :: PP, f_dry
+    type(AdiabatRCProfileData), pointer :: d
+    real(dp) :: z_cur, P_cur, P_old
+    real(dp) :: T_i, PP, f_dry
     integer :: i
     
     P_old = xold
     P_cur = x
-    T_cur = y(1)
-    z_cur = y(2)
+    z_cur = y(1)
 
     select type (self)
-    class is (dop853_custom)
+    class is (dop853_rc)
       d => self%d
     end select
 
@@ -539,8 +367,7 @@ contains
       return
     endif
 
-    ! Look for roots
-    call root_fcn(d, P_cur, T_cur, d%gout)
+    call root_fcn(d, P_cur, d%gout)
     if (nr == 1) then
       d%gout_old(:) = d%gout(:)
     endif
@@ -559,26 +386,15 @@ contains
       endif
     enddo
 
-    if (any(d%root_found)) then; block
-      integer :: ind_root
+    if (any(d%root_found)) then
       ! lets use the highest pressure root.
       ! this makes sure we don't skip an interesting root
       irtrn = -1
-      ind_root = maxloc(d%P_roots,1)
-      d%P_root = d%P_roots(ind_root)
+      d%ind_root = maxloc(d%P_roots,1) ! highest pressure root
+      d%P_root = d%P_roots(d%ind_root)
       d%u_root(1) = self%contd8(1, d%P_root)
-      d%u_root(2) = self%contd8(2, d%P_root)
-
-      if (ind_root == 1) then
-        ! Tropopause
-        d%stopping_reason = ReachedTropopause
-      elseif (ind_root >= 2 .and. ind_root <= d%sp%ng+1) then
-        ! Some species is supersaturated
-        d%stopping_reason = ReachedGasSaturation
-        d%ind_gas_reached_saturation = ind_root - 1
-      endif
-      
-    endblock; endif
+      d%stopping_reason = ReachedRoot
+    endif
 
     d%gout_old(:) = d%gout(:) ! save for next step
 
@@ -592,9 +408,10 @@ contains
 
       if (d%P(d%j) <= P_old .and. d%P(d%j) >= PP) then
         do while (d%P(d%j) >= PP)
-          d%T(d%j) = self%contd8(1, d%P(d%j))
-          d%z(d%j) = self%contd8(2, d%P(d%j))
-          call mixing_ratios(d, d%P(d%j), d%T(d%j), d%f_i(d%j,:), f_dry)
+          d%z(d%j) = self%contd8(1, d%P(d%j))
+          call d%T%evaluate(log10(d%P(d%j)), T_i)
+          call mixing_ratios(d, d%P(d%j), T_i, d%f_i(d%j,:), f_dry)
+          d%lapse_rate(d%j) = general_adiabat_lapse_rate(d, d%P(d%j))
           d%j = d%j + 1
           if (d%j > size(d%P)) exit
         enddo
@@ -607,7 +424,7 @@ contains
   subroutine find_root(dop, d, P_old, P_cur, ind, P_root)
     use futils, only: brent_class
     type(dop853_class), intent(inout) :: dop
-    type(AdiabatProfileData), intent(inout) :: d
+    type(AdiabatRCProfileData), intent(inout) :: d
     real(dp), intent(in) :: P_old
     real(dp), intent(in) :: P_cur
     integer, intent(in) :: ind
@@ -631,22 +448,26 @@ contains
       class(brent_class), intent(inout) :: me_
       real(dp), intent(in) :: x_
       real(dp) :: f_
-      call root_fcn(d, x_, dop%contd8(1, x_), d%gout_tmp)
+      call root_fcn(d, x_, d%gout_tmp)
       f_ = d%gout_tmp(ind)
     end function
   end subroutine
 
-  subroutine root_fcn(d, P, T, gout)
-    type(AdiabatProfileData), intent(inout) :: d
+  subroutine root_fcn(d, P, gout)
+    type(AdiabatRCProfileData), intent(inout) :: d
     real(dp), intent(in) :: P
-    real(dp), intent(in) :: T
     real(dp), intent(out) :: gout(:) 
 
-    real(dp) :: f_dry, P_sat
+    real(dp) :: T, f_dry, P_sat, dTdP
     integer :: i
 
+    call d%T%evaluate(log10(P), T)
     call mixing_ratios(d, P, T, d%f_i_cur, f_dry)
     d%P_i_cur = d%f_i_cur*P
+
+    if (any(d%sp_type == CondensingSpeciesType)) then
+      dTdP = dT_dP(d, P)
+    endif
 
     do i = 1,d%sp%ng
       ! compute saturation vapor pressures
@@ -656,15 +477,15 @@ contains
       endif
 
       if (d%sp_type(i) == CondensingSpeciesType) then
-        gout(i+1) = 1.0
+        ! Search for cold trap (place where Temperature decreases with altitude
+        gout(i) = dTdP - 1.0e-8_dp
       elseif (d%sp_type(i) == DrySpeciesType) then
-        gout(i+1) = P_sat - d%P_i_cur(i)
+        ! Dry species can become condensing species if
+        ! they reach saturation.
+        gout(i) = d%P_i_cur(i)/P_sat - (1.0_dp + 1.0e-8_dp)
       endif
 
-    enddo
-
-    ! also stop at tropopause
-    gout(1) = T - d%T_trop    
+    enddo 
 
   end subroutine
 
@@ -676,14 +497,14 @@ contains
     real(dp), intent(out), dimension(:) :: du
 
     select type (self)
-    class is (dop853_custom)
+    class is (dop853_rc)
       call right_hand_side(self%d, P, u, du)
     end select
 
   end subroutine
 
   subroutine update_f_i_dry(d, P, f_i_layer)
-    type(AdiabatProfileData), intent(inout) :: d
+    type(AdiabatRCProfileData), intent(inout) :: d
     real(dp), intent(in) :: P
     real(dp), intent(in) :: f_i_layer(:)
 
@@ -702,7 +523,7 @@ contains
   end subroutine
 
   subroutine mixing_ratios(d, P, T, f_i_layer, f_dry)
-    type(AdiabatProfileData), intent(inout) :: d
+    type(AdiabatRCProfileData), intent(inout) :: d
     real(dp), intent(in) :: P, T
     real(dp), intent(out) :: f_i_layer(:), f_dry
 
@@ -729,36 +550,47 @@ contains
 
   end subroutine
 
-  subroutine right_hand_side(d, P, u, du)
-    use clima_eqns, only: heat_capacity_eval, gravity
-    use clima_eqns_water, only: Rgas_cgs => Rgas
-    type(AdiabatProfileData), intent(inout) :: d
+  function dT_dP(d, P) result(dTdP)
+    type(AdiabatRCProfileData), intent(inout) :: d
     real(dp), intent(in) :: P
-    real(dp), intent(in) :: u(:)
-    real(dp), intent(out) :: du(:)
+    real(dp) :: dTdP
 
-    real(dp) :: T, z
+    real(dp) :: P2, P1, deltaP, log10P
+    real(dp) :: T2, T1
 
+    log10P = log10(P)
+    P2 = log10P + log10P*d%epsj
+    P2 = max(min(P2, log10(d%P_surf)),log10(d%P_top))
+    P2 = min(P2, log10(d%P_root))
+    P1 = log10P - log10P*d%epsj
+    P1 = max(min(P1, log10(d%P_surf)),log10(d%P_top))
+    deltaP = P2 - P1
+
+    call d%T%evaluate(P2, T2)
+    call d%T%evaluate(P1, T1)
+
+    dTdP = (T2 - T1)/deltaP
+
+  end function
+
+  function general_adiabat_lapse_rate(d, P) result(dlnT_dlnP)
+    use clima_eqns, only: heat_capacity_eval
+    use clima_eqns_water, only: Rgas_cgs => Rgas
+    type(AdiabatRCProfileData), intent(inout) :: d
+    real(dp), intent(in) :: P
+    real(dp) :: dlnT_dlnP
+
+    real(dp) :: T
     real(dp) :: f_dry, cp_dry
-    real(dp) :: cp, mubar, L
+    real(dp) :: cp, L
     real(dp) :: first_sumation, second_sumation, Beta_i
-    real(dp) :: grav
-    real(dp) :: dlnT_dlnP, dT_dP, dz_dP
     logical :: found
     integer :: i
 
     real(dp), parameter :: Rgas_si = Rgas_cgs/1.0e7_dp ! ideal gas constant in SI units (J/(mol*K))
 
-    ! unpack u
-    T = u(1)
-    z = u(2)
-
+    call d%T%evaluate(log10(P),T)
     call mixing_ratios(d, P, T, d%f_i_cur, f_dry)
-
-    mubar = 0.0_dp
-    do i = 1,d%sp%ng
-      mubar = mubar + d%f_i_cur(i)*d%sp%g(i)%mass
-    enddo
 
     ! heat capacity and latent heat
     cp_dry = tiny(0.0_dp)
@@ -798,30 +630,37 @@ contains
     ! Equation 1 in Graham et al. (2021), except simplified to assume no condensate present.
     ! Units are SI
     dlnT_dlnP = 1.0_dp/(f_dry*((cp_dry*f_dry + first_sumation)/(Rgas_si*(f_dry + second_sumation))) + second_sumation)
-    ! Convert to dT/dP. Here we introduce CGS units
-    ! P = [dynes/cm2]
-    ! T = [K]
-    dT_dP = dlnT_dlnP*(T/P)
 
-    ! rate of change of altitude
+  end function
+
+  subroutine right_hand_side(d, P, u, du)
+    use clima_eqns, only: heat_capacity_eval, gravity
+    use clima_eqns_water, only: Rgas_cgs => Rgas
+    type(AdiabatRCProfileData), intent(inout) :: d
+    real(dp), intent(in) :: P
+    real(dp), intent(in) :: u(:)
+    real(dp), intent(out) :: du(:)
+
+    real(dp) :: z
+    real(dp) :: T, f_dry, mubar, grav, dz_dP
+    integer :: i
+
+    ! unpack u
+    z = u(1)
+
+    call d%T%evaluate(log10(P),T)
+    call mixing_ratios(d, P, T, d%f_i_cur, f_dry)
+
+    mubar = 0.0_dp
+    do i = 1,d%sp%ng
+      mubar = mubar + d%f_i_cur(i)*d%sp%g(i)%mass
+    enddo
+
     grav = gravity(d%planet_radius, d%planet_mass, z)
     dz_dP = -(Rgas_cgs*T)/(grav*P*mubar)
 
-    du(:) = [dT_dP, dz_dP]
+    du(:) = [dz_dP]
 
   end subroutine
-
-  !> Analytical function for the alitude vs height for constant T and mubar.
-  pure function altitude_vs_P(P, T, mubar, P0, z0, planet_mass, planet_radius) result(z)
-    use clima_const, only: k_boltz, N_avo
-    real(dp), intent(in) :: P
-    real(dp), intent(in) :: T, mubar, P0, z0, planet_mass, planet_radius
-    real(dp) :: z
-    real(dp), parameter :: G_grav_cgs = 6.67e-8_dp
-    
-    z = ((N_avo*k_boltz*T)/(G_grav_cgs*planet_mass*mubar)*log(P/P0) &
-        + 1/(planet_radius + z0))**(-1.0_dp) - planet_radius
-
-  end function
 
 end module
