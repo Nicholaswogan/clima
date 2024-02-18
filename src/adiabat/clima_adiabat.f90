@@ -10,6 +10,15 @@ module clima_adiabat
 
   public :: AdiabatClimate
 
+  type :: RCEquilibriumWrk
+    integer :: n_convecting_zones
+    integer, allocatable :: ind_conv_lower(:)
+    integer, allocatable :: ind_conv_upper(:)
+
+    real(dp), allocatable :: lapse_rate(:)
+    real(dp), allocatable :: lapse_rate_obs(:)
+  end type
+
   type :: AdiabatClimate
 
     ! settings and free parameters
@@ -68,6 +77,9 @@ module clima_adiabat
     real(dp), allocatable :: densities_r(:,:)
     real(dp), allocatable :: dz_r(:)
 
+    ! work
+    type(RCEquilibriumWrk), allocatable :: rcwrk
+
     ! tolerances
     !> Relative tolerance of integration
     real(dp) :: rtol = 1.0e-12_dp
@@ -75,6 +87,8 @@ module clima_adiabat
     real(dp) :: atol = 1.0e-12_dp
     !> Tolerance for nonlinear solve in make_column
     real(dp) :: tol_make_column = 1.0e-8_dp
+    !> Perturbation for the jacobian
+    real(dp) :: epsj = 1.0e-2_dp
     
     ! State of the atmosphere
     real(dp) :: P_surf !! Surface pressure (dynes/cm^2)
@@ -105,8 +119,9 @@ module clima_adiabat
     procedure :: surface_temperature => AdiabatClimate_surface_temperature
     procedure :: surface_temperature_column => AdiabatClimate_surface_temperature_column
     procedure :: surface_temperature_bg_gas => AdiabatClimate_surface_temperature_bg_gas
-    ! Test
-    procedure :: make_profile_rc => AdiabatClimate_make_profile_rc
+    ! Routines for full radiative convective equilibrium
+    procedure, private :: make_profile_rc => AdiabatClimate_make_profile_rc
+    procedure :: RCE => AdiabatClimate_RCE
     ! Utilities
     procedure :: set_ocean_solubility_fcn => AdiabatClimate_set_ocean_solubility_fcn
     procedure :: to_regular_grid => AdiabatClimate_to_regular_grid
@@ -120,6 +135,21 @@ module clima_adiabat
   
   interface AdiabatClimate
     module procedure :: create_AdiabatClimate
+  end interface
+
+  interface
+    module subroutine AdiabatClimate_make_profile_rc(self, P_i_surf, T_surf, T, err)
+      class(AdiabatClimate), intent(inout) :: self
+      real(dp), intent(in) :: P_i_surf(:) !! dynes/cm^2
+      real(dp), intent(in) :: T_surf, T(:)
+      character(:), allocatable, intent(out) :: err
+    end subroutine
+    module subroutine AdiabatClimate_RCE(self, P_i_surf, T_guess, err)
+      class(AdiabatClimate), intent(inout) :: self
+      real(dp), intent(in) :: P_i_surf(:)
+      real(dp), intent(in) :: T_guess
+      character(:), allocatable, intent(out) :: err
+    end subroutine
   end interface
   
 contains
@@ -203,6 +233,9 @@ contains
     ! and the optical-properties from the settings file
     c%rad = Radtran(c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz_r, data_dir, err)
     if (allocated(err)) return
+
+    allocate(c%rcwrk)
+    allocate(c%rcwrk%lapse_rate(c%nz),c%rcwrk%lapse_rate_obs(c%nz))
 
     ! allocate ocean functions
     allocate(c%ocean_fcns(c%sp%ng))
@@ -766,64 +799,6 @@ contains
       endblock; endif
     end subroutine
   end function
-
-  subroutine AdiabatClimate_make_profile_rc(self, P_i_surf, T_surf, T, err)
-    use clima_const, only: k_boltz, N_avo
-    use clima_adiabat_rc, only: make_profile_rc
-    class(AdiabatClimate), intent(inout) :: self
-    real(dp), intent(in) :: P_i_surf(:) !! dynes/cm^2
-    real(dp), intent(in) :: T_surf, T(:)
-    character(:), allocatable, intent(out) :: err
-
-    real(dp), allocatable :: P_e(:), z_e(:), f_i_e(:,:), lapse_rate_e(:)
-    real(dp), allocatable :: density(:)
-    integer :: i, j
-
-    allocate(P_e(2*self%nz+1),z_e(2*self%nz+1),f_i_e(2*self%nz+1,self%sp%ng),lapse_rate_e(2*self%nz+1))
-    allocate(density(self%nz))
-
-    if (size(P_i_surf) /= self%sp%ng) then
-      err = "P_i_surf has the wrong dimension"
-      return
-    endif
-    if (size(T) /= self%nz) then
-      err = "T has the wrong dimension"
-    endif
-
-    self%T_surf = T_surf
-    self%T = T
-    call make_profile_rc(self%T_surf, self%T, P_i_surf, &
-                         self%sp, self%nz, self%planet_mass, &
-                         self%planet_radius, self%P_top, self%RH, &
-                         self%rtol, self%atol, &
-                         self%ocean_fcns, self%ocean_args_p, &
-                         P_e, z_e, f_i_e, lapse_rate_e, &
-                         self%N_surface, self%N_ocean, &
-                         err)
-    if (allocated(err)) return
-
-    self%T_surf = self%T_surf
-    self%P_surf = P_e(1)
-    do i = 1,self%nz
-      self%P(i) = P_e(2*i)
-      self%z(i) = z_e(2*i)
-      self%dz(i) = z_e(2*i+1) - z_e(2*i-1)
-      do j =1,self%sp%ng
-        self%f_i(i,j) = f_i_e(2*i,j)
-      enddo
-    enddo
-
-    density = self%P/(k_boltz*self%T)
-    do j =1,self%sp%ng
-      self%densities(:,j) = self%f_i(:,j)*density(:)
-    enddo
-
-    do i = 1,self%sp%ng
-      ! mol/cm^2 in atmosphere
-      self%N_atmos(i) = sum(density*self%f_i(:,i)*self%dz)/N_avo
-    enddo
-
-  end subroutine
 
   !> Sets a function for describing how gases dissolve in a liquid ocean.
   subroutine AdiabatClimate_set_ocean_solubility_fcn(self, species, fcn, err)

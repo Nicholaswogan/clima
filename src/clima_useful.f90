@@ -1,9 +1,10 @@
 module clima_useful
   use clima_const, only: dp
+  use minpack_module, only: fcn_hybrj
   implicit none
   private
 
-  public :: MinpackHybrd1Vars
+  public :: MinpackHybrd1Vars, MinpackHybrj
 
   type :: MinpackHybrd1Vars
     integer :: n
@@ -16,6 +17,34 @@ module clima_useful
   end type
   interface MinpackHybrd1Vars
     procedure :: create_MinpackHybrd1Vars
+  end interface
+
+  type :: MinpackHybrj
+    procedure(fcn_hybrj), nopass, pointer :: fcn => null()
+    integer :: n
+    real(dp), allocatable :: x(:)
+    real(dp), allocatable :: fvec(:)
+    real(dp), allocatable :: fjac(:,:)
+    integer :: Ldfjac
+    real(dp) :: xtol
+    integer :: maxfev
+    real(dp), allocatable :: diag(:)
+    integer :: mode
+    real(dp) :: factor
+    integer :: nprint
+    integer :: info
+    integer :: nfev
+    integer :: njev
+    real(dp), allocatable :: r(:)
+    integer :: Lr
+    real(dp), allocatable :: qtf(:)
+    real(dp), allocatable :: wa1(:), wa2(:), wa3(:), wa4(:)
+    integer :: lwa
+  contains
+    procedure :: hybrj => MinpackHybrj_hybrj
+  end type
+  interface MinpackHybrj
+    procedure :: create_MinpackHybrj
   end interface
 
 contains
@@ -33,5 +62,45 @@ contains
     v%lwa = (n*(3*n+13))/2 + 1
     allocate(v%wa(v%lwa))
   end function
+
+  function create_MinpackHybrj(fcn, n) result(v)
+    procedure(fcn_hybrj) :: fcn
+    integer, intent(in) :: n
+    type(MinpackHybrj) :: v
+
+    v%fcn => fcn
+    v%n = n
+    allocate(v%x(v%n))
+    v%x = 1.0_dp
+    allocate(v%fvec(v%n))
+    allocate(v%fjac(v%n,v%n))
+    v%ldfjac = v%n
+    v%xtol = 1.0e-8_dp ! not default in hybrdj1
+    v%maxfev = 100*(v%n + 1)
+    allocate(v%diag(v%n))
+    v%diag(:) = 1.0_dp
+    v%mode = 2
+    v%factor = 100.0_dp
+    v%nprint = 0
+    v%lr = (v%n*(v%n+1))/2
+    allocate(v%r(v%lr))
+    allocate(v%qtf(v%n))
+    allocate(v%wa1(v%n), v%wa2(v%n), v%wa3(v%n), v%wa4(v%n))
+
+  end function
+
+  subroutine MinpackHybrj_hybrj(self)
+    use minpack_module, only: hybrj
+    class(MinpackHybrj), intent(inout) :: self
+
+    if (.not.associated(self%fcn)) return
+
+    call hybrj(self%fcn, self%n, self%x, self%Fvec, self%Fjac, &
+               self%Ldfjac, self%Xtol, self%Maxfev, self%Diag, self%Mode, &
+               self%Factor, self%Nprint, self%Info, self%Nfev, self%Njev, &
+               self%r, self%Lr, self%Qtf, self%Wa1, self%Wa2, &
+               self%Wa3, self%Wa4)
+    
+  end subroutine
 
 end module
