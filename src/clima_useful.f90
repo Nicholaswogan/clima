@@ -5,6 +5,7 @@ module clima_useful
   private
 
   public :: MinpackHybrd1Vars, MinpackHybrj
+  public :: linear_solve
 
   type :: MinpackHybrd1Vars
     integer :: n
@@ -45,6 +46,19 @@ module clima_useful
   end type
   interface MinpackHybrj
     procedure :: create_MinpackHybrj
+  end interface
+
+  interface
+    subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
+      integer, intent(in) :: n
+      integer, intent(in) :: nrhs
+      real(8), intent(inout) :: a(lda,n)
+      integer, intent(in) :: lda
+      integer, intent(in) :: ipiv(n)
+      real(8), intent(inout) :: b(ldb,nrhs)
+      integer, intent(in) :: ldb
+      integer, intent(out) :: info
+    end subroutine
   end interface
 
 contains
@@ -101,6 +115,27 @@ contains
                self%r, self%Lr, self%Qtf, self%Wa1, self%Wa2, &
                self%Wa3, self%Wa4)
     
+  end subroutine
+
+  subroutine linear_solve(A, b, info)
+    real(dp), intent(inout) :: a(:,:)
+    real(dp), target, intent(inout) :: b(:)
+    integer, intent(out) :: info
+
+    integer :: n, nrhs, lda
+    integer :: ipiv(size(b))
+    integer :: ldb
+
+    n = size(b)
+    if (size(a,1) /= n .or. size(a,1) /= n) then
+      info = -1
+      return
+    endif
+    lda = n
+    ldb = n
+    nrhs = 1
+
+    call dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
   end subroutine
 
 end module

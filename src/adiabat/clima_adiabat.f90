@@ -10,15 +10,6 @@ module clima_adiabat
 
   public :: AdiabatClimate
 
-  type :: RCEquilibriumWrk
-    integer :: n_convecting_zones
-    integer, allocatable :: ind_conv_lower(:)
-    integer, allocatable :: ind_conv_upper(:)
-
-    real(dp), allocatable :: lapse_rate(:)
-    real(dp), allocatable :: lapse_rate_obs(:)
-  end type
-
   type :: AdiabatClimate
 
     ! settings and free parameters
@@ -77,8 +68,21 @@ module clima_adiabat
     real(dp), allocatable :: densities_r(:,:)
     real(dp), allocatable :: dz_r(:)
 
-    ! work
-    type(RCEquilibriumWrk), allocatable :: rcwrk
+    ! Information about convection
+    integer :: n_convecting_zones !! number of convecting zones
+    !> Describes the lower index of each convecting zone. Note index 1
+    !> is the ground layer.
+    integer, private, allocatable :: ind_conv_lower(:) 
+    !> Describes the upper index of each convecting zone.
+    integer, private, allocatable :: ind_conv_upper(:)
+    !> Another representation of where convection is occuring. If True,
+    !> then the layer below is convecting with the current layer. Index 1 determines
+    !> if the first atomspheric layer is convecting with the ground.
+    logical, allocatable :: convecting_with_below(:)
+    real(dp), allocatable :: lapse_rate(:) !! The true lapse rate
+    real(dp), allocatable :: lapse_rate_intended(:) !! The computed lapse rate
+    !> The size of the newton step.
+    real(dp) :: convective_newton_step_size = 1.0e-1_dp
 
     ! tolerances
     !> Relative tolerance of integration
@@ -138,10 +142,10 @@ module clima_adiabat
   end interface
 
   interface
-    module subroutine AdiabatClimate_make_profile_rc(self, P_i_surf, T_surf, T, err)
+    module subroutine AdiabatClimate_make_profile_rc(self, P_i_surf, T_in, err)
       class(AdiabatClimate), intent(inout) :: self
       real(dp), intent(in) :: P_i_surf(:) !! dynes/cm^2
-      real(dp), intent(in) :: T_surf, T(:)
+      real(dp), intent(in) :: T_in(:)
       character(:), allocatable, intent(out) :: err
     end subroutine
     module subroutine AdiabatClimate_RCE(self, P_i_surf, T_guess, err)
@@ -234,8 +238,9 @@ contains
     c%rad = Radtran(c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz_r, data_dir, err)
     if (allocated(err)) return
 
-    allocate(c%rcwrk)
-    allocate(c%rcwrk%lapse_rate(c%nz),c%rcwrk%lapse_rate_obs(c%nz))
+    ! Convection
+    allocate(c%convecting_with_below(c%nz))
+    allocate(c%lapse_rate(c%nz),c%lapse_rate_intended(c%nz))
 
     ! allocate ocean functions
     allocate(c%ocean_fcns(c%sp%ng))
@@ -247,7 +252,7 @@ contains
 
     ! Heat redistribution parameter
     c%L = c%planet_radius
-    
+
   end function
   
   !> Constructs an atmosphere using a multispecies pseudoadiabat (Eq. 1 in Graham et al. 2021, PSJ)
