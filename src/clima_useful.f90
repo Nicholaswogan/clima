@@ -43,6 +43,7 @@ module clima_useful
     integer :: lwa
   contains
     procedure :: hybrj => MinpackHybrj_hybrj
+    procedure :: code_to_message => MinpackHybrj_code_to_message
   end type
   interface MinpackHybrj
     procedure :: create_MinpackHybrj
@@ -116,6 +117,35 @@ contains
                self%Wa3, self%Wa4)
     
   end subroutine
+
+  function MinpackHybrj_code_to_message(self, info) result(message)
+    class(MinpackHybrj), intent(inout) :: self
+    integer, intent(in) :: info
+    character(:), allocatable :: message
+
+    if (info < 0) then
+      message = 'user terminated execution.'
+    elseif (info == 0) then
+      message = 'improper input parameters.'
+    elseif (info == 1) then
+      message = 'relative error between two consecutive iterates is '// &
+      'at most xtol.'
+    elseif (info == 2) then
+      message = 'number of calls to fcn with iflag = 1 has reached maxfev.'
+    elseif (info == 3) then
+      message = 'xtol is too small. no further improvement in the '// &
+      'approximate solution x is possible.'
+    elseif (info == 4) then
+      message = 'iteration is not making good progress, as measured '// &
+      'by the improvement from the last five jacobian evaluations.'
+    elseif (info == 5) then
+      message = 'iteration is not making good progress, as measured '// &
+      'by the improvement from the last ten iterations.'
+    else
+      message = 'unknown message'
+    endif
+
+  end function
 
   subroutine linear_solve(A, b, info)
     real(dp), intent(inout) :: a(:,:)

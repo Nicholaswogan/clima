@@ -73,18 +73,20 @@ contains
 
   end subroutine
 
-  module subroutine AdiabatClimate_RCE(self, P_i_surf, T_guess, err)
+  module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, err) result(converged)
     use minpack_module, only: hybrd1
     use clima_useful, only: MinpackHybrj, linear_solve
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
-    real(dp), intent(in) :: T_guess
+    real(dp), intent(in) :: T_surf_guess
+    real(dp), intent(in) :: T_guess(:)
+    logical, optional, intent(in) :: convecting_with_below(:)
     character(:), allocatable, intent(out) :: err
+    logical :: converged
 
-    real(dp) :: T_surf
     type(MinpackHybrj) :: mv
-
-    logical, allocatable :: convecting(:)
+    logical, allocatable :: convecting_with_below_save(:)
+    real(dp), allocatable :: T_in(:)
     integer :: i
 
     if (.not.self%double_radiative_grid) then
@@ -92,61 +94,63 @@ contains
             'in order to call RCE.'
       return
     endif
-
-    ! Create the initial temperature profile
-    T_surf = self%surface_temperature(P_i_surf, T_guess, err)
-    if (allocated(err)) return
-
-    ! call self%make_profile(T_guess, P_i_surf, err)
-    ! if (allocated(err)) return
-
-    if (self%P_trop <= 0.0_dp) then
-      err = 'error!'
+    if (size(T_guess) /= self%nz) then
+      err = "T_guess has the wrong dimension"
       return
     endif
 
-    ! is layer i convecting with the layer below it?
-    allocate(convecting(self%nz))
-    do i = 1,self%nz
-      if (self%P(i) > self%P_trop) then
-        convecting(i) = .true.
-      else
-        convecting(i) = .false.
-      endif
-    enddo
+    allocate(convecting_with_below_save(self%nz))
+    allocate(T_in(self%nz+1))
 
-    ! call AdiabatClimate_set_convecting_zones(self, convecting, err)
-    ! if (allocated(err)) return
-    call AdiabatClimate_update_convecting_zones(self, P_i_surf, [self%T_surf,self%T], err)
-    if (allocated(err)) return
+    T_in(1) = T_surf_guess
+    T_in(2:) = T_guess(:)
 
-    ! self%ind_conv_upper(1) = self%ind_conv_upper(1)
-    print*,self%n_convecting_zones
-    print*,self%ind_conv_upper(1)
+    ! setup the convecting zone
+    if (present(convecting_with_below)) then
+      call AdiabatClimate_set_convecting_zones(self, convecting_with_below, err)
+      if (allocated(err)) return
+    else
+      call AdiabatClimate_update_convecting_zones(self, P_i_surf, T_in, err)
+      if (allocated(err)) return
+    endif
 
-    open(unit=2,file='test.dat',form='unformatted',status='replace')
-    write(unit=2) self%nz
-    write(unit=2) self%sp%ng
-    write(unit=2) self%ind_conv_upper(1)
-  
-    ! Non-linear solve
+    converged = .false.
     mv = MinpackHybrj(fcn,self%nz+1)
-    mv%x(1) = self%T_surf
-    mv%x(2:) = self%T
+    mv%x(:) = T_in(:)
     mv%nprint = 1 ! enable printing
-    mv%xtol = 1.0e-8_dp
-    call mv%hybrj()
-    if (mv%info == 0 .or. mv%info > 1) then
-      print*,mv%info
-      err = 'hybrj root solve failed in surface_temperature.'
-      return
-    elseif (mv%info < 0) then
-      err = 'hybrj root solve failed in surface_temperature: '//err
-      return
-    endif
+    mv%xtol = self%xtol_rc
+    ! This bit below needs to be iterated
+    do i = 1,self%max_rc_iters
+      if (self%verbose) then
+        print"(1x,'Iteration =',i3)", i
+      endif
 
-    close(2)
+      call mv%hybrj()
+      if (mv%info == 0) then
+        err = 'hybrj root solve failed in surface_temperature.'
+        return
+      elseif (any(mv%info == [2, 3, 4, 5])) then
+        if (self%verbose) then
+          print'(3x,A)','Minpack Warning: '//mv%code_to_message(mv%info)
+        endif
+      elseif (mv%info < 0) then
+        err = 'hybrj root solve failed in surface_temperature: '//err
+        return
+      endif
+      convecting_with_below_save = self%convecting_with_below
+      call AdiabatClimate_update_convecting_zones(self, P_i_surf, mv%x, err)
+      if (allocated(err)) return
+      if (all(convecting_with_below_save .eqv. self%convecting_with_below)) then
+        ! No more convection changes, so converged
+        if (self%verbose) then
+          print'(1x,A)','CONVERGED'
+        endif
+        converged = .true.
+        exit
+      endif
 
+    enddo
+    
   contains
 
     subroutine fcn(n_, x_, fvec_, fjac_, ldfjac_, iflag_)
@@ -176,43 +180,14 @@ contains
         endif
       endif
 
-      if (iflag_ == 0) then; block
-        real(dp), allocatable :: F(:), dFdT(:,:), deltaT(:) 
-        print*,maxval(x_),minval(x_),sum(fvec_**2.0_dp),mv%nfev, mv%njev
-        write(2) [self%P_surf,self%P]
-        write(2) x_
-        write(2) fvec_
-        write(2) self%lapse_rate
-        write(2) self%lapse_rate_intended
-        write(2) sum(fvec_**2.0_dp)
-        write(2) self%f_i
-
-        allocate(F(self%nz+1),dFdT(self%nz+1,self%nz+1),deltaT(self%nz+1))
-
-        call AdiabatClimate_objective(self, P_i_surf, x_, .true., F, err)
-        if (allocated(err)) then
-          iflag_ = -1
-          return
-        endif
-        call AdiabatClimate_jacobian(self, P_i_surf, x_, .true., dFdT, err)
-        if (allocated(err)) then
-          iflag_ = -1
-          return
-        endif
-        deltaT = -F
-        call linear_solve(dFdT, deltaT, i)
-        if (i /= 0) then
-          err = 'linear solve failed'
-          iflag_ = -1
-          return
-        endif
-        write(2) deltaT
-
-      endblock; endif
+      if (iflag_ == 0 .and. self%verbose) then
+        print"(3x,'step =',i3,3x,'njev =',i3,3x,'||y|| = ',es8.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
+              mv%nfev, mv%njev, sum(fvec_**2.0_dp), maxval(x_), minval(x_)
+      endif
 
     end subroutine
 
-  end subroutine
+  end function
 
   subroutine AdiabatClimate_objective(self, P_i_surf, T_in, ignore_convection, res, err)
     class(AdiabatClimate), intent(inout) :: self
@@ -275,6 +250,16 @@ contains
     call self%copy_atm_to_radiative_grid()
     call self%rad%radiate(self%T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, err=err)
     if (allocated(err)) return
+    if (self%tidally_locked_dayside) then; block
+      real(dp) :: tau_LW, k_term, f_term, rad_enhancement
+      call self%heat_redistribution_parameters(tau_LW, k_term, f_term, err)
+      if (allocated(err)) return
+
+      rad_enhancement = 4.0_dp*f_term
+      call self%rad%apply_radiation_enhancement(rad_enhancement)
+    endblock; endif
+
+    self%rad%f_total(1) = self%rad%f_total(1) + self%surface_heat_flow
 
     do i = 1,self%nz+1
       f_total(i) = self%rad%f_total(2*i-1)

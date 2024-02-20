@@ -93,6 +93,10 @@ module clima_adiabat
     real(dp) :: tol_make_column = 1.0e-8_dp
     !> Perturbation for the jacobian
     real(dp) :: epsj = 1.0e-2_dp
+    !> xtol for RC equilibrium
+    real(dp) :: xtol_rc = 1.0e-5_dp
+    integer :: max_rc_iters = 10
+    logical :: verbose = .true.
     
     ! State of the atmosphere
     real(dp) :: P_surf !! Surface pressure (dynes/cm^2)
@@ -148,12 +152,15 @@ module clima_adiabat
       real(dp), intent(in) :: T_in(:)
       character(:), allocatable, intent(out) :: err
     end subroutine
-    module subroutine AdiabatClimate_RCE(self, P_i_surf, T_guess, err)
+    module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, err) result(converged)
       class(AdiabatClimate), intent(inout) :: self
       real(dp), intent(in) :: P_i_surf(:)
-      real(dp), intent(in) :: T_guess
+      real(dp), intent(in) :: T_surf_guess
+      real(dp), intent(in) :: T_guess(:)
+      logical, optional, intent(in) :: convecting_with_below(:)
       character(:), allocatable, intent(out) :: err
-    end subroutine
+      logical :: converged
+    end function
   end interface
   
 contains
@@ -310,6 +317,19 @@ contains
       ! mol/cm^2 in atmosphere
       self%N_atmos(i) = sum(density*self%f_i(:,i)*self%dz)/N_avo
     enddo
+
+    do i = 1,self%nz
+      if (self%P(i) > self%P_trop) then
+        self%convecting_with_below(i) = .true.
+      else
+        self%convecting_with_below(i) = .false.
+      endif
+    enddo
+
+    self%lapse_rate(1) = (log(self%T(1)) - log(self%T_surf))/(log(self%P(1)) - log(self%P_surf))
+    do i = 2,self%nz
+      self%lapse_rate(i) = (log(self%T(i)) - log(self%T(i-1)))/(log(self%P(i)) - log(self%P(i-1)))
+    enddo
     
   end subroutine
 
@@ -367,6 +387,19 @@ contains
     do i = 1,self%sp%ng
       ! mol/cm^2 in atmosphere
       self%N_atmos(i) = sum(density*self%f_i(:,i)*self%dz)/N_avo
+    enddo
+
+    do i = 1,self%nz
+      if (self%P(i) > self%P_trop) then
+        self%convecting_with_below(i) = .true.
+      else
+        self%convecting_with_below(i) = .false.
+      endif
+    enddo
+
+    self%lapse_rate(1) = (log(self%T(1)) - log(self%T_surf))/(log(self%P(1)) - log(self%P_surf))
+    do i = 2,self%nz
+      self%lapse_rate(i) = (log(self%T(i)) - log(self%T(i-1)))/(log(self%P(i)) - log(self%P(i-1)))
     enddo
     
   end subroutine
@@ -614,6 +647,7 @@ contains
         ! Increase the stellar flux, because we are computing the climate of
         ! observed dayside.
         rad_enhancement = 4.0_dp*f_term
+        call self%rad%apply_radiation_enhancement(rad_enhancement)
       endblock; endif
       fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
 
@@ -699,6 +733,7 @@ contains
         ! Increase the stellar flux, because we are computing the climate of
         ! observed dayside.
         rad_enhancement = 4.0_dp*f_term
+        call self%rad%apply_radiation_enhancement(rad_enhancement)
       endblock; endif
       fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
 
@@ -787,6 +822,7 @@ contains
         ! Increase the stellar flux, because we are computing the climate of
         ! observed dayside.
         rad_enhancement = 4.0_dp*f_term
+        call self%rad%apply_radiation_enhancement(rad_enhancement)
       endblock; endif
       fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
 
@@ -806,18 +842,18 @@ contains
   end function
 
   !> Sets a function for describing how gases dissolve in a liquid ocean.
-  subroutine AdiabatClimate_set_ocean_solubility_fcn(self, species, fcn, err)
+  subroutine AdiabatClimate_set_ocean_solubility_fcn(self, sp, fcn, err)
     class(AdiabatClimate), intent(inout) :: self
-    character(*), intent(in) :: species !! name of species that makes the ocean
+    character(*), intent(in) :: sp !! name of species that makes the ocean
     !> Function describing solubility of other gases in ocean
     procedure(ocean_solubility_fcn), pointer, intent(in) :: fcn 
     character(:), allocatable, intent(out) :: err
 
     integer :: ind
 
-    ind = findloc(self%species_names, species, 1)
+    ind = findloc(self%species_names, sp, 1)
     if (ind == 0) then
-      err = 'Gas "'//species//'" is not in the list of species'
+      err = 'Gas "'//sp//'" is not in the list of species'
       return
     endif
 
@@ -1040,5 +1076,5 @@ contains
     f_term = f_heat_redistribution(tau_LW, self%P_surf, Teq, k_term)
 
   end subroutine
-  
+
 end module

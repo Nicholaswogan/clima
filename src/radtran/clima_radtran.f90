@@ -91,6 +91,7 @@ module clima_radtran
     procedure :: skin_temperature => Radtran_skin_temperature
     procedure :: equilibrium_temperature => Radtran_equilibrium_temperature
     procedure :: opacities2yaml => Radtran_opacities2yaml
+    procedure :: apply_radiation_enhancement => Radtran_apply_radiation_enhancement
   end type
 
   interface Radtran
@@ -485,6 +486,17 @@ contains
     out = out//self%sol%opacities2yaml()
 
   end function
+
+  subroutine Radtran_apply_radiation_enhancement(self, rad_enhancement)
+    class(Radtran), target, intent(inout) :: self
+    real(dp), intent(in) :: rad_enhancement
+    self%wrk_sol%fdn_n = self%wrk_sol%fdn_n*rad_enhancement
+    self%wrk_sol%fdn_a = self%wrk_sol%fdn_a*rad_enhancement
+    self%wrk_sol%fup_n = self%wrk_sol%fup_n*rad_enhancement
+    self%wrk_sol%fup_a = self%wrk_sol%fup_a*rad_enhancement
+    self%f_total = (self%wrk_sol%fdn_n - self%wrk_sol%fup_n) + &
+                   (self%wrk_ir%fdn_n - self%wrk_ir%fup_n)
+  end subroutine
 
   !!!!!!!!!!!!!!!!!
   !!! Utilities !!!
