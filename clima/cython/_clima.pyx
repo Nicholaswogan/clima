@@ -1,6 +1,6 @@
-from numpy cimport ndarray
+from numpy cimport ndarray, uint8_t
 from libc.stdint cimport uintptr_t
-from libcpp cimport bool
+from libcpp cimport bool as cbool
 import numpy as np
 import ctypes as ct
 import os

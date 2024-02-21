@@ -12,7 +12,7 @@ cdef class AdiabatClimate:
   cdef void *_ptr
 
   def __init__(self, species_file = None, settings_file = None, 
-                     flux_file = None, data_dir = None):           
+                     flux_file = None, data_dir = None, cbool double_radiative_grid = True):           
     """Initializes `AdiabatClimate`
 
     Parameters
@@ -47,8 +47,8 @@ cdef class AdiabatClimate:
     
     # Initialize
     wa_pxd.adiabatclimate_create_wrapper(&self._ptr, species_file_c,
-                                              settings_file_c, flux_file_c, data_dir_c,
-                                              err)
+                                         settings_file_c, flux_file_c, data_dir_c, &double_radiative_grid,
+                                         err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
 
@@ -316,6 +316,47 @@ cdef class AdiabatClimate:
       raise ClimaException(err.decode("utf-8").strip())
     return T_surf
 
+  def RCE(self, ndarray[double, ndim=1] P_i_surf, double T_surf_guess, ndarray[double, ndim=1] T_guess,
+          convecting_with_below = None):
+    """Compute full radiative-convective equilibrium.
+
+    Parameters
+    ----------
+    P_i_surf : ndarray[double,ndim=1]
+        Array of surface pressures of each species (dynes/cm^2)
+    T_surf_guess : float
+        A guess for the surface temperature (K)
+    T_guess : ndarray[double,ndim=1]
+        A guess for the temperature in each atmospheric layer (K)
+    convecting_with_below : ndarray[bool,ndim=1], optional
+        An array describing a guess for the radiative vs. convective 
+        regions of the atmosphere
+
+    Returns
+    -------
+    bool
+        Whether the routine converged or not.
+    """
+    cdef int ng = P_i_surf.shape[0]
+    cdef int dim_T_guess = T_guess.shape[0]
+    cdef ndarray[cbool, ndim=1] convecting_with_below_ = np.array([False],dtype=np.bool_)
+    cdef cbool convecting_with_below_present
+    if convecting_with_below is None:
+      convecting_with_below_present = False
+    else:
+      convecting_with_below_present = True
+      convecting_with_below_ = convecting_with_below
+    cdef int dim_convecting_with_below = convecting_with_below_.shape[0]
+    cdef cbool converged
+    cdef char err[ERR_LEN+1]
+
+    wa_pxd.adiabatclimate_rce_wrapper(&self._ptr, &ng, <double *>P_i_surf.data, &T_surf_guess,
+                               &dim_T_guess, <double *>T_guess.data, &convecting_with_below_present,
+                               &dim_convecting_with_below, <cbool *>convecting_with_below_.data, &converged, err)
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
+    return converged
+
   def to_regular_grid(self):
     "Re-grids atmosphere so that each grid cell is equally spaced in altitude."
     cdef char err[ERR_LEN+1]
@@ -323,7 +364,7 @@ cdef class AdiabatClimate:
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
 
-  def out2atmosphere_txt(self, filename, ndarray[double, ndim=1] eddy, bool overwrite = False, bool clip = True):
+  def out2atmosphere_txt(self, filename, ndarray[double, ndim=1] eddy, cbool overwrite = False, cbool clip = True):
     """Saves state of the atmosphere to a file.
 
     Parameters
@@ -390,10 +431,10 @@ cdef class AdiabatClimate:
     use the initial guess in `self.make_column_P_guess`
     """
     def __get__(self):
-      cdef bool val
+      cdef cbool val
       wa_pxd.adiabatclimate_use_make_column_p_guess_get(&self._ptr, &val)
       return val
-    def __set__(self, bool val):
+    def __set__(self, cbool val):
       wa_pxd.adiabatclimate_use_make_column_p_guess_set(&self._ptr, &val)
 
   property make_column_P_guess:
@@ -418,10 +459,10 @@ cdef class AdiabatClimate:
     it matches the skin temperature. The initial guess will always be self.T_trop.
     """
     def __get__(self):
-      cdef bool val
+      cdef cbool val
       wa_pxd.adiabatclimate_solve_for_t_trop_get(&self._ptr, &val)
       return val
-    def __set__(self, bool val):
+    def __set__(self, cbool val):
       wa_pxd.adiabatclimate_solve_for_t_trop_set(&self._ptr, &val)
 
   property albedo_fcn:
@@ -478,10 +519,10 @@ cdef class AdiabatClimate:
     observed dayside temperature of a tidally locked planet.
     """
     def __get__(self):
-      cdef bool val
+      cdef cbool val
       wa_pxd.adiabatclimate_tidally_locked_dayside_get(&self._ptr, &val)
       return val
-    def __set__(self, bool val):
+    def __set__(self, cbool val):
       wa_pxd.adiabatclimate_tidally_locked_dayside_set(&self._ptr, &val)
 
   property L:
@@ -546,7 +587,46 @@ cdef class AdiabatClimate:
       var = Radtran()
       var._ptr = ptr1
       return var
+  
+  property convecting_with_below:
+    """ndarray[bool,ndim=1], shape (nz). If True, then the layer below 
+    is convecting with the current layer. Index 1 determines if the 
+    first atomspheric layer is convecting with the ground.
+    """
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.adiabatclimate_convecting_with_below_get_size(&self._ptr, &dim1)
+      cdef ndarray[cbool, ndim=1] arr = np.empty(dim1, bool)
+      wa_pxd.adiabatclimate_convecting_with_below_get(&self._ptr, &dim1, <cbool *>arr.data)
+      return arr
 
+  property lapse_rate:
+    "ndarray[double,ndim=1], shape (nz). The true lapse rate (dlnT/dlnP)."
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.adiabatclimate_lapse_rate_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.adiabatclimate_lapse_rate_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+
+  property lapse_rate_intended:
+    "ndarray[double,ndim=1], shape (nz). The computed lapse rate (dlnT/dlnP)."
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.adiabatclimate_lapse_rate_intended_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.adiabatclimate_lapse_rate_intended_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+
+  property convective_newton_step_size:
+    "float. The size of the newton step."
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_convective_newton_step_size_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_convective_newton_step_size_set(&self._ptr, &val)
+  
   property rtol:
     "float. Relative tolerance of integration."
     def __get__(self):
@@ -573,6 +653,53 @@ cdef class AdiabatClimate:
       return val
     def __set__(self, double val):
       wa_pxd.adiabatclimate_tol_make_column_set(&self._ptr, &val)
+    
+  property epsj:
+    "float. Perturbation for the jacobian"
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_epsj_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_epsj_set(&self._ptr, &val)
+
+  property xtol_rc:
+    "float. xtol for RC equilibrium"
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_xtol_rc_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_xtol_rc_set(&self._ptr, &val)
+
+  property max_rc_iters:
+    "int. Max number of iterations in the RCE routine"
+    def __get__(self):
+      cdef int val
+      wa_pxd.adiabatclimate_max_rc_iters_get(&self._ptr, &val)
+      return val
+    def __set__(self, int val):
+      wa_pxd.adiabatclimate_max_rc_iters_set(&self._ptr, &val)
+
+  property max_rc_iters_convection:
+    """int. Max number of iterations for which convective layers can
+    be converged to radiative layers in the RCE routine
+    """
+    def __get__(self):
+      cdef int val
+      wa_pxd.adiabatclimate_max_rc_iters_convection_get(&self._ptr, &val)
+      return val
+    def __set__(self, int val):
+      wa_pxd.adiabatclimate_max_rc_iters_convection_set(&self._ptr, &val)
+
+  property verbose:
+    "bool. verbosity"
+    def __get__(self):
+      cdef cbool val
+      wa_pxd.adiabatclimate_verbose_get(&self._ptr, &val)
+      return val
+    def __set__(self, cbool val):
+      wa_pxd.adiabatclimate_verbose_set(&self._ptr, &val)
 
   property P_surf:
     "float. Surface pressure (dynes/cm^2)"

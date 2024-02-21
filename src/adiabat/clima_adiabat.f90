@@ -79,8 +79,8 @@ module clima_adiabat
     !> then the layer below is convecting with the current layer. Index 1 determines
     !> if the first atomspheric layer is convecting with the ground.
     logical, allocatable :: convecting_with_below(:)
-    real(dp), allocatable :: lapse_rate(:) !! The true lapse rate
-    real(dp), allocatable :: lapse_rate_intended(:) !! The computed lapse rate
+    real(dp), allocatable :: lapse_rate(:) !! The true lapse rate (dlnT/dlnP)
+    real(dp), allocatable :: lapse_rate_intended(:) !! The computed lapse rate (dlnT/dlnP)
     !> The size of the newton step.
     real(dp) :: convective_newton_step_size = 1.0e-1_dp
 
@@ -95,8 +95,12 @@ module clima_adiabat
     real(dp) :: epsj = 1.0e-2_dp
     !> xtol for RC equilibrium
     real(dp) :: xtol_rc = 1.0e-5_dp
+    !> Max number of iterations in the RCE routine
     integer :: max_rc_iters = 10
-    logical :: verbose = .true.
+    !> Max number of iterations for which convective layers can
+    !> be converged to radiative layers in the RCE routine
+    integer :: max_rc_iters_convection = 5
+    logical :: verbose = .true. !! verbosity
     
     ! State of the atmosphere
     real(dp) :: P_surf !! Surface pressure (dynes/cm^2)
@@ -152,14 +156,21 @@ module clima_adiabat
       real(dp), intent(in) :: T_in(:)
       character(:), allocatable, intent(out) :: err
     end subroutine
+
+    !> Compute full radiative-convective equilibrium.
     module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, err) result(converged)
       class(AdiabatClimate), intent(inout) :: self
+      !> Array of surface pressures of each species (dynes/cm^2)
       real(dp), intent(in) :: P_i_surf(:)
+      !> A guess for the surface temperature (K)
       real(dp), intent(in) :: T_surf_guess
+      !> A guess for the temperature in each atmospheric layer (K)
       real(dp), intent(in) :: T_guess(:)
+      !> An array describing a guess for the radiative vs. convective 
+      !> regions of the atmosphere
       logical, optional, intent(in) :: convecting_with_below(:)
       character(:), allocatable, intent(out) :: err
-      logical :: converged
+      logical :: converged !! Whether the routine converged or not.
     end function
   end interface
   

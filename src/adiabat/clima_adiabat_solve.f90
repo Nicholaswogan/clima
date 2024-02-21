@@ -85,9 +85,10 @@ contains
     logical :: converged
 
     type(MinpackHybrj) :: mv
-    logical, allocatable :: convecting_with_below_save(:)
+    logical, allocatable :: convecting_with_below_save(:,:)
+    real(dp), allocatable :: difference(:)
     real(dp), allocatable :: T_in(:)
-    integer :: i
+    integer :: i, j
 
     if (.not.self%double_radiative_grid) then
       err = 'AdiabatClimate must be initialized with "double_radiative_grid" set to True '// &
@@ -98,8 +99,9 @@ contains
       err = "T_guess has the wrong dimension"
       return
     endif
-
-    allocate(convecting_with_below_save(self%nz))
+    
+    allocate(convecting_with_below_save(self%nz,0))
+    allocate(difference(self%nz))
     allocate(T_in(self%nz+1))
 
     T_in(1) = T_surf_guess
@@ -110,7 +112,7 @@ contains
       call AdiabatClimate_set_convecting_zones(self, convecting_with_below, err)
       if (allocated(err)) return
     else
-      call AdiabatClimate_update_convecting_zones(self, P_i_surf, T_in, err)
+      call AdiabatClimate_update_convecting_zones(self, P_i_surf, T_in, .false., err)
       if (allocated(err)) return
     endif
 
@@ -137,20 +139,54 @@ contains
         err = 'hybrj root solve failed in surface_temperature: '//err
         return
       endif
-      convecting_with_below_save = self%convecting_with_below
-      call AdiabatClimate_update_convecting_zones(self, P_i_surf, mv%x, err)
+
+      ! Update all variables to the current root
+      call AdiabatClimate_objective(self, P_i_surf, mv%x, .false., mv%fvec, err)
       if (allocated(err)) return
-      if (all(convecting_with_below_save .eqv. self%convecting_with_below)) then
-        ! No more convection changes, so converged
+
+      ! Compute the difference between true and intended lapse rate
+      difference = self%lapse_rate - self%lapse_rate_intended
+
+      ! Save the current convective zones
+      convecting_with_below_save = reshape(convecting_with_below_save,shape=[self%nz,i],pad=self%convecting_with_below)
+
+      ! Update the convective zones
+      if (i < self%max_rc_iters_convection) then
+        ! Here, we permit 
+        ! - convective layers to become radiative
+        ! - radiative layers to become convective
+        call AdiabatClimate_update_convecting_zones(self, P_i_surf, mv%x, .false., err)
+        if (allocated(err)) return
+      else
+        ! Here, we only permit radiative layers to become convective
+        call AdiabatClimate_update_convecting_zones(self, P_i_surf, mv%x, .true., err)
+        if (allocated(err)) return
+      endif
+      
+      ! Check for convergence
+      if (all(convecting_with_below_save(:,i) .eqv. self%convecting_with_below)) then
+        ! Convective zones did not change between iterations, so converged
+        converged = .true.
+      endif
+      if (any(difference > 1.0e-5_dp)) then
+        ! If there remains a layer that is superadiabatic (to within a tolerance)
+        ! then convergence has not been reached
+        converged = .false.
+      endif
+      if (converged) then
         if (self%verbose) then
           print'(1x,A)','CONVERGED'
         endif
-        converged = .true.
         exit
       endif
 
     enddo
-    
+
+    ! Return convection information to what is was prior
+    ! to checking for convergence
+    call AdiabatClimate_set_convecting_zones(self, convecting_with_below_save(:,i-1), err)
+    if (allocated(err)) return
+
   contains
 
     subroutine fcn(n_, x_, fvec_, fjac_, ldfjac_, iflag_)
@@ -262,10 +298,10 @@ contains
     self%rad%f_total(1) = self%rad%f_total(1) + self%surface_heat_flow
 
     do i = 1,self%nz+1
-      f_total(i) = self%rad%f_total(2*i-1)
+      f_total(i) = self%rad%f_total(2*i-1)/1.0e3_dp ! we normalized here for the purposes of optimization
     enddo
 
-    ! Radiative energy going into each layer (ergs/(cm^2*s))
+    ! Radiative energy going into each layer
     fluxes(1) = f_total(1)
     do i = 2,self%nz+1
       fluxes(i) = (f_total(i) - f_total(i-1))
@@ -275,16 +311,6 @@ contains
       res = fluxes
       return
     endif
-
-    ! j = self%ind_conv_upper(1)
-    ! ! Radiative layers
-    ! res(j+1:) = fluxes(j+1:)
-    ! ! Convective layers
-    ! i = j - 1 ! i is the atmospheric layer
-    ! res(j) = f_total(i+1)
-    ! do i = 1,j-1
-    !   res(i) = self%lapse_rate(i) - self%lapse_rate_intended(i)
-    ! enddo
 
     call AdiabatClimate_residuals_with_convection(self, f_total, self%lapse_rate, self%lapse_rate_intended, res)
 
@@ -392,11 +418,12 @@ contains
   !> tends to a T profile unstable to convection, then the layer is convective. The
   !> routine specifically updates self%convecting_with_below, self%n_convecting_zones, 
   !> self%ind_conv_lower and self%ind_conv_upper. It also updates all atmosphere varibles.
-  subroutine AdiabatClimate_update_convecting_zones(self, P_i_surf, T_in, err)
+  subroutine AdiabatClimate_update_convecting_zones(self, P_i_surf, T_in, no_convection_to_radiation, err)
     use clima_useful, only: linear_solve
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
     real(dp), intent(in) :: T_in(:)
+    logical, intent(in) :: no_convection_to_radiation
     character(:), allocatable, intent(out) :: err
 
     real(dp), allocatable :: F(:), dFdT(:,:), deltaT(:), T_perturb(:)
@@ -433,13 +460,24 @@ contains
 
     difference = lapse_rate_perturb - self%lapse_rate_intended
 
-    do i = 1,self%nz
-      if (difference(i) >= 0.0_dp) then
-        self%convecting_with_below(i) = .true.
-      else
-        self%convecting_with_below(i) = .false.
-      endif
-    enddo
+    if (no_convection_to_radiation) then
+      do i = 1,self%nz
+        if (.not.self%convecting_with_below(i)) then
+          difference(i) = self%lapse_rate(i) - self%lapse_rate_intended(i)
+        endif
+        if (difference(i) >= 0.0_dp) then
+          self%convecting_with_below(i) = .true.
+        endif
+      enddo
+    else
+      do i = 1,self%nz
+        if (difference(i) >= 0.0_dp) then
+          self%convecting_with_below(i) = .true.
+        else
+          self%convecting_with_below(i) = .false.
+        endif
+      enddo
+    endif
 
     call AdiabatClimate_set_convecting_zones(self, self%convecting_with_below, err)
     if (allocated(err)) return

@@ -548,6 +548,16 @@ contains
       endif
     enddo
 
+    ! ng == 1 case
+    if (d%sp%ng == 1) then
+      f_i_layer(1) = 1.0_dp
+      if (d%sp_type(i) == CondensingSpeciesType) then
+        f_dry = 1.0e-40_dp
+      else
+        f_dry = 1.0_dp
+      endif
+    endif
+
   end subroutine
 
   function dT_dP(d, P) result(dTdP)
