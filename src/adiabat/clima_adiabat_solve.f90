@@ -123,6 +123,7 @@ contains
     mv%xtol = self%xtol_rc
     ! This bit below needs to be iterated
     do i = 1,self%max_rc_iters
+      j = i
       if (self%verbose) then
         print"(1x,'Iteration =',i3)", i
       endif
@@ -184,7 +185,7 @@ contains
 
     ! Return convection information to what is was prior
     ! to checking for convergence
-    call AdiabatClimate_set_convecting_zones(self, convecting_with_below_save(:,i-1), err)
+    call AdiabatClimate_set_convecting_zones(self, convecting_with_below_save(:,j), err)
     if (allocated(err)) return
 
   contains
