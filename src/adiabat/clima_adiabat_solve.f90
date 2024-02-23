@@ -296,11 +296,10 @@ contains
       call self%rad%apply_radiation_enhancement(rad_enhancement)
     endblock; endif
 
-    self%rad%f_total(1) = self%rad%f_total(1) + self%surface_heat_flow
-
     do i = 1,self%nz+1
       f_total(i) = self%rad%f_total(2*i-1)/1.0e3_dp ! we normalized here for the purposes of optimization
     enddo
+    f_total(1) = f_total(1) + self%surface_heat_flow/1.0e3_dp ! normalized
 
     ! Radiative energy going into each layer
     fluxes(1) = f_total(1)
@@ -520,7 +519,11 @@ contains
       endif
 
       ind_upper = self%ind_conv_upper(i)
-      f_upper = f_total(ind_upper)
+      if (ind_lower == 1) then
+        f_upper = f_total(ind_upper) + self%surface_heat_flow/1.0e3_dp ! normalized
+      else
+        f_upper = f_total(ind_upper)
+      endif
 
       ! Radiative energy going into the convective layer      
       res(ind_upper) = f_upper - f_lower
