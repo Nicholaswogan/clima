@@ -125,6 +125,8 @@ contains
     character(:), allocatable, intent(out) :: err
     
     type(Radtran) :: rad
+
+    real(dp) :: photon_scale_factor
     
     if (nz < 1) then
       err = '"nz" can not be less than 1.'
@@ -164,9 +166,14 @@ contains
     allocate(rad%surface_emissivity(rad%ir%nw))
     rad%surface_emissivity(:) = 1.0_dp
 
+    if (s%planet_is_present) then
+      photon_scale_factor = s%photon_scale_factor
+    else
+      photon_scale_factor = 1.0_dp
+    endif
     ! photons hitting the planet
     allocate(rad%photons_sol(rad%sol%nw))
-    call read_stellar_flux(star_f, rad%sol%nw, rad%sol%wavl, s%photon_scale_factor, rad%photons_sol, err)
+    call read_stellar_flux(star_f, rad%sol%nw, rad%sol%wavl, photon_scale_factor, rad%photons_sol, err)
     if (allocated(err)) return
 
     ! IR work arrays
