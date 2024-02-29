@@ -692,6 +692,15 @@ cdef class AdiabatClimate:
     def __set__(self, int val):
       wa_pxd.adiabatclimate_max_rc_iters_convection_set(&self._ptr, &val)
 
+  property radiation_norm_term:
+    "float. A term that weights the importants of maintaining radiative equilibrium to convection."
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_radiation_norm_term_get(&self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_radiation_norm_term_set(&self._ptr, &val)
+
   property verbose:
     "bool. verbosity"
     def __get__(self):

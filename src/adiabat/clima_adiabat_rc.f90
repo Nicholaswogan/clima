@@ -24,6 +24,7 @@ module clima_adiabat_rc
     real(dp), pointer :: z(:)
     real(dp), pointer :: f_i(:,:)
     real(dp), pointer :: lapse_rate(:)
+    logical, pointer :: super_saturated(:)
 
     ! For interpolating the input T profile.
     type(linear_interp_1d) :: T
@@ -89,7 +90,7 @@ contains
                              planet_radius, P_top, RH, &
                              rtol, atol, &
                              ocean_fcns, args_p, &
-                             P, z, f_i, lapse_rate, &
+                             P, z, f_i, lapse_rate, super_saturated, &
                              N_surface, N_ocean, &
                              err)
     use futils, only: linspace
@@ -111,6 +112,7 @@ contains
     real(dp), target, intent(out) :: P(:), z(:)
     real(dp), target, intent(out) :: f_i(:,:)
     real(dp), target, intent(out) :: lapse_rate(:)
+    logical, target, intent(out) :: super_saturated(:)
     real(dp), target, intent(out) :: N_surface(:), N_ocean(:,:)
     character(:), allocatable, intent(out) :: err
 
@@ -151,6 +153,10 @@ contains
       err = 'make_profile: Input "lapse_rate" has the wrong shape'
       return
     endif
+    if (size(super_saturated) /= 2*nz+1) then
+      err = 'make_profile: Input "lapse_rate" has the wrong shape'
+      return
+    endif
     if (size(N_surface) /= sp%ng) then
       err = 'make_profile: Input "N_surface" has the wrong dimension.'
       return
@@ -176,6 +182,7 @@ contains
     d%z => z
     d%f_i => f_i
     d%lapse_rate => lapse_rate
+    d%super_saturated => super_saturated
 
     ! allocate work memory
     allocate(d%sp_type(sp%ng))
@@ -316,11 +323,12 @@ contains
         exit
       elseif (d%stopping_reason == ReachedRoot) then; block
         real(dp) :: f_dry
+        logical :: super_saturated
         ! A root was hit. We restart integration
         Pn = d%P_root ! root pressure
         u = d%u_root ! root altitude
         call d%T%evaluate(log10(Pn), T_root)
-        call mixing_ratios(d, Pn, T_root, d%f_i_cur, f_dry) ! get mixing ratios at the root
+        call mixing_ratios(d, Pn, T_root, d%f_i_cur, f_dry, super_saturated) ! get mixing ratios at the root
         if (d%sp_type(d%ind_root) == DrySpeciesType) then
           ! A gas has reached saturation.
           d%sp_type(d%ind_root) = CondensingSpeciesType
@@ -349,6 +357,7 @@ contains
     type(AdiabatRCProfileData), pointer :: d
     real(dp) :: z_cur, P_cur, P_old
     real(dp) :: T_i, PP, f_dry
+    logical :: super_saturated
     integer :: i
     
     P_old = xold
@@ -410,8 +419,9 @@ contains
         do while (d%P(d%j) >= PP)
           d%z(d%j) = self%contd8(1, d%P(d%j))
           call d%T%evaluate(log10(d%P(d%j)), T_i)
-          call mixing_ratios(d, d%P(d%j), T_i, d%f_i(d%j,:), f_dry)
+          call mixing_ratios(d, d%P(d%j), T_i, d%f_i(d%j,:), f_dry, super_saturated)
           d%lapse_rate(d%j) = general_adiabat_lapse_rate(d, d%P(d%j))
+          d%super_saturated(d%j) = super_saturated
           d%j = d%j + 1
           if (d%j > size(d%P)) exit
         enddo
@@ -459,10 +469,11 @@ contains
     real(dp), intent(out) :: gout(:) 
 
     real(dp) :: T, f_dry, P_sat, dTdP
+    logical :: super_saturated
     integer :: i
 
     call d%T%evaluate(log10(P), T)
-    call mixing_ratios(d, P, T, d%f_i_cur, f_dry)
+    call mixing_ratios(d, P, T, d%f_i_cur, f_dry, super_saturated)
     d%P_i_cur = d%f_i_cur*P
 
     if (any(d%sp_type == CondensingSpeciesType)) then
@@ -522,19 +533,23 @@ contains
 
   end subroutine
 
-  subroutine mixing_ratios(d, P, T, f_i_layer, f_dry)
+  subroutine mixing_ratios(d, P, T, f_i_layer, f_dry, super_saturated)
     type(AdiabatRCProfileData), intent(inout) :: d
     real(dp), intent(in) :: P, T
     real(dp), intent(out) :: f_i_layer(:), f_dry
+    logical, intent(out) :: super_saturated
 
     real(dp) :: f_moist
     integer :: i
+
+    super_saturated = .false.
 
     ! moist mixing ratios
     f_moist = 0.0_dp
     do i = 1,d%sp%ng
       if (d%sp_type(i) == CondensingSpeciesType) then
         f_i_layer(i) = min(d%RH(i)*d%sp%g(i)%sat%sat_pressure(T)/P,1.0_dp)
+        if (f_i_layer(i) == 1.0_dp) super_saturated = .true.
         f_moist = f_moist + f_i_layer(i)
       endif
     enddo
@@ -594,13 +609,13 @@ contains
     real(dp) :: f_dry, cp_dry
     real(dp) :: cp, L
     real(dp) :: first_sumation, second_sumation, Beta_i
-    logical :: found
+    logical :: found, super_saturated
     integer :: i
 
     real(dp), parameter :: Rgas_si = Rgas_cgs/1.0e7_dp ! ideal gas constant in SI units (J/(mol*K))
 
     call d%T%evaluate(log10(P),T)
-    call mixing_ratios(d, P, T, d%f_i_cur, f_dry)
+    call mixing_ratios(d, P, T, d%f_i_cur, f_dry, super_saturated)
 
     ! heat capacity and latent heat
     cp_dry = tiny(0.0_dp)
@@ -653,13 +668,14 @@ contains
 
     real(dp) :: z
     real(dp) :: T, f_dry, mubar, grav, dz_dP
+    logical :: super_saturated
     integer :: i
 
     ! unpack u
     z = u(1)
 
     call d%T%evaluate(log10(P),T)
-    call mixing_ratios(d, P, T, d%f_i_cur, f_dry)
+    call mixing_ratios(d, P, T, d%f_i_cur, f_dry, super_saturated)
 
     mubar = 0.0_dp
     do i = 1,d%sp%ng

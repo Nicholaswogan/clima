@@ -13,10 +13,12 @@ contains
     character(:), allocatable, intent(out) :: err
 
     real(dp), allocatable :: P_e(:), z_e(:), f_i_e(:,:), lapse_rate_e(:)
+    logical, allocatable :: super_saturated_e(:)
     real(dp), allocatable :: density(:)
     integer :: i, j
 
     allocate(P_e(2*self%nz+1),z_e(2*self%nz+1),f_i_e(2*self%nz+1,self%sp%ng),lapse_rate_e(2*self%nz+1))
+    allocate(super_saturated_e(2*self%nz+1))
     allocate(density(self%nz))
 
     if (size(P_i_surf) /= self%sp%ng) then
@@ -35,7 +37,7 @@ contains
                          self%planet_radius, self%P_top, self%RH, &
                          self%rtol, self%atol, &
                          self%ocean_fcns, self%ocean_args_p, &
-                         P_e, z_e, f_i_e, lapse_rate_e, &
+                         P_e, z_e, f_i_e, lapse_rate_e, super_saturated_e, &
                          self%N_surface, self%N_ocean, &
                          err)
     if (allocated(err)) return
@@ -69,6 +71,10 @@ contains
     self%lapse_rate(1) = (log(self%T(1)) - log(self%T_surf))/(log(self%P(1)) - log(self%P_surf))
     do i = 2,self%nz
       self%lapse_rate(i) = (log(self%T(i)) - log(self%T(i-1)))/(log(self%P(i)) - log(self%P(i-1)))
+    enddo
+
+    do i = 1,self%nz
+      self%super_saturated(i) = super_saturated_e(2*i)
     enddo
 
   end subroutine
@@ -297,9 +303,9 @@ contains
     endblock; endif
 
     do i = 1,self%nz+1
-      f_total(i) = self%rad%f_total(2*i-1)/1.0e3_dp ! we normalized here for the purposes of optimization
+      f_total(i) = self%rad%f_total(2*i-1)*self%radiation_norm_term ! we normalized here for the purposes of optimization
     enddo
-    f_total(1) = f_total(1) + self%surface_heat_flow/1.0e3_dp ! normalized
+    f_total(1) = f_total(1) + self%surface_heat_flow*self%radiation_norm_term
 
     ! Radiative energy going into each layer
     fluxes(1) = f_total(1)
@@ -479,6 +485,13 @@ contains
       enddo
     endif
 
+    ! If a layer is super saturated then lets convect
+    do i = 1,self%nz
+      if (self%super_saturated(i)) then
+        self%convecting_with_below(i) = .true.
+      endif
+    enddo
+
     call AdiabatClimate_set_convecting_zones(self, self%convecting_with_below, err)
     if (allocated(err)) return
 
@@ -520,7 +533,7 @@ contains
 
       ind_upper = self%ind_conv_upper(i)
       if (ind_lower == 1) then
-        f_upper = f_total(ind_upper) + self%surface_heat_flow/1.0e3_dp ! normalized
+        f_upper = f_total(ind_upper) + self%surface_heat_flow*self%radiation_norm_term
       else
         f_upper = f_total(ind_upper)
       endif

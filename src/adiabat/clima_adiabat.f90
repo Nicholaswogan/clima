@@ -75,6 +75,8 @@ module clima_adiabat
     integer, private, allocatable :: ind_conv_lower(:) 
     !> Describes the upper index of each convecting zone.
     integer, private, allocatable :: ind_conv_upper(:)
+    !> Indicates if a layer is super-saturated
+    logical, private, allocatable :: super_saturated(:)
     !> Another representation of where convection is occuring. If True,
     !> then the layer below is convecting with the current layer. Index 1 determines
     !> if the first atomspheric layer is convecting with the ground.
@@ -100,6 +102,9 @@ module clima_adiabat
     !> Max number of iterations for which convective layers can
     !> be converged to radiative layers in the RCE routine
     integer :: max_rc_iters_convection = 5
+    !> A term that weights the importance of maintaining radiative
+    !> equilibrium to convection.
+    real(dp) :: radiation_norm_term = 1.0e-3_dp
     logical :: verbose = .true. !! verbosity
     
     ! State of the atmosphere
@@ -257,6 +262,7 @@ contains
     if (allocated(err)) return
 
     ! Convection
+    allocate(c%super_saturated(c%nz))
     allocate(c%convecting_with_below(c%nz))
     allocate(c%lapse_rate(c%nz),c%lapse_rate_intended(c%nz))
 

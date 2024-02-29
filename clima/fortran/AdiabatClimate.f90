@@ -941,6 +941,24 @@ subroutine adiabatclimate_max_rc_iters_convection_set(ptr, val) bind(c)
   c%max_rc_iters_convection = val
 end subroutine
 
+subroutine adiabatclimate_radiation_norm_term_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%radiation_norm_term
+end subroutine
+
+subroutine adiabatclimate_radiation_norm_term_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%radiation_norm_term = val
+end subroutine
+
 subroutine adiabatclimate_verbose_get(ptr, val) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr
