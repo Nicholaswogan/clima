@@ -5,7 +5,6 @@ module clima_radtran
   private
 
   public :: ClimaRadtranWrk ! Work type that holds results
-  public :: RadtranIR ! IR radiative transfer only
   public :: Radtran ! IR and solar radiative transfer
   
   type :: ClimaRadtranWrk
@@ -24,37 +23,6 @@ module clima_radtran
     real(dp), allocatable :: tau_band(:,:)
     
   end type
-
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !!! IR Radiative Transfer !!!
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  
-  type :: RadtranIR
-  
-    integer :: ng
-    character(s_str_len), allocatable :: species_names(:) ! (ng) copy of species names
-
-    integer :: np
-    character(s_str_len), allocatable :: particle_names(:)
-  
-    ! number of layers
-    integer :: nz
-  
-    ! Optical properties
-    type(OpticalProperties) :: ir
-    
-    ! work
-    type(ClimaRadtranWrk) :: wrk_ir
-    
-  contains
-    procedure :: radiate => RadtranIR_radiate
-    procedure :: OLR => RadtranIR_OLR
-  end type
-
-  interface RadtranIR
-    module procedure :: create_RadtranIR_1
-    module procedure :: create_RadtranIR_2
-  end interface
   
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   !!! IR and Solar Radiative Transfer !!!
@@ -77,10 +45,13 @@ module clima_radtran
     
     real(dp) :: diurnal_fac = 0.5_dp
     real(dp), allocatable :: zenith_u(:) ! cos(zenith_angle)
-    real(dp), allocatable :: zenith_weights(:) ! 
-    real(dp) :: surface_albedo
+    real(dp), allocatable :: zenith_weights(:) !
+    !> surface albedo in each solar wavelength bin (sol%nw) 
+    real(dp), allocatable :: surface_albedo(:) 
+    !> surface emissivity in each IR wavelength bin (sol%nw) 
+    real(dp), allocatable :: surface_emissivity(:) 
     real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2/Hz in each bin  
-
+  
     type(ClimaRadtranWrk) :: wrk_ir
     type(ClimaRadtranWrk) :: wrk_sol
     real(dp), allocatable :: f_total(:)
@@ -100,134 +71,6 @@ module clima_radtran
   end interface
   
 contains
-
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !!! IR Radiative Transfer !!!
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  
-  function create_RadtranIR_1(settings_f, nz, datadir, err) result(rad)
-    use clima_types, only: ClimaSettings
-    
-    character(*), intent(in) :: settings_f
-    integer, intent(in) :: nz
-    character(*), intent(in) :: datadir
-    character(:), allocatable, intent(out) :: err
-    
-    type(RadtranIR) :: rad
-    
-    type(ClimaSettings) :: s
-    
-    s = ClimaSettings(settings_f, err)
-    if (allocated(err)) return
-    
-    if (.not. allocated(s%gases)) then
-      err = '"'//settings_f//'/optical-properties/species/gases" does not exist'
-      return
-    endif
-
-    if (.not. allocated(s%particles)) allocate(s%particles(0))
-    
-    rad = create_RadtranIR_2(s%gases, s%particles, s, nz, datadir, err)
-    if (allocated(err)) return
-    
-  end function
-  
-  function create_RadtranIR_2(species_names, particle_names, s, nz, datadir, err) result(rad)
-    use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
-    use clima_types, only: ClimaSettings
-    
-    character(*), intent(in) :: species_names(:)
-    character(*), intent(in) :: particle_names(:)
-    type(ClimaSettings), intent(in) :: s
-    integer, intent(in) :: nz
-    character(*), intent(in) :: datadir
-    character(:), allocatable, intent(out) :: err
-    
-    type(RadtranIR) :: rad
-    
-    if (nz < 1) then
-      err = '"nz" can not be less than 1.'
-      return
-    endif
-    
-    rad%ng = size(species_names)
-    rad%species_names = species_names
-    rad%np = size(particle_names)
-    if (rad%np > 0) then
-      rad%particle_names = particle_names
-    endif
-    rad%nz = nz
-    
-    if (.not. allocated(s%ir)) then
-      err = '"'//s%filename//'/optical-properties/ir" does not exist.'
-      return
-    endif
-    rad%ir = OpticalProperties(datadir, IROpticalProperties, species_names, particle_names, s%ir, s%wavelength_bins_file, err)
-    if (allocated(err)) return
-    
-    ! work arrays
-    rad%wrk_ir%rx = RadiateXSWrk(rad%ir, nz)
-    rad%wrk_ir%rz = RadiateZWrk(nz,rad%ir%npart)
-    allocate(rad%wrk_ir%fup_a(nz+1, rad%ir%nw))
-    allocate(rad%wrk_ir%fdn_a(nz+1, rad%ir%nw))
-    allocate(rad%wrk_ir%fup_n(nz+1))
-    allocate(rad%wrk_ir%fdn_n(nz+1))
-    allocate(rad%wrk_ir%tau_band(nz,rad%ir%nw))
-
-  end function
-  
-  subroutine RadtranIR_radiate(self, T_surface, T, P, densities, dz, pdensities, radii, err)
-    use clima_radtran_radiate, only: radiate
-    class(RadtranIR), target, intent(inout) :: self
-    real(dp), intent(in) :: T_surface
-    real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
-    real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
-    real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
-                                           !! molecule in each layer (molcules/cm3)
-    real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
-    real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:) !! (nz,np)
-    character(:), allocatable, intent(out) :: err
-    
-    integer :: ierr
-    type(ClimaRadtranWrk), pointer :: wrk 
-    
-    wrk => self%wrk_ir  
-    
-    call check_inputs(self%nz, self%ng, self%np, T, P, densities, dz, pdensities, radii, err)
-    if (allocated(err)) return
-                                         
-    ierr = radiate(self%ir, &
-                   0.0_dp, 0.0_dp, [0.0_dp], &
-                   [0.0_dp], [1.0_dp], &
-                   P, T_surface, T, densities, dz, &
-                   pdensities, radii, &
-                   wrk%rx, wrk%rz, &
-                   wrk%fup_a, wrk%fdn_a, wrk%fup_n, wrk%fdn_n, wrk%tau_band)
-    if (ierr /= 0) then
-      err = 'Input particle radii are outside the data range.'
-      return
-    endif
-    
-  end subroutine
-  
-  function RadtranIR_OLR(self, T_surface, T, P, densities, dz, pdensities, radii, err) result(res)
-    class(RadtranIR), target, intent(inout) :: self
-    real(dp), intent(in) :: T_surface
-    real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
-    real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
-    real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
-                                           !! molecule in each layer (molcules/cm3)
-    real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
-    real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:) !! (nz,np)
-    character(:), allocatable, intent(out) :: err
-    
-    real(dp) :: res
-    
-    call RadtranIR_radiate(self, T_surface, T, P, densities, dz, pdensities, radii, err)
-    if (allocated(err)) return
-    res = self%wrk_ir%fup_n(self%nz+1)
-    
-  end function
 
   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   !!! IR and Solar Radiative Transfer !!!
@@ -300,8 +143,6 @@ contains
     allocate(rad%zenith_weights(num_zenith_angles))
     call zenith_angles_and_weights(num_zenith_angles, rad%zenith_u, rad%zenith_weights)
     rad%zenith_u = cos(rad%zenith_u*pi/180.0_dp)
-
-    rad%surface_albedo = surface_albedo
     
     if (.not. allocated(s%ir)) then
       err = '"'//s%filename//'/optical-properties/ir" does not exist.'
@@ -316,6 +157,12 @@ contains
     endif
     rad%sol = OpticalProperties(datadir, SolarOpticalProperties, species_names, particle_names, s%sol, s%wavelength_bins_file, err)
     if (allocated(err)) return
+
+    allocate(rad%surface_albedo(rad%sol%nw))
+    rad%surface_albedo(:) = surface_albedo
+
+    allocate(rad%surface_emissivity(rad%ir%nw))
+    rad%surface_emissivity(:) = 1.0_dp
 
     ! photons hitting the planet
     allocate(rad%photons_sol(rad%sol%nw))
@@ -371,18 +218,20 @@ contains
 
     ! IR radiative transfer                                     
     ierr = radiate(self%ir, &
-                  0.0_dp, 0.0_dp, [0.0_dp], &
-                  [0.0_dp], [1.0_dp], &
-                  P, T_surface, T, densities, dz, &
-                  pdensities, radii, &
-                  wrk_ir%rx, wrk_ir%rz, &
-                  wrk_ir%fup_a, wrk_ir%fdn_a, wrk_ir%fup_n, wrk_ir%fdn_n, wrk_ir%tau_band)
+                   self%surface_emissivity, &
+                   self%surface_albedo, 0.0_dp, [0.0_dp], &
+                   [0.0_dp], [1.0_dp], &
+                   P, T_surface, T, densities, dz, &
+                   pdensities, radii, &
+                   wrk_ir%rx, wrk_ir%rz, &
+                   wrk_ir%fup_a, wrk_ir%fdn_a, wrk_ir%fup_n, wrk_ir%fdn_n, wrk_ir%tau_band)
     if (ierr /= 0) then
       err = 'Input particle radii are outside the data range.'
       return
     endif
     ! Solar radiative transfer
     ierr = radiate(self%sol, &
+                   self%surface_emissivity, &
                    self%surface_albedo, self%diurnal_fac, self%photons_sol, &
                    self%zenith_u, self%zenith_weights, &
                    P, T_surface, T, densities, dz, &

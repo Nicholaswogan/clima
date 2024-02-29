@@ -42,13 +42,34 @@ cdef class Radtran:
     return out_c[:-1].tobytes().decode()
     
   property surface_albedo:
-    "The surface albedo"
+    "ndarray[double,ndim=1]. The surface albedo in each solar wavelength bin"
     def __get__(self):
-      cdef double val
-      rad_pxd.radtran_surface_albedo_get(&self._ptr, &val)
-      return val
-    def __set__(self, double val):
-      rad_pxd.radtran_surface_albedo_set(&self._ptr, &val)
+      cdef int dim1
+      rad_pxd.radtran_surface_albedo_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      rad_pxd.radtran_surface_albedo_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+    def __set__(self, ndarray[double, ndim=1] arr):
+      cdef int dim1
+      rad_pxd.radtran_surface_albedo_get_size(&self._ptr, &dim1)
+      if arr.shape[0] != dim1:
+        raise ClimaException('"surface_albedo" is the wrong size')
+      rad_pxd.radtran_surface_albedo_set(&self._ptr, &dim1, <double *>arr.data)
+
+  property surface_emissivity:
+    "ndarray[double,ndim=1]. The surface emissivity in each IR wavelength bin"
+    def __get__(self):
+      cdef int dim1
+      rad_pxd.radtran_surface_emissivity_get_size(&self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      rad_pxd.radtran_surface_emissivity_get(&self._ptr, &dim1, <double *>arr.data)
+      return arr
+    def __set__(self, ndarray[double, ndim=1] arr):
+      cdef int dim1
+      rad_pxd.radtran_surface_emissivity_get_size(&self._ptr, &dim1)
+      if arr.shape[0] != dim1:
+        raise ClimaException('"surface_emissivity" is the wrong size')
+      rad_pxd.radtran_surface_emissivity_set(&self._ptr, &dim1, <double *>arr.data)
 
   property ir:
     "The OpticalProperties for longwave radiative transfer"

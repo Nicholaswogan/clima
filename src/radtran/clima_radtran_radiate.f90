@@ -12,6 +12,7 @@ contains
   !> `op%op_type`. `u0`, `diurnal_fac` and `photons_sol` are all
   !> only used during Solar radiative transfer.
   function radiate(op, &
+                   surface_emissivity, &
                    surface_albedo, diurnal_fac, photons_sol, &
                    zenith_u, zenith_weights, &
                    P, T_surface, T, densities, dz, &
@@ -26,8 +27,10 @@ contains
     use clima_const, only: k_boltz, pi
   
     type(OpticalProperties), target, intent(inout) :: op !! Optical properties
-  
-    real(dp), intent(in) :: surface_albedo !! Surface albedo (Needed only for solar)
+    
+    real(dp), intent(in) :: surface_emissivity(:) !! Surface emissivity (Needed only for IR)
+
+    real(dp), intent(in) :: surface_albedo(:) !! Surface albedo (Needed only for solar)
     real(dp), intent(in) :: diurnal_fac !! Diurnal averaging factor (0.5) (Needed only for solar)
     real(dp), intent(in) :: photons_sol(:) !! (nw) Average solar flux in each bin (mW/m2/Hz) (Needed only for solar)
 
@@ -254,7 +257,7 @@ contains
       ! bplanck has units [mW sr^−1 m^−2 Hz^-1]
       if (op%op_type == IROpticalProperties) then
         avg_freq = 0.5_dp*(op%freq(l) + op%freq(l+1))
-        rz%bplanck(nz+1) = planck_fcn(avg_freq, T_surface) ! ground level
+        rz%bplanck(nz+1) = planck_fcn(avg_freq, T_surface)*surface_emissivity(l) ! ground level
         do j = 1,nz
           n = nz+1-j
           rz%bplanck(n) = planck_fcn(avg_freq, T(j))
@@ -275,16 +278,16 @@ contains
             rz%fup1 = 0.0_dp
             rz%fdn1 = 0.0_dp
             rz%tau_band = 0.0_dp
-            call k_loops(op, zenith_u(j), surface_albedo, cols, rw%ks, rz, iks, 1)
+            call k_loops(op, zenith_u(j), surface_albedo(l), cols, rw%ks, rz, iks, 1)
             rz%fup2(:) = rz%fup2(:) + rz%fup1(:)*zenith_weights(j)
             rz%fdn2(:) = rz%fdn2(:) + rz%fdn1(:)*zenith_weights(j)
           enddo
         elseif (kset%k_method == k_RandomOverlapResortRebin) then
           ! Random Overlap with Resorting and Rebinning.
-          call k_rorr(op, kset, zenith_u, zenith_weights, surface_albedo, cols, rw, rz)
+          call k_rorr(op, kset, zenith_u, zenith_weights, surface_albedo(l), cols, rw, rz)
         elseif (kset%k_method == k_AdaptiveEquivalentExtinction) then
           ! Adaptive Equivalent Extinction method
-          call k_aee(op, kset, zenith_u, zenith_weights, surface_albedo, cols, rw, rz)
+          call k_aee(op, kset, zenith_u, zenith_weights, surface_albedo(l), cols, rw, rz)
         endif
         
       else

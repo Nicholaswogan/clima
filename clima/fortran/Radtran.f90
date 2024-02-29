@@ -50,22 +50,62 @@ end subroutine
 !!! getters and setters !!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-subroutine radtran_surface_albedo_get(ptr, val) bind(c)
+subroutine radtran_surface_albedo_get_size(ptr, dim1) bind(c)
   use clima, only: Radtran
   type(c_ptr), intent(in) :: ptr
-  real(c_double), intent(out) :: val
+  integer(c_int), intent(out) :: dim1
   type(Radtran), pointer :: rad
   call c_f_pointer(ptr, rad)
-  val = rad%surface_albedo
+  dim1 = size(rad%surface_albedo,1)
 end subroutine
 
-subroutine radtran_surface_albedo_set(ptr, val) bind(c)
+subroutine radtran_surface_albedo_get(ptr, dim1, arr) bind(c)
   use clima, only: Radtran
   type(c_ptr), intent(in) :: ptr
-  real(c_double), intent(in) :: val
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(out) :: arr(dim1)
   type(Radtran), pointer :: rad
   call c_f_pointer(ptr, rad)
-  rad%surface_albedo = val
+  arr = rad%surface_albedo
+end subroutine
+
+subroutine radtran_surface_albedo_set(ptr, dim1, arr) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(in) :: arr(dim1)
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  rad%surface_albedo = arr
+end subroutine
+
+subroutine radtran_surface_emissivity_get_size(ptr, dim1) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  dim1 = size(rad%surface_emissivity,1)
+end subroutine
+
+subroutine radtran_surface_emissivity_get(ptr, dim1, arr) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(out) :: arr(dim1)
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  arr = rad%surface_emissivity
+end subroutine
+
+subroutine radtran_surface_emissivity_set(ptr, dim1, arr) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(in) :: arr(dim1)
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  rad%surface_emissivity = arr
 end subroutine
 
 subroutine radtran_ir_get(ptr, ptr1) bind(c)
