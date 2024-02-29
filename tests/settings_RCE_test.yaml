@@ -1,0 +1,16 @@
+atmosphere-grid:
+  number-of-layers: 50
+  
+planet:
+  planet-mass: 5.972e27
+  planet-radius: 6.371e8
+  number-of-zenith-angles: 1
+  surface-albedo: 0.3
+
+optical-properties:
+  ir:
+    k-method: AdaptiveEquivalentExtinction
+    opacities: {k-distributions: on, CIA: on, rayleigh: on}
+  solar:
+    k-method: AdaptiveEquivalentExtinction
+    opacities: {k-distributions: on, CIA: on, rayleigh: on}

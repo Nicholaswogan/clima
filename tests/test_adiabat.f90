@@ -9,6 +9,7 @@ program test
   real(dp) :: T, OLR
   real(dp), allocatable :: P_i_surf(:), N_i_surf(:)
   integer :: i
+  logical :: converged
   procedure(ocean_solubility_fcn), pointer :: ocean_fcn_ptr
   
   c = AdiabatClimate('../templates/AdiabatClimate/species.yaml', &
@@ -98,6 +99,8 @@ program test
 
   print*,c%N_surface+c%N_atmos+c%N_ocean(:,1)
   print*,N_i_surf
+  
+  call test_RCE()
 
   ! deallocate
   deallocate(P_i_surf, N_i_surf)
@@ -113,6 +116,42 @@ contains
     m_i(:) = 0.0_dp
     m_i(2) = P_i(2)*3.4e-2_dp
     m_i(3) = P_i(3)*6.1e-4_dp
+  end subroutine
+
+  subroutine test_RCE()
+
+    c = AdiabatClimate('../templates/AdiabatClimate/species.yaml', &
+                     '../tests/settings_RCE_test.yaml', &
+                     '../templates/ModernEarth/Sun_now.txt', &
+                     '../clima/data', &
+                     err=err)
+    if (allocated(err)) then
+      print*,err
+      stop 1
+    endif
+
+    c%P_top = 1.0e2_dp
+    c%T_trop = 200.0_dp
+    P_i_surf = [270.0_dp, 400e-6_dp, 1.0_dp, 1.0e-10_dp, 1.0e-10_dp, 1.0e-10_dp, 1.0e-10_dp]
+    P_i_surf = P_i_surf*1.0e6_dp
+    T = c%surface_temperature(P_i_surf, T_guess=280.0_dp, err=err)
+    if (allocated(err)) then
+      print*,err
+      stop 1
+    endif
+    c%max_rc_iters = 1
+    converged = c%RCE( &
+        P_i_surf, &
+        c%T_surf, &
+        c%T, &
+        c%convecting_with_below, &
+        err=err&
+    )
+    if (allocated(err)) then
+      print*,err
+      stop 1
+    endif
+
   end subroutine
 
 end program
