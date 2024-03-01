@@ -173,13 +173,14 @@ contains
     real(dp) :: y1(nz), y2(nz)
     
     integer :: i, l
-    real(dp) :: wrk_real, Ssfc
+    real(dp) :: wrk_real, Ssfc, Rsfc
     real(dp) :: b0n, b1n
     
     real(dp), parameter :: u1 = 0.5_dp ! (Hemispheric mean)
-    real(dp), parameter :: Rsfc = 0.0_dp
     real(dp), parameter :: norm = 2.0_dp*pi*u1
     
+    Rsfc = 1.0_dp - emissivity
+
     ! no Delta-Eddington scaling in ir
 
     ! Hemispheric mean Two-Stream coefficients (Table 1)
