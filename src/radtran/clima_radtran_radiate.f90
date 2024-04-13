@@ -12,6 +12,7 @@ contains
   !> `op%op_type`. `u0`, `diurnal_fac` and `photons_sol` are all
   !> only used during Solar radiative transfer.
   function radiate(op, &
+                   surface_emissivity, &
                    surface_albedo, diurnal_fac, photons_sol, &
                    zenith_u, zenith_weights, &
                    P, T_surface, T, densities, dz, &
@@ -26,8 +27,10 @@ contains
     use clima_const, only: k_boltz, pi
   
     type(OpticalProperties), target, intent(inout) :: op !! Optical properties
-  
-    real(dp), intent(in) :: surface_albedo !! Surface albedo (Needed only for solar)
+    
+    real(dp), intent(in) :: surface_emissivity(:) !! Surface emissivity (Needed only for IR)
+
+    real(dp), intent(in) :: surface_albedo(:) !! Surface albedo (Needed only for solar)
     real(dp), intent(in) :: diurnal_fac !! Diurnal averaging factor (0.5) (Needed only for solar)
     real(dp), intent(in) :: photons_sol(:) !! (nw) Average solar flux in each bin (mW/m2/Hz) (Needed only for solar)
 
@@ -67,6 +70,7 @@ contains
     
     ! other work
     real(dp) :: dfreq, TT, log10PP
+    real(dp) :: albedo, emissivity
     real(dp), allocatable :: cols(:,:), log10P(:)
     real(dp), allocatable :: foreign_col(:)
 
@@ -107,7 +111,7 @@ contains
     ierr = 0
     
     !$omp parallel private(i, j, k, l, n, jj, &
-    !$omp& iks, avg_freq, TT, log10PP, &
+    !$omp& iks, avg_freq, TT, log10PP, albedo, emissivity, &
     !$omp& ierr_0, &
     !$omp& rw, rz)
     
@@ -254,11 +258,17 @@ contains
       ! bplanck has units [mW sr^−1 m^−2 Hz^-1]
       if (op%op_type == IROpticalProperties) then
         avg_freq = 0.5_dp*(op%freq(l) + op%freq(l+1))
-        rz%bplanck(nz+1) = planck_fcn(avg_freq, T_surface) ! ground level
+        rz%bplanck(nz+1) = planck_fcn(avg_freq, T_surface)
         do j = 1,nz
           n = nz+1-j
           rz%bplanck(n) = planck_fcn(avg_freq, T(j))
         enddo
+        emissivity = surface_emissivity(l)
+        albedo = 0.0_dp
+      elseif (op%op_type == FarUVOpticalProperties .or. &
+              op%op_type == SolarOpticalProperties) then
+        emissivity = 0.0_dp
+        albedo = surface_albedo(l)
       endif
       
       rz%fup2 = 0.0_dp
@@ -275,16 +285,16 @@ contains
             rz%fup1 = 0.0_dp
             rz%fdn1 = 0.0_dp
             rz%tau_band = 0.0_dp
-            call k_loops(op, zenith_u(j), surface_albedo, cols, rw%ks, rz, iks, 1)
+            call k_loops(op, zenith_u(j), albedo, emissivity, cols, rw%ks, rz, iks, 1)
             rz%fup2(:) = rz%fup2(:) + rz%fup1(:)*zenith_weights(j)
             rz%fdn2(:) = rz%fdn2(:) + rz%fdn1(:)*zenith_weights(j)
           enddo
         elseif (kset%k_method == k_RandomOverlapResortRebin) then
           ! Random Overlap with Resorting and Rebinning.
-          call k_rorr(op, kset, zenith_u, zenith_weights, surface_albedo, cols, rw, rz)
+          call k_rorr(op, kset, zenith_u, zenith_weights, albedo, emissivity, cols, rw, rz)
         elseif (kset%k_method == k_AdaptiveEquivalentExtinction) then
           ! Adaptive Equivalent Extinction method
-          call k_aee(op, kset, zenith_u, zenith_weights, surface_albedo, cols, rw, rz)
+          call k_aee(op, kset, zenith_u, zenith_weights, albedo, emissivity, cols, rw, rz)
         endif
         
       else
@@ -337,7 +347,7 @@ contains
   
   end function
 
-  subroutine k_aee(op, kset, zenith_u, zenith_weights, surface_albedo, cols, rw, rz)
+  subroutine k_aee(op, kset, zenith_u, zenith_weights, surface_albedo, surface_emissivity, cols, rw, rz)
     use clima_radtran_types, only: OpticalProperties, Ksettings
     use clima_radtran_types, only: RadiateZWrk, RadiateXSWrk
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
@@ -347,7 +357,7 @@ contains
     type(OpticalProperties), intent(in) :: op
     type(Ksettings), intent(in) :: kset
     real(dp), intent(in) :: zenith_u(:), zenith_weights(:)
-    real(dp), intent(in) :: surface_albedo
+    real(dp), intent(in) :: surface_albedo, surface_emissivity
     real(dp), intent(in) :: cols(:,:)
     type(RadiateXSWrk), target, intent(inout) :: rw
     type(RadiateZWrk), intent(inout) :: rz
@@ -408,7 +418,7 @@ contains
         call two_stream_solar(nz, rz%tau, rz%w0, rz%gt, zenith_u(ii), surface_albedo, &
                               rz%amean, surf_rad, rz%fup, rz%fdn)
       elseif (op%op_type == IROpticalProperties) then
-        call two_stream_ir(nz, rz%tau, rz%w0, rz%gt, 0.0_dp, rz%bplanck, &
+        call two_stream_ir(nz, rz%tau, rz%w0, rz%gt, surface_emissivity, rz%bplanck, &
                            rz%fup, rz%fdn)
       endif
       
@@ -428,7 +438,7 @@ contains
 
   end subroutine
   
-  subroutine k_rorr(op, kset, zenith_u, zenith_weights, surface_albedo, cols, rw, rz)
+  subroutine k_rorr(op, kset, zenith_u, zenith_weights, surface_albedo, surface_emissivity, cols, rw, rz)
     use futils, only: rebin
     use mrgrnk_mod, only: mrgrnk
     
@@ -441,7 +451,7 @@ contains
     type(OpticalProperties), intent(in) :: op
     type(Ksettings), intent(in) :: kset
     real(dp), intent(in) :: zenith_u(:), zenith_weights(:)
-    real(dp), intent(in) :: surface_albedo
+    real(dp), intent(in) :: surface_albedo, surface_emissivity
     real(dp), intent(in) :: cols(:,:)
     type(RadiateXSWrk), target, intent(in) :: rw
     type(RadiateZWrk), intent(inout) :: rz
@@ -536,7 +546,7 @@ contains
         call two_stream_solar(nz, rz%tau, rz%w0, rz%gt, zenith_u(ii), surface_albedo, &
                               rz%amean, surf_rad, rz%fup, rz%fdn)
       elseif (op%op_type == IROpticalProperties) then
-        call two_stream_ir(nz, rz%tau, rz%w0, rz%gt, 0.0_dp, rz%bplanck, &
+        call two_stream_ir(nz, rz%tau, rz%w0, rz%gt, surface_emissivity, rz%bplanck, &
                            rz%fup, rz%fdn)
       endif
       
@@ -556,7 +566,7 @@ contains
     
   end subroutine
   
-  recursive subroutine k_loops(op, u0, surface_albedo, cols, ks, rz, iks, ik)
+  recursive subroutine k_loops(op, u0, surface_albedo, surface_emissivity, cols, ks, rz, iks, ik)
     use clima_radtran_types, only: OpticalProperties, Kcoefficients
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_radtran_types, only: RadiateZWrk
@@ -565,7 +575,7 @@ contains
     
     type(OpticalProperties), intent(in) :: op
     real(dp), intent(in) :: u0
-    real(dp), intent(in) :: surface_albedo
+    real(dp), intent(in) :: surface_albedo, surface_emissivity
     real(dp), intent(in) :: cols(:,:)
     type(Kcoefficients), intent(in) :: ks(:)
     type(RadiateZWrk), intent(inout) :: rz
@@ -608,7 +618,7 @@ contains
           call two_stream_solar(nz, rz%tau, rz%w0, rz%gt, u0, surface_albedo, &
                                 rz%amean, surf_rad, rz%fup, rz%fdn)
         elseif (op%op_type == IROpticalProperties) then
-          call two_stream_ir(nz, rz%tau, rz%w0, rz%gt, 0.0_dp, rz%bplanck, &
+          call two_stream_ir(nz, rz%tau, rz%w0, rz%gt, surface_emissivity, rz%bplanck, &
                              rz%fup, rz%fdn)
         endif
         
@@ -625,7 +635,7 @@ contains
         
       else
         ! go into a deeper loop
-        call k_loops(op, u0, surface_albedo, cols, ks, rz, iks, ik + 1)
+        call k_loops(op, u0, surface_albedo, surface_emissivity, cols, ks, rz, iks, ik + 1)
       
       endif
       

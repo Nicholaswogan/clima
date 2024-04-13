@@ -14,7 +14,7 @@ module clima_adiabat
 
     ! settings and free parameters
     integer :: nz
-    real(dp) :: P_top = 1.0e-2_dp !! (dynes/cm2)
+    real(dp) :: P_top = 1.0_dp !! (dynes/cm2)
     real(dp) :: T_trop = 180.0_dp !! (T)
     real(dp), allocatable :: RH(:) !! relative humidity (ng)
     !> If .true., then any function that calls `make_column` will
@@ -60,6 +60,31 @@ module clima_adiabat
     
     ! Radiative transfer
     type(Radtran) :: rad
+    logical :: double_radiative_grid
+    integer :: nz_r
+    ! Work space for radiative transfer
+    real(dp), allocatable :: T_r(:)
+    real(dp), allocatable :: P_r(:)
+    real(dp), allocatable :: densities_r(:,:)
+    real(dp), allocatable :: dz_r(:)
+
+    ! Information about convection
+    integer :: n_convecting_zones !! number of convecting zones
+    !> Describes the lower index of each convecting zone. Note index 1
+    !> is the ground layer.
+    integer, private, allocatable :: ind_conv_lower(:) 
+    !> Describes the upper index of each convecting zone.
+    integer, private, allocatable :: ind_conv_upper(:)
+    !> Indicates if a layer is super-saturated
+    logical, private, allocatable :: super_saturated(:)
+    !> Another representation of where convection is occuring. If True,
+    !> then the layer below is convecting with the current layer. Index 1 determines
+    !> if the first atomspheric layer is convecting with the ground.
+    logical, allocatable :: convecting_with_below(:)
+    real(dp), allocatable :: lapse_rate(:) !! The true lapse rate (dlnT/dlnP)
+    real(dp), allocatable :: lapse_rate_intended(:) !! The computed lapse rate (dlnT/dlnP)
+    !> The size of the newton step.
+    real(dp) :: convective_newton_step_size = 1.0e-1_dp
 
     ! tolerances
     !> Relative tolerance of integration
@@ -68,6 +93,19 @@ module clima_adiabat
     real(dp) :: atol = 1.0e-12_dp
     !> Tolerance for nonlinear solve in make_column
     real(dp) :: tol_make_column = 1.0e-8_dp
+    !> Perturbation for the jacobian
+    real(dp) :: epsj = 1.0e-2_dp
+    !> xtol for RC equilibrium
+    real(dp) :: xtol_rc = 1.0e-5_dp
+    !> Max number of iterations in the RCE routine
+    integer :: max_rc_iters = 10
+    !> Max number of iterations for which convective layers can
+    !> be converged to radiative layers in the RCE routine
+    integer :: max_rc_iters_convection = 5
+    !> A term that weights the importance of maintaining radiative
+    !> equilibrium to convection.
+    real(dp) :: radiation_norm_term = 1.0e-3_dp
+    logical :: verbose = .true. !! verbosity
     
     ! State of the atmosphere
     real(dp) :: P_surf !! Surface pressure (dynes/cm^2)
@@ -98,26 +136,58 @@ module clima_adiabat
     procedure :: surface_temperature => AdiabatClimate_surface_temperature
     procedure :: surface_temperature_column => AdiabatClimate_surface_temperature_column
     procedure :: surface_temperature_bg_gas => AdiabatClimate_surface_temperature_bg_gas
+    ! Routines for full radiative convective equilibrium
+    procedure, private :: make_profile_rc => AdiabatClimate_make_profile_rc
+    procedure :: RCE => AdiabatClimate_RCE
     ! Utilities
     procedure :: set_ocean_solubility_fcn => AdiabatClimate_set_ocean_solubility_fcn
     procedure :: to_regular_grid => AdiabatClimate_to_regular_grid
     procedure :: out2atmosphere_txt => AdiabatClimate_out2atmosphere_txt
     ! For tidally locked planets
     procedure :: heat_redistribution_parameters => AdiabatClimate_heat_redistribution_parameters
+
+    ! Private methods
+    procedure, private :: copy_atm_to_radiative_grid => AdiabatClimate_copy_atm_to_radiative_grid
   end type
   
   interface AdiabatClimate
     module procedure :: create_AdiabatClimate
   end interface
+
+  interface
+    module subroutine AdiabatClimate_make_profile_rc(self, P_i_surf, T_in, err)
+      class(AdiabatClimate), intent(inout) :: self
+      real(dp), intent(in) :: P_i_surf(:) !! dynes/cm^2
+      real(dp), intent(in) :: T_in(:)
+      character(:), allocatable, intent(out) :: err
+    end subroutine
+
+    !> Compute full radiative-convective equilibrium.
+    module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, err) result(converged)
+      class(AdiabatClimate), intent(inout) :: self
+      !> Array of surface pressures of each species (dynes/cm^2)
+      real(dp), intent(in) :: P_i_surf(:)
+      !> A guess for the surface temperature (K)
+      real(dp), intent(in) :: T_surf_guess
+      !> A guess for the temperature in each atmospheric layer (K)
+      real(dp), intent(in) :: T_guess(:)
+      !> An array describing a guess for the radiative vs. convective 
+      !> regions of the atmosphere
+      logical, optional, intent(in) :: convecting_with_below(:)
+      character(:), allocatable, intent(out) :: err
+      logical :: converged !! Whether the routine converged or not.
+    end function
+  end interface
   
 contains
   
-  function create_AdiabatClimate(species_f, settings_f, star_f, data_dir, err) result(c)
+  function create_AdiabatClimate(species_f, settings_f, star_f, data_dir, double_radiative_grid, err) result(c)
     use clima_types, only: ClimaSettings 
     character(*), intent(in) :: species_f !! Species yaml file
     character(*), intent(in) :: settings_f !! Settings yaml file
     character(*), intent(in) :: star_f !! Star text file
     character(*), intent(in) :: data_dir !! Directory with radiative transfer data
+    logical, optional, intent(in) :: double_radiative_grid
     character(:), allocatable, intent(out) :: err
     
     type(AdiabatClimate) :: c
@@ -174,11 +244,27 @@ contains
       err = '"surface-albedo" is missing from file "'//settings_f//'"'
       return
     endif
-    
+
+    if (present(double_radiative_grid)) then
+      c%double_radiative_grid = double_radiative_grid
+    else
+      c%double_radiative_grid = .true.
+    endif
+    if (c%double_radiative_grid) then
+      c%nz_r = c%nz*2
+    else
+      c%nz_r = c%nz
+    endif
+    allocate(c%T_r(c%nz_r),c%P_r(c%nz_r),c%densities_r(c%nz_r,c%sp%ng),c%dz_r(c%nz_r))
     ! Make radiative transfer with list of species, from species file
     ! and the optical-properties from the settings file
-    c%rad = Radtran(c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz, data_dir, err)
+    c%rad = Radtran(c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz_r, data_dir, err)
     if (allocated(err)) return
+
+    ! Convection
+    allocate(c%super_saturated(c%nz))
+    allocate(c%convecting_with_below(c%nz))
+    allocate(c%lapse_rate(c%nz),c%lapse_rate_intended(c%nz))
 
     ! allocate ocean functions
     allocate(c%ocean_fcns(c%sp%ng))
@@ -190,7 +276,7 @@ contains
 
     ! Heat redistribution parameter
     c%L = c%planet_radius
-    
+
   end function
   
   !> Constructs an atmosphere using a multispecies pseudoadiabat (Eq. 1 in Graham et al. 2021, PSJ)
@@ -247,6 +333,19 @@ contains
     do i = 1,self%sp%ng
       ! mol/cm^2 in atmosphere
       self%N_atmos(i) = sum(density*self%f_i(:,i)*self%dz)/N_avo
+    enddo
+
+    do i = 1,self%nz
+      if (self%P(i) > self%P_trop) then
+        self%convecting_with_below(i) = .true.
+      else
+        self%convecting_with_below(i) = .false.
+      endif
+    enddo
+
+    self%lapse_rate(1) = (log(self%T(1)) - log(self%T_surf))/(log(self%P(1)) - log(self%P_surf))
+    do i = 2,self%nz
+      self%lapse_rate(i) = (log(self%T(i)) - log(self%T(i-1)))/(log(self%P(i)) - log(self%P(i-1)))
     enddo
     
   end subroutine
@@ -305,6 +404,19 @@ contains
     do i = 1,self%sp%ng
       ! mol/cm^2 in atmosphere
       self%N_atmos(i) = sum(density*self%f_i(:,i)*self%dz)/N_avo
+    enddo
+
+    do i = 1,self%nz
+      if (self%P(i) > self%P_trop) then
+        self%convecting_with_below(i) = .true.
+      else
+        self%convecting_with_below(i) = .false.
+      endif
+    enddo
+
+    self%lapse_rate(1) = (log(self%T(1)) - log(self%T_surf))/(log(self%P(1)) - log(self%P_surf))
+    do i = 2,self%nz
+      self%lapse_rate(i) = (log(self%T(i)) - log(self%T(i-1)))/(log(self%P(i)) - log(self%P(i-1)))
     enddo
     
   end subroutine
@@ -378,6 +490,34 @@ contains
       fvec_(1) = self%P_surf - P_surf
     end subroutine
   end subroutine
+
+  !> Copies the atmosphere to the data used for radiative transfer
+  subroutine AdiabatClimate_copy_atm_to_radiative_grid(self)
+    class(AdiabatClimate), intent(inout) :: self
+    integer :: i
+
+    if (self%double_radiative_grid) then
+      do i = 1,self%nz
+        self%T_r(2*(i-1)+1) = self%T(i)
+        self%T_r(2*(i-1)+2) = self%T(i)
+
+        self%P_r(2*(i-1)+1) = self%P(i)
+        self%P_r(2*(i-1)+2) = self%P(i)
+
+        self%densities_r(2*(i-1)+1,:) = self%densities(i,:)
+        self%densities_r(2*(i-1)+2,:) = self%densities(i,:)
+
+        self%dz_r(2*(i-1)+1) = 0.5_dp*self%dz(i)
+        self%dz_r(2*(i-1)+2) = 0.5_dp*self%dz(i)
+      enddo
+    else
+      self%T_r = self%T
+      self%P_r = self%P
+      self%densities_r = self%densities
+      self%dz_r = self%dz
+    endif
+
+  end subroutine
   
   !> Calls `make_profile`, then does radiative transfer on the constructed atmosphere
   subroutine AdiabatClimate_TOA_fluxes(self, T_surf, P_i_surf, ISR, OLR, err)
@@ -398,7 +538,8 @@ contains
     endif
     
     ! Do radiative transfer
-    call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
+    call self%copy_atm_to_radiative_grid()
+    call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
     
   end subroutine
@@ -422,7 +563,8 @@ contains
     endif
     
     ! Do radiative transfer
-    call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
+    call self%copy_atm_to_radiative_grid()
+    call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
 
   end subroutine
@@ -448,7 +590,8 @@ contains
     endif
     
     ! Do radiative transfer
-    call self%rad%TOA_fluxes(T_surf, self%T, self%P/1.0e6_dp, self%densities, self%dz, ISR=ISR, OLR=OLR, err=err)
+    call self%copy_atm_to_radiative_grid()
+    call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
     
   end subroutine
@@ -521,6 +664,7 @@ contains
         ! Increase the stellar flux, because we are computing the climate of
         ! observed dayside.
         rad_enhancement = 4.0_dp*f_term
+        call self%rad%apply_radiation_enhancement(rad_enhancement)
       endblock; endif
       fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
 
@@ -528,7 +672,7 @@ contains
         use clima_eqns, only: skin_temperature
         real(dp) :: bond_albedo, stellar_radiation
         integer :: i
-        bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
+        bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
         stellar_radiation = 0.0_dp
         do i = 1,self%rad%sol%nw
           stellar_radiation = stellar_radiation + self%rad%photons_sol(i)*(self%rad%sol%freq(i) - self%rad%sol%freq(i+1))
@@ -606,6 +750,7 @@ contains
         ! Increase the stellar flux, because we are computing the climate of
         ! observed dayside.
         rad_enhancement = 4.0_dp*f_term
+        call self%rad%apply_radiation_enhancement(rad_enhancement)
       endblock; endif
       fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
 
@@ -613,7 +758,7 @@ contains
         use clima_eqns, only: skin_temperature
         real(dp) :: bond_albedo, stellar_radiation
         integer :: i
-        bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
+        bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
         stellar_radiation = 0.0_dp
         do i = 1,self%rad%sol%nw
           stellar_radiation = stellar_radiation + self%rad%photons_sol(i)*(self%rad%sol%freq(i) - self%rad%sol%freq(i+1))
@@ -694,6 +839,7 @@ contains
         ! Increase the stellar flux, because we are computing the climate of
         ! observed dayside.
         rad_enhancement = 4.0_dp*f_term
+        call self%rad%apply_radiation_enhancement(rad_enhancement)
       endblock; endif
       fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
 
@@ -701,7 +847,7 @@ contains
         use clima_eqns, only: skin_temperature
         real(dp) :: bond_albedo, stellar_radiation
         integer :: i
-        bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
+        bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
         stellar_radiation = 0.0_dp
         do i = 1,self%rad%sol%nw
           stellar_radiation = stellar_radiation + self%rad%photons_sol(i)*(self%rad%sol%freq(i) - self%rad%sol%freq(i+1))
@@ -713,18 +859,18 @@ contains
   end function
 
   !> Sets a function for describing how gases dissolve in a liquid ocean.
-  subroutine AdiabatClimate_set_ocean_solubility_fcn(self, species, fcn, err)
+  subroutine AdiabatClimate_set_ocean_solubility_fcn(self, sp, fcn, err)
     class(AdiabatClimate), intent(inout) :: self
-    character(*), intent(in) :: species !! name of species that makes the ocean
+    character(*), intent(in) :: sp !! name of species that makes the ocean
     !> Function describing solubility of other gases in ocean
     procedure(ocean_solubility_fcn), pointer, intent(in) :: fcn 
     character(:), allocatable, intent(out) :: err
 
     integer :: ind
 
-    ind = findloc(self%species_names, species, 1)
+    ind = findloc(self%species_names, sp, 1)
     if (ind == 0) then
-      err = 'Gas "'//species//'" is not in the list of species'
+      err = 'Gas "'//sp//'" is not in the list of species'
       return
     endif
 
@@ -892,7 +1038,7 @@ contains
     real(dp) ::  cp_tmp, cp
 
     ! equilibrium temperature
-    bond_albedo = self%rad%wrk_sol%fup_n(self%nz+1)/self%rad%wrk_sol%fdn_n(self%nz+1)
+    bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
     Teq = self%rad%equilibrium_temperature(bond_albedo)
     
     ! gravity
@@ -947,5 +1093,5 @@ contains
     f_term = f_heat_redistribution(tau_LW, self%P_surf, Teq, k_term)
 
   end subroutine
-  
+
 end module

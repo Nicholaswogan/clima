@@ -26,19 +26,21 @@ end subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 subroutine adiabatclimate_create_wrapper(ptr, species_file, &
-                                    settings_file, flux_file, data_dir, err) bind(c)
+                                  settings_file, flux_file, data_dir, double_radiative_grid, err) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr
   character(kind=c_char), intent(in) :: species_file(*)
   character(kind=c_char), intent(in) :: settings_file(*)
   character(kind=c_char), intent(in) :: flux_file(*)
   character(kind=c_char), intent(in) :: data_dir(*)
+  logical(c_bool), optional, intent(in) :: double_radiative_grid
   character(kind=c_char), intent(out) :: err(err_len+1)
   
   character(len=:), allocatable :: species_file_f
   character(len=:), allocatable :: settings_file_f
   character(len=:), allocatable :: flux_file_f
   character(len=:), allocatable :: data_dir_f
+  logical :: double_radiative_grid_f
   character(:), allocatable :: err_f
   type(AdiabatClimate), pointer :: c
   
@@ -48,6 +50,7 @@ subroutine adiabatclimate_create_wrapper(ptr, species_file, &
   allocate(character(len=len_cstring(settings_file))::settings_file_f)
   allocate(character(len=len_cstring(flux_file))::flux_file_f)
   allocate(character(len=len_cstring(data_dir))::data_dir_f)
+  double_radiative_grid_f = double_radiative_grid
   
   call copy_string_ctof(species_file, species_file_f)
   call copy_string_ctof(settings_file, settings_file_f)
@@ -58,6 +61,7 @@ subroutine adiabatclimate_create_wrapper(ptr, species_file, &
                      settings_file_f, &
                      flux_file_f, &
                      data_dir_f, &
+                     double_radiative_grid_f, &
                      err_f)
   
   err(1) = c_null_char
@@ -281,6 +285,46 @@ subroutine adiabatclimate_surface_temperature_bg_gas_wrapper(ptr, ng, P_i_surf, 
 
   T_surf = c%surface_temperature_bg_gas(P_i_surf, P_surf, bg_gas_f, T_guess, err_f)
 
+  err(1) = c_null_char
+  if (allocated(err_f)) then
+    call copy_string_ftoc(err_f, err)
+  endif
+
+end subroutine
+
+subroutine adiabatclimate_rce_wrapper(ptr, ng, P_i_surf, T_surf_guess, dim_T_guess, T_guess, &
+                                      convecting_with_below_present, dim_convecting_with_below, &
+                                      convecting_with_below, converged, err) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: ng
+  real(c_double), intent(in) :: P_i_surf(ng)
+  real(c_double), intent(in) :: T_surf_guess
+  integer(c_int), intent(in) :: dim_T_guess
+  real(c_double), intent(in) :: T_guess(dim_T_guess)
+  logical(c_bool), intent(in) :: convecting_with_below_present
+  integer(c_int), intent(in) :: dim_convecting_with_below
+  logical(c_bool), intent(in) :: convecting_with_below(dim_convecting_with_below)
+  logical(c_bool), intent(out) :: converged
+  character(c_char), intent(out) :: err(err_len+1)
+
+  logical, allocatable :: convecting_with_below_f(:)
+  logical :: converged_f
+  character(:), allocatable :: err_f
+  type(AdiabatClimate), pointer :: c
+
+  call c_f_pointer(ptr, c)
+
+  allocate(convecting_with_below_f(dim_convecting_with_below))
+  convecting_with_below_f = convecting_with_below
+  
+  converged_f = .false.
+  if (convecting_with_below_present) then
+    converged_f = c%RCE(P_i_surf, T_surf_guess, T_guess, convecting_with_below_f, err_f)
+  else
+    converged_f = c%RCE(P_i_surf, T_surf_guess, T_guess, err=err_f)
+  endif
+  converged = converged_f
   err(1) = c_null_char
   if (allocated(err_f)) then
     call copy_string_ftoc(err_f, err)
@@ -696,6 +740,81 @@ subroutine adiabatclimate_rad_get(ptr, ptr1) bind(c)
   ptr1 = c_loc(c%rad)
 end subroutine
 
+subroutine adiabatclimate_convecting_with_below_get_size(ptr, dim1) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  dim1 = size(c%convecting_with_below,1)
+end subroutine
+
+subroutine adiabatclimate_convecting_with_below_get(ptr, dim1, arr) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  logical(c_bool), intent(out) :: arr(dim1)
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  arr = c%convecting_with_below
+end subroutine
+
+subroutine adiabatclimate_lapse_rate_get_size(ptr, dim1) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  dim1 = size(c%lapse_rate,1)
+end subroutine
+
+subroutine adiabatclimate_lapse_rate_get(ptr, dim1, arr) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(out) :: arr(dim1)
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  arr = c%lapse_rate
+end subroutine
+
+subroutine adiabatclimate_lapse_rate_intended_get_size(ptr, dim1) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  dim1 = size(c%lapse_rate_intended,1)
+end subroutine
+
+subroutine adiabatclimate_lapse_rate_intended_get(ptr, dim1, arr) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(out) :: arr(dim1)
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  arr = c%lapse_rate_intended
+end subroutine
+
+subroutine adiabatclimate_convective_newton_step_size_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%convective_newton_step_size
+end subroutine
+
+subroutine adiabatclimate_convective_newton_step_size_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%convective_newton_step_size = val
+end subroutine
+
 subroutine adiabatclimate_rtol_get(ptr, val) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), intent(in) :: ptr
@@ -748,6 +867,114 @@ subroutine adiabatclimate_tol_make_column_set(ptr, val) bind(c)
   type(AdiabatClimate), pointer :: c
   call c_f_pointer(ptr, c)
   c%tol_make_column = val
+end subroutine
+
+subroutine adiabatclimate_epsj_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%epsj
+end subroutine
+
+subroutine adiabatclimate_epsj_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%epsj = val
+end subroutine
+
+subroutine adiabatclimate_xtol_rc_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%xtol_rc
+end subroutine
+
+subroutine adiabatclimate_xtol_rc_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%xtol_rc = val
+end subroutine
+
+subroutine adiabatclimate_max_rc_iters_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%max_rc_iters
+end subroutine
+
+subroutine adiabatclimate_max_rc_iters_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%max_rc_iters = val
+end subroutine
+
+subroutine adiabatclimate_max_rc_iters_convection_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%max_rc_iters_convection
+end subroutine
+
+subroutine adiabatclimate_max_rc_iters_convection_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%max_rc_iters_convection = val
+end subroutine
+
+subroutine adiabatclimate_radiation_norm_term_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%radiation_norm_term
+end subroutine
+
+subroutine adiabatclimate_radiation_norm_term_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%radiation_norm_term = val
+end subroutine
+
+subroutine adiabatclimate_verbose_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  logical(c_bool), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%verbose
+end subroutine
+
+subroutine adiabatclimate_verbose_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), intent(in) :: ptr
+  logical(c_bool), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%verbose = val
 end subroutine
 
 subroutine adiabatclimate_p_surf_get(ptr, val) bind(c)

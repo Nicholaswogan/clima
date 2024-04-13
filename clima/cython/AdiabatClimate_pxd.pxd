@@ -12,7 +12,7 @@ cdef extern void deallocate_adiabatclimate(void *ptr);
 
 # wrappers for functions
 cdef extern void adiabatclimate_create_wrapper(void *ptr, char *species_file,
-                                                    char *settings_file, char *flux_file, char *data_dir, char *err);
+                                                    char *settings_file, char *flux_file, char *data_dir, bool *double_radiative_grid, char *err);
 
 cdef extern void adiabatclimate_make_profile_wrapper(void *ptr, double *T_surf, int *ng, 
                                       double *P_i_surf, char *err)
@@ -42,6 +42,10 @@ cdef extern void adiabatclimate_surface_temperature_column_wrapper(void *ptr, in
 cdef extern void adiabatclimate_surface_temperature_bg_gas_wrapper(void *ptr, int *ng, 
                                       double *P_i_surf, double *P_surf, char *bg_gas, 
                                       double *T_guess, double *T_surf, char *err)
+
+cdef extern void adiabatclimate_rce_wrapper(void *ptr, int *ng, double *P_i_surf, double *T_surf_guess,
+                                      int *dim_T_guess, double *T_guess, bool *convecting_with_below_present, 
+                                      int *dim_convecting_with_below, bool *convecting_with_below, bool *converged, char *err)
 
 cdef extern void adiabatclimate_set_ocean_solubility_fcn_wrapper(void *ptr, char *species_c, ocean_solubility_fcn fcn, char *err)
 
@@ -99,6 +103,18 @@ cdef extern void adiabatclimate_species_names_get(void *ptr, int *dim1, char* sp
 
 cdef extern void adiabatclimate_rad_get(void *ptr, void *ptr1)
 
+cdef extern void adiabatclimate_convecting_with_below_get_size(void *ptr, int *dim1)
+cdef extern void adiabatclimate_convecting_with_below_get(void *ptr, int *dim1, bool *arr)
+
+cdef extern void adiabatclimate_lapse_rate_get_size(void *ptr, int *dim1)
+cdef extern void adiabatclimate_lapse_rate_get(void *ptr, int *dim1, double *arr)
+
+cdef extern void adiabatclimate_lapse_rate_intended_get_size(void *ptr, int *dim1)
+cdef extern void adiabatclimate_lapse_rate_intended_get(void *ptr, int *dim1, double *arr)
+
+cdef extern void adiabatclimate_convective_newton_step_size_get(void *ptr, double *val)
+cdef extern void adiabatclimate_convective_newton_step_size_set(void *ptr, double *val)
+
 cdef extern void adiabatclimate_rtol_get(void *ptr, double *val)
 cdef extern void adiabatclimate_rtol_set(void *ptr, double *val)
 
@@ -107,6 +123,24 @@ cdef extern void adiabatclimate_atol_set(void *ptr, double *val)
 
 cdef extern void adiabatclimate_tol_make_column_get(void *ptr, double *val)
 cdef extern void adiabatclimate_tol_make_column_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_epsj_get(void *ptr, double *val)
+cdef extern void adiabatclimate_epsj_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_xtol_rc_get(void *ptr, double *val)
+cdef extern void adiabatclimate_xtol_rc_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_max_rc_iters_get(void *ptr, int *val)
+cdef extern void adiabatclimate_max_rc_iters_set(void *ptr, int *val)
+
+cdef extern void adiabatclimate_max_rc_iters_convection_get(void *ptr, int *val)
+cdef extern void adiabatclimate_max_rc_iters_convection_set(void *ptr, int *val)
+
+cdef extern void adiabatclimate_radiation_norm_term_get(void *ptr, double *val)
+cdef extern void adiabatclimate_radiation_norm_term_set(void *ptr, double *val)
+
+cdef extern void adiabatclimate_verbose_get(void *ptr, bool *val)
+cdef extern void adiabatclimate_verbose_set(void *ptr, bool *val)
 
 cdef extern void adiabatclimate_p_surf_get(void *ptr, double *val)
 

@@ -153,14 +153,14 @@ contains
 
   end subroutine
   
-  subroutine two_stream_ir(nz, tau, w0, gt, Rsfc, bplanck, &
+  subroutine two_stream_ir(nz, tau, w0, gt, emissivity, bplanck, &
                            fup, fdn)
     use clima_const, only: pi
     integer, intent(in) :: nz
     real(dp), intent(in) :: tau(nz)
     real(dp), intent(in) :: w0(nz)
     real(dp), intent(in) :: gt(nz)
-    real(dp), intent(in) :: Rsfc
+    real(dp), intent(in) :: emissivity
     real(dp), intent(in) :: bplanck(nz+1)
     real(dp), intent(out) :: fup(nz+1), fdn(nz+1)
     
@@ -173,13 +173,14 @@ contains
     real(dp) :: y1(nz), y2(nz)
     
     integer :: i, l
-    real(dp) :: wrk_real, Ssfc
+    real(dp) :: wrk_real, Ssfc, Rsfc
     real(dp) :: b0n, b1n
     
     real(dp), parameter :: u1 = 0.5_dp ! (Hemispheric mean)
-    real(dp), parameter :: emissivity = 1.0_dp
     real(dp), parameter :: norm = 2.0_dp*pi*u1
     
+    Rsfc = 1.0_dp - emissivity
+
     ! no Delta-Eddington scaling in ir
 
     ! Hemispheric mean Two-Stream coefficients (Table 1)

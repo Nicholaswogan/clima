@@ -10,7 +10,7 @@ module clima
   use clima_eqns, only: temp_dependent_albedo_fcn, ocean_solubility_fcn
 
   ! Radiative transfer classes
-  use clima_radtran, only: Radtran, RadtranIR
+  use clima_radtran, only: Radtran
 
   ! Adiabatic climate model
   use clima_adiabat, only: AdiabatClimate 

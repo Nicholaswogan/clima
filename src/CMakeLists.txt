@@ -1,5 +1,7 @@
 
 add_subdirectory(dependencies)
+# Find lapack
+find_package(LAPACK REQUIRED)
 
 configure_file(clima_version.f90.in ${CMAKE_CURRENT_BINARY_DIR}/clima_version.f90)
 
@@ -24,6 +26,8 @@ set(RADIATE_SOURCES
 
 set(ADIABAT_SOURCES
   adiabat/clima_adiabat_general.f90
+  adiabat/clima_adiabat_rc.f90
+  adiabat/clima_adiabat_solve.f90
   adiabat/clima_adiabat.f90
 )
 
@@ -48,6 +52,7 @@ target_link_libraries(clima
   mrgrnk 
   dop853
   minpack
+  ${LAPACK_LIBRARIES}
 )
 
 # This is important for making Python wrapper
