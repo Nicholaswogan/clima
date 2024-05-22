@@ -440,7 +440,7 @@ contains
   
   subroutine k_rorr(op, kset, zenith_u, zenith_weights, surface_albedo, surface_emissivity, cols, rw, rz)
     use futils, only: rebin
-    use mrgrnk_mod, only: mrgrnk
+    use futils_mrgrnk, only: mrgrnk
     
     use clima_radtran_types, only: OpticalProperties, Ksettings
     use clima_radtran_types, only: RadiateZWrk, RadiateXSWrk

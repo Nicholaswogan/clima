@@ -49,7 +49,6 @@ target_link_libraries(clima
   h5fortran 
   futils 
   finterp
-  mrgrnk 
   dop853
   minpack
   ${LAPACK_LIBRARIES}

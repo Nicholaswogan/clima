@@ -22,9 +22,9 @@ CPMAddPackage(
 # futils
 CPMAddPackage(
   NAME futils
-  VERSION 0.1.8
+  VERSION 0.1.9
   GITHUB_REPOSITORY "Nicholaswogan/futils"
-  GIT_TAG "v0.1.8"
+  GIT_TAG "v0.1.9"
   EXCLUDE_FROM_ALL ON
 )
 
@@ -63,6 +63,3 @@ CPMAddPackage(
 add_library(minpack
   ${minpack_SOURCE_DIR}/src/minpack.f90
 )
-
-# mrgrnk is from ORDERPACK 2.0: http://www.fortran-2000.com/rank/#1.1
-add_library(mrgrnk mrgrnk_mod.f90) 
