@@ -160,28 +160,31 @@ contains
       return
     endif
 
-    sat%mu = s%get_real('mu',error = io_err)
+    tmpdict => s%get_dictionary("parameters",.true.,error = io_err)
+    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+
+    sat%mu = tmpdict%get_real('mu',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (sat%mu <= 0.0_dp) then
       err = 'Saturation "mu" must be positive for species "'//name//'" in "'//filename//'"'
       return
     endif
 
-    sat%T_ref = s%get_real('T-ref',error = io_err)
+    sat%T_ref = tmpdict%get_real('T-ref',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (sat%T_ref <= 0.0_dp) then
       err = 'Saturation "T-ref" must be positive for species "'//name//'" in "'//filename//'"'
       return
     endif
 
-    sat%P_ref = s%get_real('P-ref',error = io_err)
+    sat%P_ref = tmpdict%get_real('P-ref',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (sat%P_ref <= 0.0_dp) then
       err = 'Saturation "P-ref" must be positive for species "'//name//'" in "'//filename//'"'
       return
     endif
 
-    sat%T_triple = s%get_real('T-triple',error = io_err)
+    sat%T_triple = tmpdict%get_real('T-triple',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (sat%T_triple <= 0.0_dp) then
       err = 'Saturation "T_triple" must be positive for species "'//name//'" in "'//filename//'"'
@@ -192,7 +195,7 @@ contains
       return
     endif
 
-    sat%T_critical = s%get_real('T-critical',error = io_err)
+    sat%T_critical = tmpdict%get_real('T-critical',error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     if (sat%T_critical <= 0.0_dp) then
       err = 'Saturation "T_critical" must be positive for species "'//name//'" in "'//filename//'"'

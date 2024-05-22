@@ -19,11 +19,8 @@ species:
   # never condenses
   saturation:
     model: LinearLatentHeat
-    mu: 18.01534
-    T-ref: 373.15
-    P-ref: 1.0142e6
-    T-triple: 273.15
-    T-critical: 647.0
+    parameters: {mu: 18.01534, T-ref: 373.15, P-ref: 1.0142e6, T-triple: 273.15, 
+      T-critical: 647.0}
     vaporization: {a: 2.841421e+10, b: -1.399732e+07}
     sublimation: {a: 2.746884e+10, b: 4.181527e+06}
     super-critical: {a: 1.793161e+12, b: 0.0}
@@ -38,11 +35,8 @@ species:
     - [58.16639, 2.720074, -0.492289, 0.038844, -6.447293, -425.9186, 263.6125]
   saturation:
     model: LinearLatentHeat
-    mu: 44.01
-    T-ref: 250.0
-    P-ref: 17843676.678142548
-    T-triple: 216.58
-    T-critical: 304.13
+    parameters: {mu: 44.01, T-ref: 250.0, P-ref: 17843676.678142548, T-triple: 216.58, 
+      T-critical: 304.13}
     vaporization: {a: 4.656475e+09, b: -3.393595e+06}
     sublimation: {a: 6.564668e+09, b: -3.892217e+06}
     super-critical: {a: 1.635908e+11, b: 0.0}
