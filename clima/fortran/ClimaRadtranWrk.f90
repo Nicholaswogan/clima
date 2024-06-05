@@ -81,4 +81,24 @@ subroutine climaradtranwrk_fdn_n_get(ptr, dim1, arr) bind(c)
   call c_f_pointer(ptr, w)
   arr = w%fdn_n
 end subroutine
+
+subroutine climaradtranwrk_tau_band_get_size(ptr, dim1, dim2) bind(c)
+  use clima_radtran, only: ClimaRadtranWrk
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1, dim2
+  type(ClimaRadtranWrk), pointer :: w
+  call c_f_pointer(ptr, w)
+  dim1 = size(w%tau_band,1)
+  dim2 = size(w%tau_band,2)
+end subroutine
+
+subroutine climaradtranwrk_tau_band_get(ptr, dim1, dim2, arr) bind(c)
+  use clima_radtran, only: ClimaRadtranWrk
+  type(c_ptr), intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1, dim2
+  real(c_double), intent(out) :: arr(dim1,dim2)
+  type(ClimaRadtranWrk), pointer :: w
+  call c_f_pointer(ptr, w)
+  arr = w%tau_band
+end subroutine
   
