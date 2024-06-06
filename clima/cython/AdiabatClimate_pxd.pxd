@@ -7,7 +7,7 @@ ctypedef double (*temp_dependent_albedo_fcn)(double T_surf)
 ctypedef void (*ocean_solubility_fcn)(double T_surf, int ng, double *P_i, double *m_i, void *args_p)
 
 # allocate and destroy
-cdef extern void allocate_adiabatclimate(void *ptr);
+cdef extern void *allocate_adiabatclimate();
 cdef extern void deallocate_adiabatclimate(void *ptr);
 
 # wrappers for functions

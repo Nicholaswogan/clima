@@ -27,7 +27,7 @@ cdef class AdiabatClimate:
         The directory where all data is stored.
     """
     # Allocate memory
-    wa_pxd.allocate_adiabatclimate(&self._ptr)
+    self._ptr = wa_pxd.allocate_adiabatclimate()
 
     if data_dir == None:
       data_dir_ = os.path.dirname(os.path.realpath(__file__))+'/data'
@@ -46,14 +46,14 @@ cdef class AdiabatClimate:
     cdef char err[ERR_LEN+1]
     
     # Initialize
-    wa_pxd.adiabatclimate_create_wrapper(&self._ptr, species_file_c,
+    wa_pxd.adiabatclimate_create_wrapper(self._ptr, species_file_c,
                                          settings_file_c, flux_file_c, data_dir_c, &double_radiative_grid,
                                          err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
 
   def __dealloc__(self):
-    wa_pxd.deallocate_adiabatclimate(&self._ptr);
+    wa_pxd.deallocate_adiabatclimate(self._ptr);
 
   def make_profile(self, double T_surf, ndarray[double, ndim=1] P_i_surf):
     """Constructs an atmosphere using a multispecies pseudoadiabat (Eq. 1 in Graham et al. 2021, PSJ)
@@ -68,7 +68,7 @@ cdef class AdiabatClimate:
     """
     cdef int ng = P_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
-    wa_pxd.adiabatclimate_make_profile_wrapper(&self._ptr, &T_surf,
+    wa_pxd.adiabatclimate_make_profile_wrapper(self._ptr, &T_surf,
     &ng, <double *>P_i_surf.data, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
@@ -86,7 +86,7 @@ cdef class AdiabatClimate:
     """
     cdef int ng = N_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
-    wa_pxd.adiabatclimate_make_column_wrapper(&self._ptr, &T_surf,
+    wa_pxd.adiabatclimate_make_column_wrapper(self._ptr, &T_surf,
     &ng, <double *>N_i_surf.data, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
@@ -111,7 +111,7 @@ cdef class AdiabatClimate:
     cdef bytes bg_gas_b = pystring2cstring(bg_gas)
     cdef char *bg_gas_c = bg_gas_b
     cdef char err[ERR_LEN+1]
-    wa_pxd.adiabatclimate_make_profile_bg_gas_wrapper(&self._ptr, &T_surf,
+    wa_pxd.adiabatclimate_make_profile_bg_gas_wrapper(self._ptr, &T_surf,
     &ng, <double *>P_i_surf.data, &P_surf, bg_gas_c, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
@@ -136,7 +136,7 @@ cdef class AdiabatClimate:
     cdef int ng = P_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
     cdef double ISR, OLR;
-    wa_pxd.adiabatclimate_toa_fluxes_wrapper(&self._ptr, &T_surf,
+    wa_pxd.adiabatclimate_toa_fluxes_wrapper(self._ptr, &T_surf,
     &ng, <double *>P_i_surf.data, &ISR, &OLR, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
@@ -162,7 +162,7 @@ cdef class AdiabatClimate:
     cdef int ng = N_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
     cdef double ISR, OLR;
-    wa_pxd.adiabatclimate_toa_fluxes_column_wrapper(&self._ptr, &T_surf,
+    wa_pxd.adiabatclimate_toa_fluxes_column_wrapper(self._ptr, &T_surf,
     &ng, <double *>N_i_surf.data, &ISR, &OLR, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
@@ -194,7 +194,7 @@ cdef class AdiabatClimate:
     cdef char *bg_gas_c = bg_gas_b
     cdef char err[ERR_LEN+1]
     cdef double ISR, OLR;
-    wa_pxd.adiabatclimate_toa_fluxes_bg_gas_wrapper(&self._ptr, &T_surf,
+    wa_pxd.adiabatclimate_toa_fluxes_bg_gas_wrapper(self._ptr, &T_surf,
     &ng, <double *>P_i_surf.data, &P_surf, bg_gas_c, &ISR, &OLR, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
@@ -219,7 +219,7 @@ cdef class AdiabatClimate:
     cdef int ng = P_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
     cdef double T_surf;
-    wa_pxd.adiabatclimate_surface_temperature_wrapper(&self._ptr, 
+    wa_pxd.adiabatclimate_surface_temperature_wrapper(self._ptr, 
     &ng, <double *>P_i_surf.data, &T_guess, &T_surf, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
@@ -244,7 +244,7 @@ cdef class AdiabatClimate:
     cdef int ng = N_i_surf.shape[0]
     cdef char err[ERR_LEN+1]
     cdef double T_surf;
-    wa_pxd.adiabatclimate_surface_temperature_column_wrapper(&self._ptr, 
+    wa_pxd.adiabatclimate_surface_temperature_column_wrapper(self._ptr, 
     &ng, <double *>N_i_surf.data, &T_guess, &T_surf, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
@@ -281,7 +281,7 @@ cdef class AdiabatClimate:
       fcn_l = fcn.address
       fcn_c = <wa_pxd.ocean_solubility_fcn> fcn_l
 
-    wa_pxd.adiabatclimate_set_ocean_solubility_fcn_wrapper(&self._ptr, species_c, fcn_c, err)
+    wa_pxd.adiabatclimate_set_ocean_solubility_fcn_wrapper(self._ptr, species_c, fcn_c, err)
     if len(err.strip()) > 0:
        raise ClimaException(err.decode("utf-8").strip())
 
@@ -310,7 +310,7 @@ cdef class AdiabatClimate:
     cdef char *bg_gas_c = bg_gas_b
     cdef char err[ERR_LEN+1]
     cdef double T_surf;
-    wa_pxd.adiabatclimate_surface_temperature_bg_gas_wrapper(&self._ptr, 
+    wa_pxd.adiabatclimate_surface_temperature_bg_gas_wrapper(self._ptr, 
     &ng, <double *>P_i_surf.data, &P_surf, bg_gas_c, &T_guess, &T_surf, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
@@ -350,7 +350,7 @@ cdef class AdiabatClimate:
     cdef cbool converged
     cdef char err[ERR_LEN+1]
 
-    wa_pxd.adiabatclimate_rce_wrapper(&self._ptr, &ng, <double *>P_i_surf.data, &T_surf_guess,
+    wa_pxd.adiabatclimate_rce_wrapper(self._ptr, &ng, <double *>P_i_surf.data, &T_surf_guess,
                                &dim_T_guess, <double *>T_guess.data, &convecting_with_below_present,
                                &dim_convecting_with_below, <cbool *>convecting_with_below_.data, &converged, err)
     if len(err.strip()) > 0:
@@ -360,7 +360,7 @@ cdef class AdiabatClimate:
   def to_regular_grid(self):
     "Re-grids atmosphere so that each grid cell is equally spaced in altitude."
     cdef char err[ERR_LEN+1]
-    wa_pxd.adiabatclimate_to_regular_grid_wrapper(&self._ptr, err)
+    wa_pxd.adiabatclimate_to_regular_grid_wrapper(self._ptr, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
 
@@ -384,7 +384,7 @@ cdef class AdiabatClimate:
     cdef bytes filename_b = pystring2cstring(filename)
     cdef char *filename_c = filename_b
     cdef char err[ERR_LEN+1]
-    wa_pxd.adiabatclimate_out2atmosphere_txt_wrapper(&self._ptr, filename_c, &nz, <double *>eddy.data, &overwrite, &clip, err)  
+    wa_pxd.adiabatclimate_out2atmosphere_txt_wrapper(self._ptr, filename_c, &nz, <double *>eddy.data, &overwrite, &clip, err)  
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
 
@@ -403,7 +403,7 @@ cdef class AdiabatClimate:
     """
     cdef char err[ERR_LEN+1];
     cdef double tau_LW, k_term, f_term;
-    wa_pxd.adiabatclimate_heat_redistribution_parameters_wrapper(&self._ptr, &tau_LW, &k_term, &f_term, err)
+    wa_pxd.adiabatclimate_heat_redistribution_parameters_wrapper(self._ptr, &tau_LW, &k_term, &f_term, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
     return tau_LW, k_term, f_term
@@ -412,19 +412,19 @@ cdef class AdiabatClimate:
     "float. Pressure of the top of the atmosphere (dynes/cm^2)"
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_p_top_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_p_top_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_p_top_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_p_top_set(self._ptr, &val)
 
   property T_trop:
     "float. Tropopause temperature (K)"
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_t_trop_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_t_trop_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_t_trop_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_t_trop_set(self._ptr, &val)
 
   property use_make_column_P_guess:
     """bool. If True, then any function that calls `make_column` will
@@ -432,10 +432,10 @@ cdef class AdiabatClimate:
     """
     def __get__(self):
       cdef cbool val
-      wa_pxd.adiabatclimate_use_make_column_p_guess_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_use_make_column_p_guess_get(self._ptr, &val)
       return val
     def __set__(self, cbool val):
-      wa_pxd.adiabatclimate_use_make_column_p_guess_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_use_make_column_p_guess_set(self._ptr, &val)
 
   property make_column_P_guess:
     """ndarray[double,ndim=1], shape (ng). Initial guess for surface pressure 
@@ -443,16 +443,16 @@ cdef class AdiabatClimate:
     """
     def __get__(self):
       cdef int dim1
-      wa_pxd.adiabatclimate_make_column_p_guess_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_make_column_p_guess_get_size(self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
-      wa_pxd.adiabatclimate_make_column_p_guess_get(&self._ptr, &dim1, <double *>arr.data)
+      wa_pxd.adiabatclimate_make_column_p_guess_get(self._ptr, &dim1, <double *>arr.data)
       return arr
     def __set__(self, ndarray[double, ndim=1] arr):
       cdef int dim1
-      wa_pxd.adiabatclimate_make_column_p_guess_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_make_column_p_guess_get_size(self._ptr, &dim1)
       if arr.shape[0] != dim1:
         raise ClimaException('"make_column_P_guess" is the wrong size')
-      wa_pxd.adiabatclimate_make_column_p_guess_set(&self._ptr, &dim1, <double *>arr.data)
+      wa_pxd.adiabatclimate_make_column_p_guess_set(self._ptr, &dim1, <double *>arr.data)
 
   property solve_for_T_trop:
     """bool. If True, then Tropopause temperature is non-linearly solved for such that
@@ -460,10 +460,10 @@ cdef class AdiabatClimate:
     """
     def __get__(self):
       cdef cbool val
-      wa_pxd.adiabatclimate_solve_for_t_trop_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_solve_for_t_trop_get(self._ptr, &val)
       return val
     def __set__(self, cbool val):
-      wa_pxd.adiabatclimate_solve_for_t_trop_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_solve_for_t_trop_set(self._ptr, &val)
 
   property albedo_fcn:
     """Callback that sets the surface albedo based on the surface temperature.
@@ -485,22 +485,22 @@ cdef class AdiabatClimate:
         fcn_l = fcn.address
         fcn_c = <wa_pxd.temp_dependent_albedo_fcn> fcn_l
 
-      wa_pxd.adiabatclimate_albedo_fcn_set(&self._ptr, fcn_c)
+      wa_pxd.adiabatclimate_albedo_fcn_set(self._ptr, fcn_c)
 
   property RH:
     "ndarray[double,ndim=1], shape (ng). Relative humidity of each species"
     def __get__(self):
       cdef int dim1
-      wa_pxd.adiabatclimate_rh_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_rh_get_size(self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
-      wa_pxd.adiabatclimate_rh_get(&self._ptr, &dim1, <double *>arr.data)
+      wa_pxd.adiabatclimate_rh_get(self._ptr, &dim1, <double *>arr.data)
       return arr
     def __set__(self, ndarray[double, ndim=1] arr):
       cdef int dim1
-      wa_pxd.adiabatclimate_rh_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_rh_get_size(self._ptr, &dim1)
       if arr.shape[0] != dim1:
         raise ClimaException('"RH" is the wrong size')
-      wa_pxd.adiabatclimate_rh_set(&self._ptr, &dim1, <double *>arr.data)
+      wa_pxd.adiabatclimate_rh_set(self._ptr, &dim1, <double *>arr.data)
 
   property ocean_args_p:
     "int or NoneType. Pointer to data that is passed to ocean solubility functions."
@@ -512,7 +512,7 @@ cdef class AdiabatClimate:
       else:
         p1 = p_int
         p = <void *>p1
-      wa_pxd.adiabatclimate_ocean_args_p_set(&self._ptr, p)
+      wa_pxd.adiabatclimate_ocean_args_p_set(self._ptr, p)
 
   property tidally_locked_dayside:
     """bool. If True, then will attempt to compute the climate corresponding to the
@@ -520,70 +520,70 @@ cdef class AdiabatClimate:
     """
     def __get__(self):
       cdef cbool val
-      wa_pxd.adiabatclimate_tidally_locked_dayside_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_tidally_locked_dayside_get(self._ptr, &val)
       return val
     def __set__(self, cbool val):
-      wa_pxd.adiabatclimate_tidally_locked_dayside_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_tidally_locked_dayside_set(self._ptr, &val)
 
   property L:
     "float. Circulation's horizontal scale (cm)."
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_l_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_l_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_l_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_l_set(self._ptr, &val)
 
   property chi:
     "float. Heat engine efficiency term (no units)."
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_chi_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_chi_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_chi_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_chi_set(self._ptr, &val)
 
   property n_LW:
     "float. = 1 or 2 (no units)."
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_n_lw_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_n_lw_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_n_lw_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_n_lw_set(self._ptr, &val)
 
   property Cd:
     "float. Drag coefficient (no units)."
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_cd_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_cd_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_cd_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_cd_set(self._ptr, &val)
 
   property surface_heat_flow:
     "float. surface heat flow (mW/m^2)."
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_surface_heat_flow_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_surface_heat_flow_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_surface_heat_flow_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_surface_heat_flow_set(self._ptr, &val)
 
   property species_names:
     "List, shape (ng). The name of each species in the model"
     def __get__(self):
       cdef int dim1
-      wa_pxd.adiabatclimate_species_names_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_species_names_get_size(self._ptr, &dim1)
       cdef ndarray species_names_c = np.empty(dim1*S_STR_LEN + 1, 'S1')
-      wa_pxd.adiabatclimate_species_names_get(&self._ptr, &dim1, <char *>species_names_c.data)
+      wa_pxd.adiabatclimate_species_names_get(self._ptr, &dim1, <char *>species_names_c.data)
       return c2stringarr(species_names_c, S_STR_LEN, dim1)
 
   property rad:
     "Radtran object that does radiative transfer"
     def __get__(self):
       cdef void *ptr1
-      wa_pxd.adiabatclimate_rad_get(&self._ptr, &ptr1)
+      wa_pxd.adiabatclimate_rad_get(self._ptr, &ptr1)
       var = Radtran()
       var._ptr = ptr1
       return var
@@ -595,91 +595,91 @@ cdef class AdiabatClimate:
     """
     def __get__(self):
       cdef int dim1
-      wa_pxd.adiabatclimate_convecting_with_below_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_convecting_with_below_get_size(self._ptr, &dim1)
       cdef ndarray[cbool, ndim=1] arr = np.empty(dim1, bool)
-      wa_pxd.adiabatclimate_convecting_with_below_get(&self._ptr, &dim1, <cbool *>arr.data)
+      wa_pxd.adiabatclimate_convecting_with_below_get(self._ptr, &dim1, <cbool *>arr.data)
       return arr
 
   property lapse_rate:
     "ndarray[double,ndim=1], shape (nz). The true lapse rate (dlnT/dlnP)."
     def __get__(self):
       cdef int dim1
-      wa_pxd.adiabatclimate_lapse_rate_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_lapse_rate_get_size(self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
-      wa_pxd.adiabatclimate_lapse_rate_get(&self._ptr, &dim1, <double *>arr.data)
+      wa_pxd.adiabatclimate_lapse_rate_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
   property lapse_rate_intended:
     "ndarray[double,ndim=1], shape (nz). The computed lapse rate (dlnT/dlnP)."
     def __get__(self):
       cdef int dim1
-      wa_pxd.adiabatclimate_lapse_rate_intended_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_lapse_rate_intended_get_size(self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
-      wa_pxd.adiabatclimate_lapse_rate_intended_get(&self._ptr, &dim1, <double *>arr.data)
+      wa_pxd.adiabatclimate_lapse_rate_intended_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
   property convective_newton_step_size:
     "float. The size of the newton step."
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_convective_newton_step_size_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_convective_newton_step_size_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_convective_newton_step_size_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_convective_newton_step_size_set(self._ptr, &val)
   
   property rtol:
     "float. Relative tolerance of integration."
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_rtol_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_rtol_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_rtol_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_rtol_set(self._ptr, &val)
   
   property atol:
     "float. Absolute tolerance of integration."
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_atol_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_atol_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_atol_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_atol_set(self._ptr, &val)
 
   property tol_make_column:
     "float. Tolerance for nonlinear solve in make_column."
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_tol_make_column_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_tol_make_column_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_tol_make_column_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_tol_make_column_set(self._ptr, &val)
     
   property epsj:
     "float. Perturbation for the jacobian"
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_epsj_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_epsj_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_epsj_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_epsj_set(self._ptr, &val)
 
   property xtol_rc:
     "float. xtol for RC equilibrium"
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_xtol_rc_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_xtol_rc_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_xtol_rc_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_xtol_rc_set(self._ptr, &val)
 
   property max_rc_iters:
     "int. Max number of iterations in the RCE routine"
     def __get__(self):
       cdef int val
-      wa_pxd.adiabatclimate_max_rc_iters_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_max_rc_iters_get(self._ptr, &val)
       return val
     def __set__(self, int val):
-      wa_pxd.adiabatclimate_max_rc_iters_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_max_rc_iters_set(self._ptr, &val)
 
   property max_rc_iters_convection:
     """int. Max number of iterations for which convective layers can
@@ -687,66 +687,66 @@ cdef class AdiabatClimate:
     """
     def __get__(self):
       cdef int val
-      wa_pxd.adiabatclimate_max_rc_iters_convection_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_max_rc_iters_convection_get(self._ptr, &val)
       return val
     def __set__(self, int val):
-      wa_pxd.adiabatclimate_max_rc_iters_convection_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_max_rc_iters_convection_set(self._ptr, &val)
 
   property radiation_norm_term:
     "float. A term that weights the importance of maintaining radiative equilibrium to convection."
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_radiation_norm_term_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_radiation_norm_term_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_radiation_norm_term_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_radiation_norm_term_set(self._ptr, &val)
 
   property verbose:
     "bool. verbosity"
     def __get__(self):
       cdef cbool val
-      wa_pxd.adiabatclimate_verbose_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_verbose_get(self._ptr, &val)
       return val
     def __set__(self, cbool val):
-      wa_pxd.adiabatclimate_verbose_set(&self._ptr, &val)
+      wa_pxd.adiabatclimate_verbose_set(self._ptr, &val)
 
   property P_surf:
     "float. Surface pressure (dynes/cm^2)"
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_p_surf_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_p_surf_get(self._ptr, &val)
       return val
 
   property P_trop:
     "float. Tropopause pressure (dynes/cm^2)"
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_p_trop_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_p_trop_get(self._ptr, &val)
       return val
 
   property P:
     "ndarray[double,ndim=1], shape (nz). Pressure in each grid cell (dynes/cm^2)"
     def __get__(self):
       cdef int dim1
-      wa_pxd.adiabatclimate_p_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_p_get_size(self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
-      wa_pxd.adiabatclimate_p_get(&self._ptr, &dim1, <double *>arr.data)
+      wa_pxd.adiabatclimate_p_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
   property T_surf:
     "float. Surface temperature (K)"
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_t_surf_get(&self._ptr, &val)
+      wa_pxd.adiabatclimate_t_surf_get(self._ptr, &val)
       return val
 
   property T:
     "ndarray[double,ndim=1], shape (nz). Temperature in each grid cell (K)"
     def __get__(self):
       cdef int dim1
-      wa_pxd.adiabatclimate_t_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_t_get_size(self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
-      wa_pxd.adiabatclimate_t_get(&self._ptr, &dim1, <double *>arr.data)
+      wa_pxd.adiabatclimate_t_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
   property f_i:
@@ -755,54 +755,54 @@ cdef class AdiabatClimate:
     """
     def __get__(self):
       cdef int dim1, dim2
-      wa_pxd.adiabatclimate_f_i_get_size(&self._ptr, &dim1, &dim2)
+      wa_pxd.adiabatclimate_f_i_get_size(self._ptr, &dim1, &dim2)
       cdef ndarray arr = np.empty((dim1, dim2), np.double, order="F")
-      wa_pxd.adiabatclimate_f_i_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
+      wa_pxd.adiabatclimate_f_i_get(self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr
 
   property z:
     "ndarray[double,ndim=1], shape (nz). Altitude at the center of the grid cell (cm)"
     def __get__(self):
       cdef int dim1
-      wa_pxd.adiabatclimate_z_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_z_get_size(self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
-      wa_pxd.adiabatclimate_z_get(&self._ptr, &dim1, <double *>arr.data)
+      wa_pxd.adiabatclimate_z_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
   property dz:
     "ndarray[double,ndim=1], shape (nz). Thickness of each grid cell (cm)"
     def __get__(self):
       cdef int dim1
-      wa_pxd.adiabatclimate_dz_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_dz_get_size(self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
-      wa_pxd.adiabatclimate_dz_get(&self._ptr, &dim1, <double *>arr.data)
+      wa_pxd.adiabatclimate_dz_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
   property densities:
     "ndarray[double,ndim=2], shape (nz,ng). Densities in each grid cell (molecules/cm^3)"
     def __get__(self):
       cdef int dim1, dim2
-      wa_pxd.adiabatclimate_densities_get_size(&self._ptr, &dim1, &dim2)
+      wa_pxd.adiabatclimate_densities_get_size(self._ptr, &dim1, &dim2)
       cdef ndarray arr = np.empty((dim1, dim2), np.double, order="F")
-      wa_pxd.adiabatclimate_densities_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
+      wa_pxd.adiabatclimate_densities_get(self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr
 
   property N_atmos:
     "ndarray[double,ndim=1], shape (ng). Reservoir of gas in the atmosphere (mol/cm^2)"
     def __get__(self):
       cdef int dim1
-      wa_pxd.adiabatclimate_n_atmos_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_n_atmos_get_size(self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
-      wa_pxd.adiabatclimate_n_atmos_get(&self._ptr, &dim1, <double *>arr.data)
+      wa_pxd.adiabatclimate_n_atmos_get(self._ptr, &dim1, <double *>arr.data)
       return arr
   
   property N_surface:
     "ndarray[double,ndim=1], shape (ng). Reservoir of gas on surface (mol/cm^2)"
     def __get__(self):
       cdef int dim1
-      wa_pxd.adiabatclimate_n_surface_get_size(&self._ptr, &dim1)
+      wa_pxd.adiabatclimate_n_surface_get_size(self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
-      wa_pxd.adiabatclimate_n_surface_get(&self._ptr, &dim1, <double *>arr.data)
+      wa_pxd.adiabatclimate_n_surface_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
   property N_ocean:
@@ -811,8 +811,8 @@ cdef class AdiabatClimate:
     """
     def __get__(self):
       cdef int dim1, dim2
-      wa_pxd.adiabatclimate_n_ocean_get_size(&self._ptr, &dim1, &dim2)
+      wa_pxd.adiabatclimate_n_ocean_get_size(self._ptr, &dim1, &dim2)
       cdef ndarray arr = np.empty((dim1,dim2), np.double, order="f")
-      wa_pxd.adiabatclimate_n_ocean_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
+      wa_pxd.adiabatclimate_n_ocean_get(self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr
  

@@ -15,9 +15,9 @@ cdef class ClimaRadtranWrk:
     """
     def __get__(self):
       cdef int dim1, dim2
-      rwrk_pxd.climaradtranwrk_fup_a_get_size(&self._ptr, &dim1, &dim2)
+      rwrk_pxd.climaradtranwrk_fup_a_get_size(self._ptr, &dim1, &dim2)
       cdef ndarray arr = np.empty((dim1, dim2), np.double, order="F")
-      rwrk_pxd.climaradtranwrk_fup_a_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
+      rwrk_pxd.climaradtranwrk_fup_a_get(self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr
 
   property fdn_a:
@@ -26,9 +26,9 @@ cdef class ClimaRadtranWrk:
     """
     def __get__(self):
       cdef int dim1, dim2
-      rwrk_pxd.climaradtranwrk_fdn_a_get_size(&self._ptr, &dim1, &dim2)
+      rwrk_pxd.climaradtranwrk_fdn_a_get_size(self._ptr, &dim1, &dim2)
       cdef ndarray arr = np.empty((dim1, dim2), np.double, order="F")
-      rwrk_pxd.climaradtranwrk_fdn_a_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
+      rwrk_pxd.climaradtranwrk_fdn_a_get(self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr
 
   property fup_n:
@@ -37,9 +37,9 @@ cdef class ClimaRadtranWrk:
     """
     def __get__(self):
       cdef int dim1
-      rwrk_pxd.climaradtranwrk_fup_n_get_size(&self._ptr, &dim1)
+      rwrk_pxd.climaradtranwrk_fup_n_get_size(self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
-      rwrk_pxd.climaradtranwrk_fup_n_get(&self._ptr, &dim1, <double *>arr.data)
+      rwrk_pxd.climaradtranwrk_fup_n_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
   property fdn_n:
@@ -48,16 +48,16 @@ cdef class ClimaRadtranWrk:
     """
     def __get__(self):
       cdef int dim1
-      rwrk_pxd.climaradtranwrk_fdn_n_get_size(&self._ptr, &dim1)
+      rwrk_pxd.climaradtranwrk_fdn_n_get_size(self._ptr, &dim1)
       cdef ndarray arr = np.empty(dim1, np.double)
-      rwrk_pxd.climaradtranwrk_fdn_n_get(&self._ptr, &dim1, <double *>arr.data)
+      rwrk_pxd.climaradtranwrk_fdn_n_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
   property tau_band:
     "ndarray[double,ndim=2], size (nz,nw). Band optical thickness."
     def __get__(self):
       cdef int dim1, dim2
-      rwrk_pxd.climaradtranwrk_tau_band_get_size(&self._ptr, &dim1, &dim2)
+      rwrk_pxd.climaradtranwrk_tau_band_get_size(self._ptr, &dim1, &dim2)
       cdef ndarray arr = np.empty((dim1, dim2), np.double, order="F")
-      rwrk_pxd.climaradtranwrk_tau_band_get(&self._ptr, &dim1, &dim2, <double *>arr.data)
+      rwrk_pxd.climaradtranwrk_tau_band_get(self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr

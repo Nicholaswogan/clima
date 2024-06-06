@@ -2,7 +2,7 @@
 
 subroutine radtran_skin_temperature_wrapper(ptr, bond_albedo, T_skin) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   real(c_double), intent(in) :: bond_albedo
   real(c_double), intent(out) :: T_skin
   type(Radtran), pointer :: rad
@@ -12,7 +12,7 @@ end subroutine
 
 subroutine radtran_opacities2yaml_wrapper_1(ptr, out_len, out_cp) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   integer(c_int), intent(out) :: out_len
   type(c_ptr), intent(out) :: out_cp
   character(:), allocatable :: out_f
@@ -30,7 +30,7 @@ end subroutine
 
 subroutine radtran_opacities2yaml_wrapper_2(ptr, out_cp, out_len, out_c) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   type(c_ptr), intent(in) :: out_cp
   integer(c_int), intent(in) :: out_len
   character(kind=c_char), intent(out) :: out_c(out_len+1)
@@ -52,7 +52,7 @@ end subroutine
 
 subroutine radtran_surface_albedo_get_size(ptr, dim1) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   integer(c_int), intent(out) :: dim1
   type(Radtran), pointer :: rad
   call c_f_pointer(ptr, rad)
@@ -61,7 +61,7 @@ end subroutine
 
 subroutine radtran_surface_albedo_get(ptr, dim1, arr) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   integer(c_int), intent(in) :: dim1
   real(c_double), intent(out) :: arr(dim1)
   type(Radtran), pointer :: rad
@@ -71,7 +71,7 @@ end subroutine
 
 subroutine radtran_surface_albedo_set(ptr, dim1, arr) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   integer(c_int), intent(in) :: dim1
   real(c_double), intent(in) :: arr(dim1)
   type(Radtran), pointer :: rad
@@ -81,7 +81,7 @@ end subroutine
 
 subroutine radtran_surface_emissivity_get_size(ptr, dim1) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   integer(c_int), intent(out) :: dim1
   type(Radtran), pointer :: rad
   call c_f_pointer(ptr, rad)
@@ -90,7 +90,7 @@ end subroutine
 
 subroutine radtran_surface_emissivity_get(ptr, dim1, arr) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   integer(c_int), intent(in) :: dim1
   real(c_double), intent(out) :: arr(dim1)
   type(Radtran), pointer :: rad
@@ -100,7 +100,7 @@ end subroutine
 
 subroutine radtran_surface_emissivity_set(ptr, dim1, arr) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   integer(c_int), intent(in) :: dim1
   real(c_double), intent(in) :: arr(dim1)
   type(Radtran), pointer :: rad
@@ -110,7 +110,7 @@ end subroutine
 
 subroutine radtran_ir_get(ptr, ptr1) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   type(c_ptr), intent(out) :: ptr1
   type(Radtran), pointer :: rad
   call c_f_pointer(ptr, rad)
@@ -119,7 +119,7 @@ end subroutine
 
 subroutine radtran_sol_get(ptr, ptr1) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   type(c_ptr), intent(out) :: ptr1
   type(Radtran), pointer :: rad
   call c_f_pointer(ptr, rad)
@@ -128,7 +128,7 @@ end subroutine
 
 subroutine radtran_wrk_ir_get(ptr, ptr1) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   type(c_ptr), intent(out) :: ptr1
   type(Radtran), pointer :: rad
   call c_f_pointer(ptr, rad)
@@ -137,7 +137,7 @@ end subroutine
 
 subroutine radtran_wrk_sol_get(ptr, ptr1) bind(c)
   use clima, only: Radtran
-  type(c_ptr), intent(in) :: ptr
+  type(c_ptr), value, intent(in) :: ptr
   type(c_ptr), intent(out) :: ptr1
   type(Radtran), pointer :: rad
   call c_f_pointer(ptr, rad)
