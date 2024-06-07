@@ -1,7 +1,7 @@
 cimport ClimaRadtranWrk_pxd as rwrk_pxd
 
 cdef class ClimaRadtranWrk:
-  cdef void *_ptr
+  cdef rwrk_pxd.ClimaRadtranWrk *_ptr
 
   def __init__(self):
     pass

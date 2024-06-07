@@ -1,7 +1,7 @@
 cimport OpticalProperties_pxd as op_pxd
 
 cdef class OpticalProperties:
-  cdef void *_ptr
+  cdef op_pxd.OpticalProperties *_ptr
 
   def __init__(self):
     pass

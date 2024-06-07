@@ -1,7 +1,7 @@
 cimport Radtran_pxd as rad_pxd
 
 cdef class Radtran:
-  cdef void *_ptr
+  cdef rad_pxd.Radtran *_ptr
 
   def __init__(self):
     pass
@@ -74,37 +74,29 @@ cdef class Radtran:
   property ir:
     "The OpticalProperties for longwave radiative transfer"
     def __get__(self):
-      cdef void *ptr1;
-      rad_pxd.radtran_ir_get(self._ptr, &ptr1)
       var = OpticalProperties()
-      var._ptr = ptr1
+      rad_pxd.radtran_ir_get(self._ptr, &var._ptr)
       return var
 
   property sol:
     "The OpticalProperties for shortwave radiative transfer"
     def __get__(self):
-      cdef void *ptr1;
-      rad_pxd.radtran_sol_get(self._ptr, &ptr1)
       var = OpticalProperties()
-      var._ptr = ptr1
+      rad_pxd.radtran_sol_get(self._ptr, &var._ptr)
       return var
 
   property wrk_ir:
     "The ClimaRadtranWrk for longwave radiative transfer"
     def __get__(self):
-      cdef void *ptr1;
-      rad_pxd.radtran_wrk_ir_get(self._ptr, &ptr1)
       var = ClimaRadtranWrk()
-      var._ptr = ptr1
+      rad_pxd.radtran_wrk_ir_get(self._ptr, &var._ptr)
       return var
 
   property wrk_sol:
     "The ClimaRadtranWrk for shortwave radiative transfer"
     def __get__(self):
-      cdef void *ptr1;
-      rad_pxd.radtran_wrk_sol_get(self._ptr, &ptr1)
       var = ClimaRadtranWrk()
-      var._ptr = ptr1
+      rad_pxd.radtran_wrk_sol_get(self._ptr, &var._ptr)
       return var
   
 

@@ -9,7 +9,7 @@ cdef class AdiabatClimate:
   that balances the outgoing longwave radiation.
   """
 
-  cdef void *_ptr
+  cdef wa_pxd.AdiabatClimate *_ptr
   cdef cbool _init_called
 
   def __cinit__(self, *args, **kwargs):
@@ -521,7 +521,7 @@ cdef class AdiabatClimate:
     "int or NoneType. Pointer to data that is passed to ocean solubility functions."
     def __set__(self, object p_int):
       cdef uintptr_t p1
-      cdef void* p
+      cdef void * p
       if p_int is None:
         p = NULL
       else:
@@ -597,10 +597,8 @@ cdef class AdiabatClimate:
   property rad:
     "Radtran object that does radiative transfer"
     def __get__(self):
-      cdef void *ptr1
-      wa_pxd.adiabatclimate_rad_get(self._ptr, &ptr1)
       var = Radtran()
-      var._ptr = ptr1
+      wa_pxd.adiabatclimate_rad_get(self._ptr, &var._ptr)
       return var
   
   property convecting_with_below:
