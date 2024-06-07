@@ -10,6 +10,24 @@ cdef class AdiabatClimate:
   """
 
   cdef void *_ptr
+  cdef cbool _init_called
+
+  def __cinit__(self, *args, **kwargs):
+    self._init_called = False
+    self._ptr = wa_pxd.allocate_adiabatclimate()
+
+  def __dealloc__(self):
+    wa_pxd.deallocate_adiabatclimate(self._ptr)
+
+  def __getattribute__(self, name):
+    if not self._init_called:
+      raise ClimaException('The "__init__" method of AdiabatClimate has not been called.')
+    return super().__getattribute__(name)
+
+  def __setattr__(self, name, value):
+    if not self._init_called:
+      raise ClimaException('The "__init__" method of AdiabatClimate has not been called.')
+    PyObject_GenericSetAttr(self, name, value)
 
   def __init__(self, species_file = None, settings_file = None, 
                      flux_file = None, data_dir = None, cbool double_radiative_grid = True):           
@@ -26,8 +44,8 @@ cdef class AdiabatClimate:
     data_dir : str, optional
         The directory where all data is stored.
     """
-    # Allocate memory
-    self._ptr = wa_pxd.allocate_adiabatclimate()
+
+    self._init_called = True
 
     if data_dir == None:
       data_dir_ = os.path.dirname(os.path.realpath(__file__))+'/data'
@@ -51,9 +69,6 @@ cdef class AdiabatClimate:
                                          err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
-
-  def __dealloc__(self):
-    wa_pxd.deallocate_adiabatclimate(self._ptr);
 
   def make_profile(self, double T_surf, ndarray[double, ndim=1] P_i_surf):
     """Constructs an atmosphere using a multispecies pseudoadiabat (Eq. 1 in Graham et al. 2021, PSJ)

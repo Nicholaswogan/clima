@@ -1,6 +1,7 @@
 from numpy cimport ndarray, uint8_t
 from libc.stdint cimport uintptr_t
 from libcpp cimport bool as cbool
+from cpython.object cimport PyObject_GenericSetAttr
 import numpy as np
 import ctypes as ct
 import os
