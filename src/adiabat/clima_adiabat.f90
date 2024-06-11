@@ -950,11 +950,13 @@ contains
   end subroutine
 
   subroutine AdiabatClimate_out2atmosphere_txt(self, filename, eddy, overwrite, clip, err)
+    use futils, only: FileCloser
     class(AdiabatClimate), target, intent(inout) :: self
     character(len=*), intent(in) :: filename
     real(dp), intent(in) :: eddy(:)
     logical, intent(in) :: overwrite, clip
     character(:), allocatable, intent(out) :: err
+    type(FileCloser) :: file
     
     character(len=100) :: tmp
     integer :: io, i, j
@@ -969,12 +971,14 @@ contains
     
     if (overwrite) then
       open(2, file=filename, form='formatted', status='replace', iostat=io)
+      file%unit = 2
       if (io /= 0) then
         err = "Unable to overwrite file "//trim(filename)
         return
       endif
     else
       open(2, file=filename, form='formatted', status='new', iostat=io)
+      file%unit = 2
       if (io /= 0) then
         err = "Unable to create file "//trim(filename)//" because it already exists"
         return
@@ -1011,8 +1015,6 @@ contains
         endif
       enddo
     enddo
-    
-    close(2)
     
   end subroutine
 

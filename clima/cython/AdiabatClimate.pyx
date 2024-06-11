@@ -29,8 +29,8 @@ cdef class AdiabatClimate:
       raise ClimaException('The "__init__" method of AdiabatClimate has not been called.')
     PyObject_GenericSetAttr(self, name, value)
 
-  def __init__(self, species_file = None, settings_file = None, 
-                     flux_file = None, data_dir = None, cbool double_radiative_grid = True):           
+  def __init__(self, str species_file, str settings_file, 
+                     str flux_file, data_dir = None, cbool double_radiative_grid = True):           
     """Initializes `AdiabatClimate`
 
     Parameters
@@ -379,7 +379,7 @@ cdef class AdiabatClimate:
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
 
-  def out2atmosphere_txt(self, filename, ndarray[double, ndim=1] eddy, cbool overwrite = False, cbool clip = True):
+  def out2atmosphere_txt(self, str filename, ndarray[double, ndim=1] eddy, cbool overwrite = False, cbool clip = True):
     """Saves state of the atmosphere to a file.
 
     Parameters
