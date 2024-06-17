@@ -7,6 +7,7 @@ set(CMAKE_Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 
 # includes
 include(cmake/CPM.cmake)
+include(cmake/fypp.cmake)
 
 # options
 option(SKBUILD "Should be ON of being build by skbuild, 

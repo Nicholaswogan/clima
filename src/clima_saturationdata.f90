@@ -1,3 +1,7 @@
+#:set TYPES = ['real(dp)', 'type(dual)']
+#:set NAMES = ['real', 'dual']
+#:set TYPES_NAMES = list(zip(TYPES, NAMES))
+
 module clima_saturationdata
   use clima_const, only: dp, s_str_len
   implicit none
@@ -28,14 +32,21 @@ module clima_saturationdata
     procedure :: latent_heat_vap
     procedure :: latent_heat_sub
     procedure :: latent_heat
-    procedure :: sat_pressure_crit
-    procedure :: sat_pressure_vap
-    procedure :: sat_pressure_sub
-    procedure :: sat_pressure
+    procedure :: sat_pressure_crit => sat_pressure_crit_real
+    procedure :: sat_pressure_vap => sat_pressure_vap_real
+    procedure :: sat_pressure_sub => sat_pressure_sub_real
+    procedure :: sat_pressure => sat_pressure_real
+    procedure :: sat_pressure_derivative
   end type
   interface SaturationData
     procedure create_SaturationData
   end interface
+
+  #:for NAME in ['sat_pressure_vap','sat_pressure_sub','sat_pressure','integral_fcn','sat_pressure_crit']
+  interface ${NAME}$
+    module procedure :: ${NAME}$_real, ${NAME}$_dual
+  end interface
+  #:endfor
 
 contains
 
@@ -79,62 +90,97 @@ contains
     endif
   end function
 
+  #:for TYPE1, NAME in TYPES_NAMES
   !> Saturation pressure of a super-critical gas.
   !> This is non-physical. Its to approximate transitions in atmospheres
   !> between super-critical and sub-critical gases.
-  function sat_pressure_crit(self, T) result(p_sat)
+  function sat_pressure_crit_${NAME}$(self, T) result(p_sat)
+    #:if NAME == 'dual'
+    use forwarddiff
+    #:endif
     use clima_const, only: Rgas
     class(SaturationData), intent(inout) :: self
-    real(dp), intent(in) :: T !! K
-    real(dp) :: p_sat !! dynes/cm2
-    real(dp) :: tmp
+    ${TYPE1}$, intent(in) :: T !! K
+    ${TYPE1}$ :: p_sat !! dynes/cm2
+    ${TYPE1}$ :: tmp
     tmp = (integral_fcn(self%a_v, self%b_v, self%T_critical) - integral_fcn(self%a_v, self%b_v, self%T_ref)) + &
           (integral_fcn(self%a_c, self%b_c, T) - integral_fcn(self%a_c, self%b_c, self%T_critical))
     p_sat = self%P_ref*exp((self%mu/Rgas)*(tmp))
   end function
   
   !> Saturation pressure over liquid
-  function sat_pressure_vap(self, T) result(p_sat)
+  function sat_pressure_vap_${NAME}$(self, T) result(p_sat)
+    #:if NAME == 'dual'
+    use forwarddiff
+    #:endif
     use clima_const, only: Rgas
     class(SaturationData), intent(inout) :: self
-    real(dp), intent(in) :: T !! K
-    real(dp) :: p_sat !! dynes/cm2
-    real(dp) :: tmp
+    ${TYPE1}$, intent(in) :: T !! K
+    ${TYPE1}$ :: p_sat !! dynes/cm2
+    ${TYPE1}$ :: tmp
     tmp = integral_fcn(self%a_v, self%b_v, T) - integral_fcn(self%a_v, self%b_v, self%T_ref)
     p_sat = self%P_ref*exp((self%mu/Rgas)*(tmp))
   end function
 
   !> Saturation pressure over solid
-  function sat_pressure_sub(self, T) result(p_sat)
+  function sat_pressure_sub_${NAME}$(self, T) result(p_sat)
+    #:if NAME == 'dual'
+    use forwarddiff
+    #:endif
     use clima_const, only: Rgas
     class(SaturationData), intent(inout) :: self
-    real(dp), intent(in) :: T !! K
-    real(dp) :: p_sat !! dynes/cm2
-    real(dp) :: tmp
+    ${TYPE1}$, intent(in) :: T !! K
+    ${TYPE1}$ :: p_sat !! dynes/cm2
+    ${TYPE1}$ :: tmp
     tmp = (integral_fcn(self%a_v, self%b_v, self%T_triple) - integral_fcn(self%a_v, self%b_v, self%T_ref)) + &
           (integral_fcn(self%a_s, self%b_s, T) - integral_fcn(self%a_s, self%b_s, self%T_triple))
     p_sat = self%P_ref*exp((self%mu/Rgas)*(tmp))
   end function
 
   !> Saturation pressure over liquid or solid
-  function sat_pressure(self, T) result(p_sat)
+  function sat_pressure_${NAME}$(self, T) result(p_sat)
+    #:if NAME == 'dual'
+    use forwarddiff
+    #:endif
     class(SaturationData), intent(inout) :: self
-    real(dp), intent(in) :: T !! K
-    real(dp) :: p_sat !! dynes/cm2
+    ${TYPE1}$, intent(in) :: T !! K
+    ${TYPE1}$ :: p_sat !! dynes/cm2
     if (T >= self%T_critical) then
-      p_sat = self%sat_pressure_crit(T) ! non-physical
+      p_sat = sat_pressure_crit(self, T) ! non-physical
     elseif (T > self%T_triple .and. T < self%T_critical) then
-      p_sat = self%sat_pressure_vap(T)
+      p_sat = sat_pressure_vap(self, T)
     else ! (T <= T_triple) then
-      p_sat = self%sat_pressure_sub(T)
+      p_sat = sat_pressure_sub(self, T)
     endif
   end function
 
   !> This is $\int L/T^2 dT$
-  function integral_fcn(A, B, T) result(res)
-    real(dp), intent(in) :: A, B, T !! K
-    real(dp) :: res
+  function integral_fcn_${NAME}$(A, B, T) result(res)
+    #:if NAME == 'dual'
+    use forwarddiff
+    #:endif
+    real(dp), intent(in) :: A, B
+    ${TYPE1}$, intent(in) :: T !! K
+    ${TYPE1}$ :: res
     res = -A/T + B*log(T)
+  end function
+  #:endfor
+
+  !> Compute the derivative of the SVP function.
+  function sat_pressure_derivative(self, T) result(dPdT)
+    use forwarddiff, only: derivative
+    class(SaturationData), intent(inout) :: self
+    real(dp), intent(in) :: T !! K
+    real(dp) :: dPdT !! dP/dT where P is dynes/cm^2 and T is K
+    real(dp) :: p_sat
+    call derivative(fcn, T, p_sat, dPdT)
+  contains
+    function fcn(x_) result(res_)
+      use forwarddiff, only: dual
+      type(dual), intent(in) :: x_
+      type(dual) :: res_
+      res_ = sat_pressure_dual(self, x_)
+    end function
   end function
 
   function create_SaturationData(s, name, filename, err) result(sat)
@@ -255,6 +301,9 @@ contains
               'Computed saturation vapor pressures are negative or nan.'
         return
       endif
+
+      P(2) = sat%sat_pressure_derivative(sat%T_triple+1.0e-8_dp)
+
     endblock
 
   end function

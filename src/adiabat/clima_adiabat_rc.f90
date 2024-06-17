@@ -468,7 +468,7 @@ contains
     real(dp), intent(in) :: P
     real(dp), intent(out) :: gout(:) 
 
-    real(dp) :: T, f_dry, P_sat, dTdP
+    real(dp) :: T, f_dry, P_sat, dTdlog10P
     logical :: super_saturated
     integer :: i
 
@@ -477,7 +477,7 @@ contains
     d%P_i_cur = d%f_i_cur*P
 
     if (any(d%sp_type == CondensingSpeciesType)) then
-      dTdP = dT_dP(d, P)
+      call d%T%evaluate_derivative(log10(P), dTdlog10P)
     endif
 
     do i = 1,d%sp%ng
@@ -487,10 +487,28 @@ contains
         P_sat = d%RH(i)*d%sp%g(i)%sat%sat_pressure(T)
       endif
 
-      if (d%sp_type(i) == CondensingSpeciesType) then
-        ! Search for cold trap (place where Temperature decreases with altitude
-        gout(i) = dTdP - 1.0e-8_dp
-      elseif (d%sp_type(i) == DrySpeciesType) then
+      if (d%sp_type(i) == CondensingSpeciesType) then; block
+        real(dp) :: dPi_dT, dTdP, dPi_dP, dfi_dP, dlog10fi_dP
+
+        ! Derivative of SVP curve for species i
+        dPi_dT = d%RH(i)*d%sp%g(i)%sat%sat_pressure_derivative(T)
+
+        ! Derivative of temperature profile
+        dTdP = dTdlog10P*(1.0_dp/(P*log(10.0_dp)))
+
+        ! Get dP_i/dP
+        dPi_dP = dPi_dT*dTdP
+        
+        ! Convert to df_i/dP, where f_i is mixing ratio of condensible
+        dfi_dP = (1.0_dp/P)*(dPi_dP) - P_sat/P**2.0_dp
+
+        ! Convert to the derivative of the log of the mixing ratio
+        dlog10fi_dP = dfi_dP*(1/(d%f_i_cur(i)*log(10.0_dp)))
+
+        ! The root occurs when the mixing ratio begins to increase in concentration
+        gout(i) = dlog10fi_dP - 1.0e-8_dp
+
+      end block; elseif (d%sp_type(i) == DrySpeciesType) then
         ! Dry species can become condensing species if
         ! they reach saturation.
         gout(i) = d%P_i_cur(i)/P_sat - (1.0_dp + 1.0e-8_dp)
@@ -549,7 +567,6 @@ contains
     do i = 1,d%sp%ng
       if (d%sp_type(i) == CondensingSpeciesType) then
         f_i_layer(i) = min(d%RH(i)*d%sp%g(i)%sat%sat_pressure(T)/P,1.0_dp)
-        if (f_i_layer(i) == 1.0_dp) super_saturated = .true.
         f_moist = f_moist + f_i_layer(i)
       endif
     enddo
@@ -574,29 +591,6 @@ contains
     endif
 
   end subroutine
-
-  function dT_dP(d, P) result(dTdP)
-    type(AdiabatRCProfileData), intent(inout) :: d
-    real(dp), intent(in) :: P
-    real(dp) :: dTdP
-
-    real(dp) :: P2, P1, deltaP, log10P
-    real(dp) :: T2, T1
-
-    log10P = log10(P)
-    P2 = log10P + log10P*d%epsj
-    P2 = max(min(P2, log10(d%P_surf)),log10(d%P_top))
-    P2 = min(P2, log10(d%P_root))
-    P1 = log10P - log10P*d%epsj
-    P1 = max(min(P1, log10(d%P_surf)),log10(d%P_top))
-    deltaP = P2 - P1
-
-    call d%T%evaluate(P2, T2)
-    call d%T%evaluate(P1, T1)
-
-    dTdP = (T2 - T1)/deltaP
-
-  end function
 
   function general_adiabat_lapse_rate(d, P) result(dlnT_dlnP)
     use clima_eqns, only: heat_capacity_eval

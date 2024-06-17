@@ -1,4 +1,14 @@
 
+CPMAddPackage(
+  NAME forwarddiff
+  VERSION 0.1.2
+  OPTIONS 
+    "BUILD_EXECUTABLE OFF"
+  GITHUB_REPOSITORY "Nicholaswogan/forwarddiff"
+  GIT_TAG "v0.1.2"
+  EXCLUDE_FROM_ALL ON
+)
+
 # fortran-yaml-c
 CPMAddPackage(
   NAME fortran-yaml-c
@@ -29,15 +39,18 @@ CPMAddPackage(
 )
 
 # finterp
-CPMAddPackage(
-  NAME finterp
-  VERSION 1.3.0
-  GITHUB_REPOSITORY "jacobwilliams/finterp"
-  GIT_TAG "1.3.0"
-  DOWNLOAD_ONLY ON
+# CPMAddPackage(
+#   NAME finterp
+#   VERSION 1.3.0
+#   GITHUB_REPOSITORY "jacobwilliams/finterp"
+#   GIT_TAG "1.3.0"
+#   DOWNLOAD_ONLY ON
+# )
+set(fppFiles 
+  linear_interpolation_module.F90
 )
-
-add_library(finterp ${finterp_SOURCE_DIR}/src/linear_interpolation_module.F90 )
+fypp_f90("" "${fppFiles}" outFiles)
+add_library(finterp ${outFiles})
 
 CPMAddPackage(
   NAME dop853

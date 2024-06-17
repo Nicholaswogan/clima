@@ -5,12 +5,17 @@ find_package(LAPACK REQUIRED)
 
 configure_file(clima_version.f90.in ${CMAKE_CURRENT_BINARY_DIR}/clima_version.f90)
 
+set(fppFiles 
+  clima_saturationdata.f90
+)
+
+fypp_f90("" "${fppFiles}" outFiles)
+
 set(BASE_SOURCES
   ${CMAKE_CURRENT_BINARY_DIR}/clima_version.f90
   clima_const.f90
   clima_useful.f90
   clima_eqns.f90
-  clima_saturationdata.f90
   clima_eqns_water.f90
   clima_types.f90
   clima_types_create.f90
@@ -42,6 +47,7 @@ add_library(clima
   ${RADIATE_SOURCES}
   ${CLIMATE_SOURCES}
   ${ADIABAT_SOURCES}
+  ${outFiles}
   clima.f90
 )
 target_link_libraries(clima 
@@ -51,6 +57,7 @@ target_link_libraries(clima
   finterp
   dop853
   minpack
+  forwarddiff
   ${LAPACK_LIBRARIES}
 )
 
