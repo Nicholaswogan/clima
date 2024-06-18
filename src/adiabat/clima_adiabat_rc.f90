@@ -334,7 +334,7 @@ contains
           d%sp_type(d%ind_root) = CondensingSpeciesType
         elseif (d%sp_type(d%ind_root) == CondensingSpeciesType) then
           ! A gas has reached a cold trap
-          d%sp_type(:) = DrySpeciesType
+          d%sp_type(d%ind_root) = DrySpeciesType
         endif
         call update_f_i_dry(d, Pn, d%f_i_cur)
         d%stopping_reason = ReachedPtop
