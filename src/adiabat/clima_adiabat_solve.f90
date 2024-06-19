@@ -96,7 +96,8 @@ contains
     type(MinpackHybrj) :: mv
     logical, allocatable :: convecting_with_below_save(:,:)
     real(dp), allocatable :: difference(:)
-    real(dp), allocatable :: T_in(:)
+    real(dp), allocatable :: T_in(:), x_init(:)
+    real(dp) :: perturbation
     integer :: i, j, k
 
     if (.not.self%double_radiative_grid) then
@@ -132,30 +133,48 @@ contains
     do i = 1,self%max_rc_iters
       j = i
 
-      mv = MinpackHybrj(fcn, size(self%inds_Tx))
-      mv%x(1) = self%T_surf
-      do k = 2,size(self%inds_Tx)
-        mv%x(k) = self%T(self%inds_Tx(k)-1)
-      enddo
-      mv%nprint = 1 ! enable printing
-      mv%xtol = self%xtol_rc
-
       if (self%verbose) then
         print"(1x,'Iteration =',i3)", i
       endif
 
-      call mv%hybrj()
-      if (mv%info == 0) then
-        err = 'hybrj root solve failed in surface_temperature.'
-        return
-      elseif (any(mv%info == [2, 3, 4, 5])) then
-        if (self%verbose) then
-          print'(3x,A)','Minpack Warning: '//mv%code_to_message(mv%info)
+      if (allocated(x_init)) deallocate(x_init)
+      allocate(x_init(size(self%inds_Tx)))
+      x_init(1) = self%T_surf
+      do k = 2,size(self%inds_Tx)
+        x_init(k) = self%T(self%inds_Tx(k)-1)
+      enddo
+
+      mv = MinpackHybrj(fcn, size(self%inds_Tx))
+      mv%xtol = self%xtol_rc
+      mv%nprint = 1
+
+      k = 0
+      do
+        if (mod(k,2) == 0) then
+          perturbation = real(k,dp)*1.0_dp
+        else
+          perturbation = -real(k,dp)*1.0_dp
         endif
-      elseif (mv%info < 0) then
-        err = 'hybrj root solve failed in surface_temperature: '//err
-        return
-      endif
+
+        if (self%verbose .and. k > 0) then
+          print'(3x,"Perturbation = ",f7.1)',perturbation
+        endif
+
+        mv%x = x_init + perturbation
+        call mv%hybrj()
+        if (mv%info == 1) then
+          exit
+        else
+          if (mv%info < 0) deallocate(err)
+        endif
+
+        if (k > 6) then
+          err = 'hybrj root solve failed in RCE.'
+          return
+        endif
+
+        k = k + 1
+      enddo
 
       ! Update all variables to the current root
       call AdiabatClimate_objective(self, P_i_surf, mv%x, .false., mv%fvec, err)
