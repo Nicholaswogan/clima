@@ -123,6 +123,7 @@ contains
       call AdiabatClimate_set_convecting_zones(self, convecting_with_below, err)
       if (allocated(err)) return
     else
+      self%convecting_with_below = .false.
       call AdiabatClimate_update_convecting_zones(self, P_i_surf, T_in, .false., err)
       if (allocated(err)) return
     endif
@@ -314,9 +315,9 @@ contains
     endblock; endif
 
     do i = 1,self%nz+1
-      f_total(i) = self%rad%f_total(2*i-1)*self%radiation_norm_term ! we normalized here for the purposes of optimization
+      f_total(i) = self%rad%f_total(2*i-1)
     enddo
-    f_total(1) = f_total(1) + self%surface_heat_flow*self%radiation_norm_term
+    f_total(1) = f_total(1) + self%surface_heat_flow
 
     call AdiabatClimate_residuals_with_convection(self, f_total, self%lapse_rate, self%lapse_rate_intended, res)
 
@@ -331,10 +332,10 @@ contains
     character(:), allocatable, intent(out) :: err
 
     real(dp), allocatable :: res(:)
-    real(dp), allocatable :: res_perturb(:), x_perturb(:)
+    real(dp), allocatable :: res_perturb(:), T_perturb(:), T_in(:)
     real(dp) :: deltaT
 
-    integer :: i
+    integer :: i, ind
 
     ! Check inputs
     if (size(jac,1) /= size(self%inds_Tx) .or. size(jac,2) /= size(self%inds_Tx)) then
@@ -344,28 +345,37 @@ contains
 
     ! allocate work
     allocate(res(size(self%inds_Tx)))
-    allocate(x_perturb(size(self%inds_Tx)),res_perturb(size(self%inds_Tx)))
+    allocate(T_in(self%nz+1),res_perturb(size(self%inds_Tx)))
 
     ! First evaluate res at T.
     call AdiabatClimate_objective(self, P_i_surf, x, ignore_convection, res, err)
     if (allocated(err)) return
 
-    x_perturb = x
+    T_in(1) = self%T_surf
+    T_in(2:) = self%T
+
+    T_perturb = T_in
     do i = 1,size(x)
 
       ! Perturb temperature
       deltaT = self%epsj*abs(x(i))
-      x_perturb(i) = x(i) + deltaT
+      T_perturb(self%inds_Tx(i)) = T_in(self%inds_Tx(i)) + deltaT
 
-      ! Compute rhs_perturb
-      call AdiabatClimate_objective(self, P_i_surf, x_perturb, ignore_convection, res_perturb, err)
+      ! We perturb the temp also in a convecting region
+      ind = findloc(self%ind_conv_lower_x, i, 1)
+      if (ind /= 0) then
+        T_perturb(self%ind_conv_lower(ind):self%ind_conv_upper(ind)) = &
+        T_in(self%ind_conv_lower(ind):self%ind_conv_upper(ind)) + deltaT
+      endif
+
+      call AdiabatClimate_objective_(self, P_i_surf, T_perturb, ignore_convection, res_perturb, err)
       if (allocated(err)) return
 
       ! Compute jacobian
       jac(:,i) = (res_perturb(:) - res(:))/deltaT
 
       ! unperturb T
-      x_perturb(i) = x(i)
+      T_perturb(:) = T_in(:)
     enddo
 
   end subroutine
@@ -455,12 +465,14 @@ contains
 
     real(dp), allocatable :: F(:), dFdT(:,:), deltaT(:), T_perturb(:)
     real(dp), allocatable :: lapse_rate_perturb(:), difference(:)
+    logical, allocatable :: convecting_with_below_save(:)
     integer :: i, ierr
 
     ! work storage
     allocate(F(size(T_in)),dFdT(size(T_in),size(T_in)),deltaT(size(T_in)),T_perturb(size(T_in)))
     allocate(lapse_rate_perturb(self%nz),difference(self%nz))
 
+    convecting_with_below_save = self%convecting_with_below
     self%convecting_with_below = .false.
     call AdiabatClimate_set_convecting_zones(self, self%convecting_with_below, err)
     if (allocated(err)) return
@@ -478,7 +490,6 @@ contains
     endif
 
     ! Newton step
-    self%convective_newton_step_size = 0.5_dp
     T_perturb = deltaT*self%convective_newton_step_size + T_in
 
     ! Compute perturbed lapse rate
@@ -493,6 +504,7 @@ contains
     difference = lapse_rate_perturb - self%lapse_rate_intended
 
     if (no_convection_to_radiation) then
+      self%convecting_with_below = convecting_with_below_save
       do i = 1,self%nz
         if (.not.self%convecting_with_below(i)) then
           difference(i) = self%lapse_rate(i) - self%lapse_rate_intended(i)
@@ -554,7 +566,7 @@ contains
 
       ind_upper = self%ind_conv_upper(i)
       if (ind_lower == 1) then
-        f_upper = f_total(ind_upper) + self%surface_heat_flow*self%radiation_norm_term
+        f_upper = f_total(ind_upper) + self%surface_heat_flow
       else
         f_upper = f_total(ind_upper)
       endif

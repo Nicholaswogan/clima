@@ -285,9 +285,8 @@ contains
     allocate(d%T_interp(nz+1),d%P_interp(nz+1))
 
     call integrate(d, err)
-    if (allocated(err)) return
-
     T(:) = d%T_layers(2:)
+    if (allocated(err)) return
 
   end subroutine
 
