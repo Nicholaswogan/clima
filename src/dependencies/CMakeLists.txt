@@ -51,6 +51,7 @@ set(fppFiles
 )
 fypp_f90("" "${fppFiles}" outFiles)
 add_library(finterp ${outFiles})
+target_link_libraries(finterp forwarddiff)
 
 CPMAddPackage(
   NAME dop853

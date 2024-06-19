@@ -33,6 +33,7 @@ contains
     self%T_surf = T_in(1)
     self%T = T_in(2:)
     call make_profile_rc(self%T_surf, self%T, P_i_surf, &
+                         self%convecting_with_below, &
                          self%sp, self%nz, self%planet_mass, &
                          self%planet_radius, self%P_top, self%RH, &
                          self%rtol, self%atol, &
@@ -41,6 +42,8 @@ contains
                          self%N_surface, self%N_ocean, &
                          err)
     if (allocated(err)) return
+
+    z_e(2*self%nz+1) = z_e(2*self%nz) + (z_e(2*self%nz) - z_e(2*self%nz-1))
 
     self%P_surf = P_e(1)
     do i = 1,self%nz
@@ -94,7 +97,7 @@ contains
     logical, allocatable :: convecting_with_below_save(:,:)
     real(dp), allocatable :: difference(:)
     real(dp), allocatable :: T_in(:)
-    integer :: i, j
+    integer :: i, j, k
 
     if (.not.self%double_radiative_grid) then
       err = 'AdiabatClimate must be initialized with "double_radiative_grid" set to True '// &
@@ -112,6 +115,8 @@ contains
 
     T_in(1) = T_surf_guess
     T_in(2:) = T_guess(:)
+    self%T_surf = T_surf_guess
+    self%T(:) = T_guess(:)
 
     ! setup the convecting zone
     if (present(convecting_with_below)) then
@@ -123,13 +128,17 @@ contains
     endif
 
     converged = .false.
-    mv = MinpackHybrj(fcn,self%nz+1)
-    mv%x(:) = T_in(:)
-    mv%nprint = 1 ! enable printing
-    mv%xtol = self%xtol_rc
-    ! This bit below needs to be iterated
     do i = 1,self%max_rc_iters
       j = i
+
+      mv = MinpackHybrj(fcn, size(self%inds_Tx))
+      mv%x(1) = self%T_surf
+      do k = 2,size(self%inds_Tx)
+        mv%x(k) = self%T(self%inds_Tx(k)-1)
+      enddo
+      mv%nprint = 1 ! enable printing
+      mv%xtol = self%xtol_rc
+
       if (self%verbose) then
         print"(1x,'Iteration =',i3)", i
       endif
@@ -151,9 +160,6 @@ contains
       call AdiabatClimate_objective(self, P_i_surf, mv%x, .false., mv%fvec, err)
       if (allocated(err)) return
 
-      ! Compute the difference between true and intended lapse rate
-      difference = self%lapse_rate - self%lapse_rate_intended
-
       ! Save the current convective zones
       convecting_with_below_save = reshape(convecting_with_below_save,shape=[self%nz,i],pad=self%convecting_with_below)
 
@@ -162,11 +168,11 @@ contains
         ! Here, we permit 
         ! - convective layers to become radiative
         ! - radiative layers to become convective
-        call AdiabatClimate_update_convecting_zones(self, P_i_surf, mv%x, .false., err)
+        call AdiabatClimate_update_convecting_zones(self, P_i_surf, [self%T_surf, self%T], .false., err)
         if (allocated(err)) return
       else
         ! Here, we only permit radiative layers to become convective
-        call AdiabatClimate_update_convecting_zones(self, P_i_surf, mv%x, .true., err)
+        call AdiabatClimate_update_convecting_zones(self, P_i_surf, [self%T_surf, self%T], .true., err)
         if (allocated(err)) return
       endif
       
@@ -174,11 +180,6 @@ contains
       if (all(convecting_with_below_save(:,i) .eqv. self%convecting_with_below)) then
         ! Convective zones did not change between iterations, so converged
         converged = .true.
-      endif
-      if (any(difference > 1.0e-5_dp)) then
-        ! If there remains a layer that is superadiabatic (to within a tolerance)
-        ! then convergence has not been reached
-        converged = .false.
       endif
       if (converged) then
         if (self%verbose) then
@@ -232,19 +233,30 @@ contains
 
   end function
 
-  subroutine AdiabatClimate_objective(self, P_i_surf, T_in, ignore_convection, res, err)
+  subroutine AdiabatClimate_objective(self, P_i_surf, x, ignore_convection, res, err)
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
-    real(dp), intent(in) :: T_in(:)
+    real(dp), intent(in) :: x(:)
     logical, intent(in) :: ignore_convection
     real(dp), intent(out) :: res(:)
     character(:), allocatable, intent(out) :: err
+
+    real(dp), allocatable :: T_in(:)
+    integer :: i
+
+    allocate(T_in(self%nz+1))
+    do i = 1,size(self%inds_Tx)
+      T_in(self%inds_Tx(i)) = x(i)
+    enddo
 
     ! Sets, self%T_surf, self%T, self%N_surface, self%N_ocean, self%P_surf, self%P,
     ! self%z, self%dz, self%f_i, self%densities, self%N_atmos, self%lapse_rate_intended
     ! self%lapse_rate
     call self%make_profile_rc(P_i_surf, T_in, err)
     if (allocated(err)) return
+
+    T_in(1) = self%T_surf
+    T_in(2:) = self%T
 
     ! resets self%T_surf, self%T, self%densities, self%lapse_rate
     ! also does radiative transfer and computes res
@@ -262,13 +274,12 @@ contains
     real(dp), intent(out) :: res(:)
     character(:), allocatable, intent(out) :: err
 
-    real(dp), allocatable :: f_total(:), fluxes(:)
+    real(dp), allocatable :: f_total(:)
     real(dp), allocatable :: density(:)
     integer :: i, j
 
     ! work storage
     allocate(f_total(self%nz+1))
-    allocate(fluxes(self%nz+1))
     allocate(density(self%nz))
 
     ! Stuff set in make_profile_rc that does not change
@@ -307,66 +318,54 @@ contains
     enddo
     f_total(1) = f_total(1) + self%surface_heat_flow*self%radiation_norm_term
 
-    ! Radiative energy going into each layer
-    fluxes(1) = f_total(1)
-    do i = 2,self%nz+1
-      fluxes(i) = (f_total(i) - f_total(i-1))
-    enddo
-
-    if (ignore_convection) then
-      res = fluxes
-      return
-    endif
-
     call AdiabatClimate_residuals_with_convection(self, f_total, self%lapse_rate, self%lapse_rate_intended, res)
 
   end subroutine
 
-  subroutine AdiabatClimate_jacobian(self, P_i_surf, T_in, ignore_convection, jac, err)
+  subroutine AdiabatClimate_jacobian(self, P_i_surf, x, ignore_convection, jac, err)
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
-    real(dp), intent(in) :: T_in(:)
+    real(dp), intent(in) :: x(:)
     logical, intent(in) :: ignore_convection
     real(dp), intent(out) :: jac(:,:)
     character(:), allocatable, intent(out) :: err
 
     real(dp), allocatable :: res(:)
-    real(dp), allocatable :: T_perturb(:), res_perturb(:)
+    real(dp), allocatable :: res_perturb(:), x_perturb(:)
     real(dp) :: deltaT
 
     integer :: i
 
     ! Check inputs
-    if (size(jac,1) /= self%nz+1 .or. size(jac,2) /= self%nz+1) then
+    if (size(jac,1) /= size(self%inds_Tx) .or. size(jac,2) /= size(self%inds_Tx)) then
       err = "jac has the wrong dimension"
       return
     endif
 
     ! allocate work
-    allocate(res(self%nz+1))
-    allocate(T_perturb(self%nz+1),res_perturb(self%nz+1))
+    allocate(res(size(self%inds_Tx)))
+    allocate(x_perturb(size(self%inds_Tx)),res_perturb(size(self%inds_Tx)))
 
     ! First evaluate res at T.
-    call AdiabatClimate_objective(self, P_i_surf, T_in, ignore_convection, res, err)
+    call AdiabatClimate_objective(self, P_i_surf, x, ignore_convection, res, err)
     if (allocated(err)) return
 
-    ! Now compute Jacobian
-    T_perturb = T_in
-    do i = 1,size(T_perturb)
+    x_perturb = x
+    do i = 1,size(x)
 
       ! Perturb temperature
-      deltaT = self%epsj*abs(T_in(i))
-      T_perturb(i) = T_in(i) + deltaT
+      deltaT = self%epsj*abs(x(i))
+      x_perturb(i) = x(i) + deltaT
 
       ! Compute rhs_perturb
-      call AdiabatClimate_objective_(self, P_i_surf, T_perturb, ignore_convection, res_perturb, err)
+      call AdiabatClimate_objective(self, P_i_surf, x_perturb, ignore_convection, res_perturb, err)
       if (allocated(err)) return
 
       ! Compute jacobian
       jac(:,i) = (res_perturb(:) - res(:))/deltaT
-      
+
       ! unperturb T
-      T_perturb(i) = T_in(i)
+      x_perturb(i) = x(i)
     enddo
 
   end subroutine
@@ -379,7 +378,7 @@ contains
     logical, intent(in) :: convecting_with_below(:)
     character(:), allocatable, intent(out) :: err
 
-    integer :: i,j,k
+    integer :: i,j,k,ind
 
     if (size(convecting_with_below) /= self%nz) then
       err = 'Input "convecting_with_below" has the wrong dimension'
@@ -415,6 +414,28 @@ contains
       i = i + 1
     enddo
 
+    if (allocated(self%inds_Tx)) deallocate(self%inds_Tx)
+    allocate(self%inds_Tx(1))
+    self%inds_Tx(1) = 1
+    do i = 1,size(convecting_with_below)
+      if (convecting_with_below(i)) then
+        ! nothing
+      else
+        self%inds_Tx = [self%inds_Tx, i+1]
+      endif
+    enddo
+
+    if (allocated(self%ind_conv_lower_x)) deallocate(self%ind_conv_lower_x)
+    allocate(self%ind_conv_lower_x(self%n_convecting_zones))
+    do i = 1,size(self%ind_conv_lower)
+      ind = findloc(self%inds_Tx, self%ind_conv_lower(i), 1)
+      if (ind == 0) then
+        err = 'Problem setting a convective zone'
+        return
+      endif
+      self%ind_conv_lower_x(i) = ind
+    enddo
+
   end subroutine
 
   !> Given P_surf and T profile, this routine determines which layers are convecting
@@ -440,6 +461,10 @@ contains
     allocate(F(size(T_in)),dFdT(size(T_in),size(T_in)),deltaT(size(T_in)),T_perturb(size(T_in)))
     allocate(lapse_rate_perturb(self%nz),difference(self%nz))
 
+    self%convecting_with_below = .false.
+    call AdiabatClimate_set_convecting_zones(self, self%convecting_with_below, err)
+    if (allocated(err)) return
+
     call AdiabatClimate_objective(self, P_i_surf, T_in, .true., F, err)
     if (allocated(err)) return
     call AdiabatClimate_jacobian(self, P_i_surf, T_in, .true., dFdT, err)
@@ -453,6 +478,7 @@ contains
     endif
 
     ! Newton step
+    self%convective_newton_step_size = 0.5_dp
     T_perturb = deltaT*self%convective_newton_step_size + T_in
 
     ! Compute perturbed lapse rate
@@ -485,13 +511,6 @@ contains
       enddo
     endif
 
-    ! If a layer is super saturated then lets convect
-    do i = 1,self%nz
-      if (self%super_saturated(i)) then
-        self%convecting_with_below(i) = .true.
-      endif
-    enddo
-
     call AdiabatClimate_set_convecting_zones(self, self%convecting_with_below, err)
     if (allocated(err)) return
 
@@ -519,12 +538,14 @@ contains
     enddo
 
     ! Radiative equilibrium
-    res = fluxes
+    do i = 1,size(self%inds_Tx)
+      res(i) = fluxes(self%inds_Tx(i))
+    enddo
 
     ! Change residual to account for convection
     do i = 1,self%n_convecting_zones
+
       ind_lower = self%ind_conv_lower(i)
-      f_lower = f_total(ind_lower)
       if (ind_lower == 1) then
         f_lower = 0.0_dp
       else
@@ -539,12 +560,7 @@ contains
       endif
 
       ! Radiative energy going into the convective layer      
-      res(ind_upper) = f_upper - f_lower
-
-      ! Enforcing the convective lapse rate
-      do j = ind_lower,ind_upper-1
-        res(j) = lapse_rate(j) - lapse_rate_intended(j)
-      enddo
+      res(self%ind_conv_lower_x(i)) = f_upper - f_lower
 
     enddo
 

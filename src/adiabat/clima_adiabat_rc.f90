@@ -11,6 +11,7 @@ module clima_adiabat_rc
   type :: AdiabatRCProfileData
     ! Input data
     real(dp), pointer :: T_surf
+    logical, pointer :: convecting_with_below(:)
     type(Species), pointer :: sp
     integer, pointer :: nz
     real(dp), pointer :: planet_mass
@@ -30,12 +31,14 @@ module clima_adiabat_rc
     type(linear_interp_1d) :: T
     real(dp), allocatable :: P_interp(:)
     real(dp), allocatable :: T_interp(:)
+    real(dp), allocatable :: T_layers(:) ! size nz+1 (includes ground)
 
     real(dp) :: P_surf !! surface pressure from inputs
 
     !> indicates whether species is dry or condensing (length ng)
     integer, allocatable :: sp_type(:)
     integer :: stopping_reason !! Reason why we stop integration
+    logical :: in_convecting_region
     !> Index of root
     integer :: ind_root
 
@@ -48,7 +51,7 @@ module clima_adiabat_rc
     !> When we find a root, and exit integration, these
     !> guys will give use the root
     real(dp) :: P_root  = huge(1.0_dp)
-    real(dp) :: u_root(1)
+    real(dp), allocatable :: u_root(:)
     real(dp) :: epsj = 1.0e-8
 
     !> Keeps track of how the dry atmosphere is partitioned
@@ -86,6 +89,7 @@ contains
   ! outputs: Pressure, mixing ratios, z, lapse rate everywhere
 
   subroutine make_profile_rc(T_surf, T, P_i_surf, &
+                             convecting_with_below, &
                              sp, nz, planet_mass, &
                              planet_radius, P_top, RH, &
                              rtol, atol, &
@@ -98,8 +102,9 @@ contains
     use iso_c_binding, only: c_ptr
 
     real(dp), target, intent(in) :: T_surf !! K
-    real(dp), target, intent(in) :: T(:) !! (nz)
+    real(dp), target, intent(inout) :: T(:) !! (nz)
     real(dp), intent(in) :: P_i_surf(:) !! (ng) dynes/cm2
+    logical, target, intent(in) :: convecting_with_below(:)
 
     type(Species), target, intent(inout) :: sp
     integer, target, intent(in) :: nz
@@ -118,7 +123,7 @@ contains
 
     type(AdiabatRCProfileData) :: d
     integer :: i, j, ierr
-    real(dp) :: P_sat, grav, P_surface_inventory
+    real(dp) :: P_sat, grav, P_surface_inventory, T_tmp
 
     ! check inputs
     if (size(T) /= nz) then
@@ -131,6 +136,10 @@ contains
     endif
     if (size(P_i_surf) /= sp%ng) then
       err = 'make_profile: Input "P_i_surf" has the wrong shape'
+      return
+    endif
+    if (size(convecting_with_below) /= nz) then
+      err = 'make_profile: Input "convecting_with_below" has the wrong shape'
       return
     endif
     if (size(RH) /= sp%ng) then
@@ -169,6 +178,7 @@ contains
     ! associate
     ! inputs
     d%T_surf => T_surf
+    d%convecting_with_below => convecting_with_below
     d%sp => sp
     d%nz => nz
     d%planet_mass => planet_mass
@@ -259,13 +269,39 @@ contains
     P(1) = d%P_surf
     P(2*nz+1) = P_top
 
-    ! Initialize the T interpolator
-    allocate(d%T_interp(nz+1),d%P_interp(nz+1))
-    d%T_interp(1) = T_surf
-    d%P_interp(1) = log10(d%P_surf)
+    ! If convecting with below, we don't know the temp.
+    ! We set it to negative as a place holder
     do i = 1,nz
-      d%T_interp(i+1) = T(i)
-      d%P_interp(i+1) = log10(P(2*i))
+      if (d%convecting_with_below(i)) then
+        T(i) = -1.0_dp
+      endif
+    enddo
+
+    ! Copy temps to T_layers
+    allocate(d%T_layers(nz+1))
+    d%T_layers(1) = T_surf
+    d%T_layers(2:size(d%T_layers)) = T(:)
+
+    allocate(d%T_interp(nz+1),d%P_interp(nz+1))
+
+    call integrate(d, err)
+    if (allocated(err)) return
+
+    T(:) = d%T_layers(2:)
+
+  end subroutine
+
+  subroutine initialize_interpolator(d, err)
+    type(AdiabatRCProfileData), target, intent(inout) :: d
+    character(:), allocatable, intent(out) :: err
+
+    integer :: i, ierr
+
+    d%T_interp(1) = d%T_layers(1)
+    d%P_interp(1) = log10(d%P_surf)
+    do i = 1,d%nz
+      d%T_interp(i+1) = d%T_layers(i+1)
+      d%P_interp(i+1) = log10(d%P(2*i))
     enddo
     d%T_interp = d%T_interp(size(d%T_interp):1:-1)
     d%P_interp = d%P_interp(size(d%P_interp):1:-1)
@@ -275,9 +311,6 @@ contains
       return
     endif
 
-    call integrate(d, err)
-    if (allocated(err)) return
-
   end subroutine
 
   subroutine integrate(d, err)
@@ -285,61 +318,126 @@ contains
     character(:), allocatable, intent(out) :: err
 
     type(dop853_rc) :: dop
-    logical :: status_ok
-    integer :: idid
-    real(dp) :: Pn, u(1), T_root
+    logical :: status_ok, convecting_with_below
+    integer :: idid, i, j, k, n
+    real(dp) :: Pn, T_root, Ptop
+    real(dp), allocatable :: u(:)
+    integer, allocatable :: icomp(:)
     character(6) :: tmp_char
 
-    call dop%initialize(fcn=right_hand_side_dop, solout=solout_dop, n=1, &
-                        iprint=0, icomp=[1], status_ok=status_ok)
-    dop%d => d
     d%j = 2
     ! Surface values
-    d%lapse_rate(1) = general_adiabat_lapse_rate(d, d%P_surf)
+    d%lapse_rate(1) = general_adiabat_lapse_rate(d, d%T_surf, d%P_surf)
     d%f_i(1,:) = d%f_i_cur(:)
     d%z(1) = 0.0_dp
-    d%stopping_reason = ReachedPtop
-    if (.not. status_ok) then
-      err = 'dop853 initialization failed'
-      return
-    endif
 
-    ! intial conditions
-    u = [d%z(1)]
-    Pn = d%P_surf
     do
-      call dop%integrate(Pn, u, d%P_top, [d%rtol], [d%atol], iout=2, idid=idid)
-      if (allocated(d%err)) then
-        err = d%err
+      ! i is the layer of the atmosphere we are starting from.
+      ! i == 1 is the ground.
+      if (d%j == 2) then
+        i = 1
+      else
+        i = (d%j-1)/2 + 1
+      endif
+
+      ! Check if layer above is convective
+      convecting_with_below = d%convecting_with_below(i)
+
+      if (convecting_with_below) then
+        d%in_convecting_region = .true.
+        n = 2
+        icomp = [1, 2]
+        u = [d%z(d%j-1), d%T_layers(i)]
+        Pn = d%P(d%j-1)
+
+        ! Find the pressure to integrate to
+        do j = i,d%nz
+          if (d%convecting_with_below(j)) then
+            k = j*2
+          else
+            exit
+          endif
+        enddo
+
+        Ptop = d%P(k)
+        
+      else
+        d%in_convecting_region = .false.
+        n = 1
+        icomp = [1]
+        u = [d%z(d%j-1)]
+        Pn = d%P(d%j-1)
+        ! Interpolator for T
+        call initialize_interpolator(d, err)
+        if (allocated(err)) return
+
+        ! Find the pressure to integrate to
+        do j = i,d%nz
+          if (.not.d%convecting_with_below(j)) then
+            k = j*2
+          else
+            exit
+          endif
+        enddo
+
+        Ptop = d%P(k)
+
+      endif
+
+      call dop%initialize(fcn=right_hand_side_dop, solout=solout_dop, n=n, &
+                        iprint=0, icomp=icomp, status_ok=status_ok)
+      dop%d => d
+      d%stopping_reason = ReachedPtop
+      if (.not. status_ok) then
+        err = 'dop853 initialization failed'
         return
       endif
-      if (idid < 0) then
-        write(tmp_char,'(i6)') idid
-        err = 'dop853 integration failed: '//trim(tmp_char)
-        return
-      endif 
 
-      if (d%stopping_reason == ReachedPtop) then
-        exit
-      elseif (d%stopping_reason == ReachedRoot) then; block
-        real(dp) :: f_dry
-        logical :: super_saturated
-        ! A root was hit. We restart integration
-        Pn = d%P_root ! root pressure
-        u = d%u_root ! root altitude
-        call d%T%evaluate(log10(Pn), T_root)
-        call mixing_ratios(d, Pn, T_root, d%f_i_cur, f_dry, super_saturated) ! get mixing ratios at the root
-        if (d%sp_type(d%ind_root) == DrySpeciesType) then
-          ! A gas has reached saturation.
-          d%sp_type(d%ind_root) = CondensingSpeciesType
-        elseif (d%sp_type(d%ind_root) == CondensingSpeciesType) then
-          ! A gas has reached a cold trap
-          d%sp_type(:) = DrySpeciesType
+      do
+        call dop%integrate(Pn, u, Ptop, [d%rtol], [d%atol], iout=2, idid=idid)
+        if (allocated(d%err)) then
+          err = d%err
+          return
         endif
-        call update_f_i_dry(d, Pn, d%f_i_cur)
-        d%stopping_reason = ReachedPtop
+        if (idid < 0) then
+          write(tmp_char,'(i6)') idid
+          err = 'dop853 integration failed: '//trim(tmp_char)
+          return
+        endif 
 
-      endblock; endif
+        if (d%stopping_reason == ReachedPtop) then
+          exit
+        elseif (d%stopping_reason == ReachedRoot) then; block
+          real(dp) :: f_dry
+          logical :: super_saturated
+          ! A root was hit. We restart integration
+          Pn = d%P_root ! root pressure
+          u = d%u_root ! root altitude
+
+          ! Get T at the root
+          if (d%in_convecting_region) then
+            T_root = u(2)
+          else
+            call d%T%evaluate(log10(Pn), T_root)
+          endif
+          
+          call mixing_ratios(d, Pn, T_root, d%f_i_cur, f_dry, super_saturated) ! get mixing ratios at the root
+
+          if (d%sp_type(d%ind_root) == DrySpeciesType) then
+            ! A gas has reached saturation.
+            d%sp_type(d%ind_root) = CondensingSpeciesType
+          elseif (d%sp_type(d%ind_root) == CondensingSpeciesType) then
+            ! A gas has reached a cold trap
+            d%sp_type(d%ind_root) = DrySpeciesType
+          endif
+          call update_f_i_dry(d, Pn, d%f_i_cur)
+          d%stopping_reason = ReachedPtop
+
+        endblock; endif
+
+      enddo
+
+      if (k == 2*d%nz) exit
 
     enddo
 
@@ -355,7 +453,7 @@ contains
     real(dp),intent(out)              :: xout
     
     type(AdiabatRCProfileData), pointer :: d
-    real(dp) :: z_cur, P_cur, P_old
+    real(dp) :: z_cur, P_cur, T_cur, P_old
     real(dp) :: T_i, PP, f_dry
     logical :: super_saturated
     integer :: i
@@ -369,6 +467,12 @@ contains
       d => self%d
     end select
 
+    if (d%in_convecting_region) then
+      T_cur = y(2)
+    else
+      call d%T%evaluate(log10(P_cur), T_cur)
+    endif
+
     if (allocated(d%err)) then
       ! if there is an error (from RHS function)
       ! we return immediately
@@ -376,7 +480,7 @@ contains
       return
     endif
 
-    call root_fcn(d, P_cur, d%gout)
+    call root_fcn(d, P_cur, T_cur, d%gout)
     if (nr == 1) then
       d%gout_old(:) = d%gout(:)
     endif
@@ -401,7 +505,11 @@ contains
       irtrn = -1
       d%ind_root = maxloc(d%P_roots,1) ! highest pressure root
       d%P_root = d%P_roots(d%ind_root)
-      d%u_root(1) = self%contd8(1, d%P_root)
+      if (d%in_convecting_region) then
+        d%u_root = [self%contd8(1, d%P_root), self%contd8(2, d%P_root)]
+      else
+        d%u_root = [self%contd8(1, d%P_root)]
+      endif
       d%stopping_reason = ReachedRoot
     endif
 
@@ -418,9 +526,16 @@ contains
       if (d%P(d%j) <= P_old .and. d%P(d%j) >= PP) then
         do while (d%P(d%j) >= PP)
           d%z(d%j) = self%contd8(1, d%P(d%j))
-          call d%T%evaluate(log10(d%P(d%j)), T_i)
+          if (d%in_convecting_region) then
+            T_i = self%contd8(2, d%P(d%j))
+            if (mod(d%j,2) == 0) then
+              d%T_layers(d%j/2+1) = T_i
+            endif
+          else
+            call d%T%evaluate(log10(d%P(d%j)), T_i)
+          endif
           call mixing_ratios(d, d%P(d%j), T_i, d%f_i(d%j,:), f_dry, super_saturated)
-          d%lapse_rate(d%j) = general_adiabat_lapse_rate(d, d%P(d%j))
+          d%lapse_rate(d%j) = general_adiabat_lapse_rate(d, T_i, d%P(d%j))
           d%super_saturated(d%j) = super_saturated
           d%j = d%j + 1
           if (d%j > size(d%P)) exit
@@ -458,27 +573,34 @@ contains
       class(brent_class), intent(inout) :: me_
       real(dp), intent(in) :: x_
       real(dp) :: f_
-      call root_fcn(d, x_, d%gout_tmp)
+      real(dp) :: T_
+      if (d%in_convecting_region) then
+        T_ = dop%contd8(2, x_)
+      else
+        call d%T%evaluate(log10(x_), T_)
+      endif
+      call root_fcn(d, x_, T_, d%gout_tmp)
       f_ = d%gout_tmp(ind)
     end function
   end subroutine
 
-  subroutine root_fcn(d, P, gout)
+  subroutine root_fcn(d, P, T, gout)
     type(AdiabatRCProfileData), intent(inout) :: d
-    real(dp), intent(in) :: P
+    real(dp), intent(in) :: P, T
     real(dp), intent(out) :: gout(:) 
 
-    real(dp) :: T, f_dry, P_sat, dTdlog10P
+    real(dp) :: f_dry, P_sat, dTdlog10P
     logical :: super_saturated
     integer :: i
 
-    call d%T%evaluate(log10(P), T)
     call mixing_ratios(d, P, T, d%f_i_cur, f_dry, super_saturated)
     d%P_i_cur = d%f_i_cur*P
 
-    if (any(d%sp_type == CondensingSpeciesType)) then
+    if (any(d%sp_type == CondensingSpeciesType) .and. .not.d%in_convecting_region) then
       call d%T%evaluate_derivative(log10(P), dTdlog10P)
     endif
+
+    gout(:) = 1.0_dp
 
     do i = 1,d%sp%ng
       ! compute saturation vapor pressures
@@ -487,7 +609,7 @@ contains
         P_sat = d%RH(i)*d%sp%g(i)%sat%sat_pressure(T)
       endif
 
-      if (d%sp_type(i) == CondensingSpeciesType) then; block
+      if (d%sp_type(i) == CondensingSpeciesType .and. .not.d%in_convecting_region) then; block
         real(dp) :: dPi_dT, dTdP, dPi_dP, dfi_dP, dlog10fi_dP
 
         ! Derivative of SVP curve for species i
@@ -580,26 +702,15 @@ contains
       endif
     enddo
 
-    ! ng == 1 case
-    if (d%sp%ng == 1) then
-      f_i_layer(1) = 1.0_dp
-      if (d%sp_type(i) == CondensingSpeciesType) then
-        f_dry = 1.0e-40_dp
-      else
-        f_dry = 1.0_dp
-      endif
-    endif
-
   end subroutine
 
-  function general_adiabat_lapse_rate(d, P) result(dlnT_dlnP)
+  function general_adiabat_lapse_rate(d, T, P) result(dlnT_dlnP)
     use clima_eqns, only: heat_capacity_eval
     use clima_eqns_water, only: Rgas_cgs => Rgas
     type(AdiabatRCProfileData), intent(inout) :: d
-    real(dp), intent(in) :: P
+    real(dp), intent(in) :: P, T
     real(dp) :: dlnT_dlnP
 
-    real(dp) :: T
     real(dp) :: f_dry, cp_dry
     real(dp) :: cp, L
     real(dp) :: first_sumation, second_sumation, Beta_i
@@ -608,7 +719,6 @@ contains
 
     real(dp), parameter :: Rgas_si = Rgas_cgs/1.0e7_dp ! ideal gas constant in SI units (J/(mol*K))
 
-    call d%T%evaluate(log10(P),T)
     call mixing_ratios(d, P, T, d%f_i_cur, f_dry, super_saturated)
 
     ! heat capacity and latent heat
@@ -668,7 +778,11 @@ contains
     ! unpack u
     z = u(1)
 
-    call d%T%evaluate(log10(P),T)
+    if (d%in_convecting_region) then
+      T = u(2)
+    else
+      call d%T%evaluate(log10(P),T)
+    endif
     call mixing_ratios(d, P, T, d%f_i_cur, f_dry, super_saturated)
 
     mubar = 0.0_dp
@@ -679,7 +793,14 @@ contains
     grav = gravity(d%planet_radius, d%planet_mass, z)
     dz_dP = -(Rgas_cgs*T)/(grav*P*mubar)
 
-    du(:) = [dz_dP]
+    du(1) = dz_dP
+
+    if (d%in_convecting_region) then; block
+      real(dp) :: dlnT_dlnP, dT_dP
+      dlnT_dlnP = general_adiabat_lapse_rate(d, T, P)
+      dT_dP = dlnT_dlnP*(T/P)
+      du(2) = dT_dP
+    endblock; endif
 
   end subroutine
 
