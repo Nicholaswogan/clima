@@ -122,8 +122,8 @@ contains
     character(:), allocatable, intent(out) :: err
 
     type(AdiabatRCProfileData) :: d
-    integer :: i, j, ierr
-    real(dp) :: P_sat, grav, P_surface_inventory, T_tmp
+    integer :: i, j
+    real(dp) :: P_sat, grav, P_surface_inventory
 
     ! check inputs
     if (size(T) /= nz) then
