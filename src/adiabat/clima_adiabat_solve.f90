@@ -281,17 +281,17 @@ contains
 
     ! resets self%T_surf, self%T, self%densities, self%lapse_rate
     ! also does radiative transfer and computes res
-    call AdiabatClimate_objective_(self, P_i_surf, T_in, include_heat_capacity, res, err)
+    call AdiabatClimate_objective_(self, P_i_surf, T_in, include_heat_capacity, .true., res, err)
     if (allocated(err)) return
 
   end subroutine
 
-  subroutine AdiabatClimate_objective_(self, P_i_surf, T_in, include_heat_capacity, res, err)
+  subroutine AdiabatClimate_objective_(self, P_i_surf, T_in, include_heat_capacity, compute_solar, res, err)
     use clima_const, only: k_boltz
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
     real(dp), intent(in) :: T_in(:)
-    logical, intent(in) :: include_heat_capacity
+    logical, intent(in) :: include_heat_capacity, compute_solar
     real(dp), intent(out) :: res(:)
     character(:), allocatable, intent(out) :: err
 
@@ -323,7 +323,8 @@ contains
 
     ! radiative transfer
     call self%copy_atm_to_radiative_grid()
-    call self%rad%radiate(self%T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, err=err)
+    call self%rad%radiate(self%T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, &
+      compute_solar=compute_solar, err=err)
     if (allocated(err)) return
     if (self%tidally_locked_dayside) then; block
       real(dp) :: tau_LW, k_term, f_term, rad_enhancement
@@ -393,7 +394,7 @@ contains
         T_in(self%ind_conv_lower(ind):self%ind_conv_upper(ind)) + deltaT
       endif
 
-      call AdiabatClimate_objective_(self, P_i_surf, T_perturb, include_heat_capacity, res_perturb, err)
+      call AdiabatClimate_objective_(self, P_i_surf, T_perturb, include_heat_capacity, self%compute_solar_in_jac, res_perturb, err)
       if (allocated(err)) return
 
       ! Compute jacobian

@@ -444,8 +444,8 @@ contains
       enddo
 
       if (k > 2*d%nz) then
-        err = 'Terrible out-of-bounds error in clima_adiabat_rc. Report this bug!'
-        return
+        print*,'Terrible out-of-bounds error in clima_adiabat_rc. Report this bug!'
+        stop 1
       endif
 
       if (k == 2*d%nz) exit

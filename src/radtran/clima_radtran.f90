@@ -199,7 +199,7 @@ contains
 
   end function
 
-  subroutine Radtran_radiate(self, T_surface, T, P, densities, dz, pdensities, radii , err)
+  subroutine Radtran_radiate(self, T_surface, T, P, densities, dz, pdensities, radii, compute_solar, err)
     use clima_radtran_radiate, only: radiate
     use clima_const, only: pi
     class(Radtran), target, intent(inout) :: self
@@ -209,19 +209,26 @@ contains
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
                                            !! molecule in each layer (molcules/cm3)
     real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:)
+    logical, optional, intent(in) :: compute_solar
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
     character(:), allocatable, intent(out) :: err
 
     integer :: ierr
+    logical :: compute_solar_
 
     type(ClimaRadtranWrk), pointer :: wrk_ir
     type(ClimaRadtranWrk), pointer :: wrk_sol
     
     wrk_ir => self%wrk_ir
-    wrk_sol => self%wrk_sol                                        
+    wrk_sol => self%wrk_sol                                    
     
     call check_inputs(self%nz, self%ng, self%np, T, P, densities, dz, pdensities, radii, err)
     if (allocated(err)) return
+
+    compute_solar_ = .true.
+    if (present(compute_solar)) then
+      compute_solar_ = compute_solar
+    endif
 
     ! IR radiative transfer                                     
     ierr = radiate(self%ir, &
@@ -236,6 +243,7 @@ contains
       err = 'Input particle radii are outside the data range.'
       return
     endif
+    if (compute_solar_) then
     ! Solar radiative transfer
     ierr = radiate(self%sol, &
                    self%surface_emissivity, &
@@ -249,13 +257,14 @@ contains
       err = 'Input particle radii are outside the data range.'
       return
     endif
+    endif
     ! Total flux at edges of layers (ergs/(cm2 s) which is the same as mW/m2).
     ! Index 1 is bottom. Index nz+1 is top edge of top layer.
     self%f_total = (wrk_sol%fdn_n - wrk_sol%fup_n) + (wrk_ir%fdn_n - wrk_ir%fup_n)
 
   end subroutine
 
-  subroutine Radtran_TOA_fluxes(self, T_surface, T, P, densities, dz, pdensities, radii, ISR, OLR, err)
+  subroutine Radtran_TOA_fluxes(self, T_surface, T, P, densities, dz, pdensities, radii, compute_solar, ISR, OLR, err)
     use clima_radtran_radiate, only: radiate
     class(Radtran), target, intent(inout) :: self
     real(dp), intent(in) :: T_surface
@@ -265,10 +274,11 @@ contains
                                            !! molecule in each layer (molcules/cm3)
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
     real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:) !! (nz,np)
+    logical, optional, intent(in) :: compute_solar
     real(dp), intent(out) :: ISR, OLR
     character(:), allocatable, intent(out) :: err
       
-    call self%radiate(T_surface, T, P, densities, dz, pdensities, radii , err)
+    call self%radiate(T_surface, T, P, densities, dz, pdensities, radii, compute_solar, err)
     if (allocated(err)) return
     
     ISR = (self%wrk_sol%fdn_n(self%nz+1) - self%wrk_sol%fup_n(self%nz+1)) ! Incoming short wave
