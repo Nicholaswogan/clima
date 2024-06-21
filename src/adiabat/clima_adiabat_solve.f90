@@ -68,7 +68,7 @@ contains
     ! lapse rates
     self%lapse_rate_intended(1) = lapse_rate_e(1)
     do i = 2,self%nz
-      self%lapse_rate_intended(i) = lapse_rate_e(2*i-1)
+      self%lapse_rate_intended(i) = lapse_rate_e(2*i-2)
     enddo
 
     self%lapse_rate(1) = (log(self%T(1)) - log(self%T_surf))/(log(self%P(1)) - log(self%P_surf))
@@ -177,7 +177,7 @@ contains
       enddo
 
       ! Update all variables to the current root
-      call AdiabatClimate_objective(self, P_i_surf, mv%x, mv%fvec, err)
+      call AdiabatClimate_objective(self, P_i_surf, mv%x, .false., mv%fvec, err)
       if (allocated(err)) return
 
       ! Save the current convective zones
@@ -213,7 +213,7 @@ contains
     ! Return all information to what is was prior to checking for the root
     call AdiabatClimate_set_convecting_zones(self, convecting_with_below_save(:,j), err)
     if (allocated(err)) return
-    call AdiabatClimate_objective(self, P_i_surf, mv%x, mv%fvec, err)
+    call AdiabatClimate_objective(self, P_i_surf, mv%x, .false., mv%fvec, err)
     if (allocated(err)) return
 
   contains
@@ -231,14 +231,14 @@ contains
 
       if (iflag_ == 1) then
         ! Compute right-hand-side
-        call AdiabatClimate_objective(self, P_i_surf, x_, fvec_, err)
+        call AdiabatClimate_objective(self, P_i_surf, x_, .false., fvec_, err)
         if (allocated(err)) then
           iflag_ = -1
           return
         endif
       elseif (iflag_ == 2) then
         ! Compute jacobian
-        call AdiabatClimate_jacobian(self, P_i_surf, x_, fjac_, err)
+        call AdiabatClimate_jacobian(self, P_i_surf, x_, .false., fjac_, err)
         if (allocated(err)) then
           iflag_ = -1
           return
@@ -254,10 +254,11 @@ contains
 
   end function
 
-  subroutine AdiabatClimate_objective(self, P_i_surf, x, res, err)
+  subroutine AdiabatClimate_objective(self, P_i_surf, x, ignoring_convection, res, err)
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
     real(dp), intent(in) :: x(:)
+    logical, intent(in) :: ignoring_convection
     real(dp), intent(out) :: res(:)
     character(:), allocatable, intent(out) :: err
 
@@ -280,16 +281,17 @@ contains
 
     ! resets self%T_surf, self%T, self%densities, self%lapse_rate
     ! also does radiative transfer and computes res
-    call AdiabatClimate_objective_(self, P_i_surf, T_in, res, err)
+    call AdiabatClimate_objective_(self, P_i_surf, T_in, ignoring_convection, res, err)
     if (allocated(err)) return
 
   end subroutine
 
-  subroutine AdiabatClimate_objective_(self, P_i_surf, T_in, res, err)
+  subroutine AdiabatClimate_objective_(self, P_i_surf, T_in, ignoring_convection, res, err)
     use clima_const, only: k_boltz
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
     real(dp), intent(in) :: T_in(:)
+    logical, intent(in) :: ignoring_convection
     real(dp), intent(out) :: res(:)
     character(:), allocatable, intent(out) :: err
 
@@ -337,14 +339,20 @@ contains
     enddo
     f_total(1) = f_total(1) + self%surface_heat_flow
 
-    call AdiabatClimate_residuals_with_convection(self, f_total, self%lapse_rate, self%lapse_rate_intended, res)
+    if (ignoring_convection) then
+      call AdiabatClimate_residuals_with_heat_capacity(self, f_total, res, err)
+      if (allocated(err)) return
+    else
+      call AdiabatClimate_residuals_with_convection(self, f_total, self%lapse_rate, self%lapse_rate_intended, res)
+    endif
 
   end subroutine
 
-  subroutine AdiabatClimate_jacobian(self, P_i_surf, x, jac, err)
+  subroutine AdiabatClimate_jacobian(self, P_i_surf, x, ignoring_convection, jac, err)
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
     real(dp), intent(in) :: x(:)
+    logical, intent(in) :: ignoring_convection
     real(dp), intent(out) :: jac(:,:)
     character(:), allocatable, intent(out) :: err
 
@@ -365,7 +373,7 @@ contains
     allocate(T_in(self%nz+1),res_perturb(size(self%inds_Tx)))
 
     ! First evaluate res at T.
-    call AdiabatClimate_objective(self, P_i_surf, x, res, err)
+    call AdiabatClimate_objective(self, P_i_surf, x, ignoring_convection, res, err)
     if (allocated(err)) return
 
     T_in(1) = self%T_surf
@@ -385,7 +393,7 @@ contains
         T_in(self%ind_conv_lower(ind):self%ind_conv_upper(ind)) + deltaT
       endif
 
-      call AdiabatClimate_objective_(self, P_i_surf, T_perturb, res_perturb, err)
+      call AdiabatClimate_objective_(self, P_i_surf, T_perturb, ignoring_convection, res_perturb, err)
       if (allocated(err)) return
 
       ! Compute jacobian
@@ -494,9 +502,9 @@ contains
     call AdiabatClimate_set_convecting_zones(self, self%convecting_with_below, err)
     if (allocated(err)) return
 
-    call AdiabatClimate_objective(self, P_i_surf, T_in, F, err)
+    call AdiabatClimate_objective(self, P_i_surf, T_in, .true., F, err)
     if (allocated(err)) return
-    call AdiabatClimate_jacobian(self, P_i_surf, T_in, dFdT, err)
+    call AdiabatClimate_jacobian(self, P_i_surf, T_in, .true., dFdT, err)
     if (allocated(err)) return
 
     deltaT = -F
@@ -515,7 +523,7 @@ contains
     lapse_rate_perturb = self%lapse_rate
 
     ! Re-update all variables at T_in, including self%lapse_rate_intended
-    call AdiabatClimate_objective(self, P_i_surf, T_in, F, err)
+    call AdiabatClimate_objective(self, P_i_surf, T_in, .true., F, err)
     if (allocated(err)) return
 
     difference = lapse_rate_perturb - self%lapse_rate_intended
@@ -545,7 +553,6 @@ contains
 
   end subroutine
 
-  !> Given
   subroutine AdiabatClimate_residuals_with_convection(self, f_total, lapse_rate, lapse_rate_intended, res)
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: f_total(:) !! fluxes at the edges of layers
@@ -591,6 +598,76 @@ contains
       ! Radiative energy going into the convective layer      
       res(self%ind_conv_lower_x(i)) = f_upper - f_lower
 
+    enddo
+
+  end subroutine
+
+  subroutine AdiabatClimate_residuals_with_heat_capacity(self, f_total, res, err)
+    use clima_eqns, only: heat_capacity_eval
+    use clima_const, only: k_boltz, N_avo
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: f_total(:) !! fluxes at the edges of layers (ergs/(cm^2*s))
+    real(dp), intent(out) :: res(:)
+    character(:), allocatable, intent(out) :: err
+
+    real(dp), allocatable :: fluxes(:), mubar(:), cp(:), rho(:), density(:)
+    real(dp) :: cp_tmp
+    integer :: i, j
+    logical :: found
+
+    if (self%n_convecting_zones /= 0) then
+      err = 'residuals_with_heat_capacity can not be called when there is convection'
+      return
+    endif
+    if (size(res) /= size(f_total)) then
+      err = 'res has the wrong shape in residuals_with_heat_capacity'
+      return
+    endif
+
+    ! work storage
+    allocate(fluxes(self%nz+1), mubar(self%nz), cp(self%nz), rho(self%nz), density(self%nz))
+
+    ! Radiative energy going into each layer (ergs/(cm^2*s))
+    fluxes(1) = f_total(1)
+    do i = 2,self%nz+1
+      fluxes(i) = (f_total(i) - f_total(i-1))
+    enddo
+
+    ! mean molecular weight (g/mol)
+    do j = 1,self%nz
+      mubar(j) = 0.0_dp
+      do i = 1,self%sp%ng
+        mubar(j) = mubar(j) + self%f_i(j,i)*self%sp%g(i)%mass
+      enddo
+    enddo
+
+    ! molecules/cm^3
+    density = self%P/(k_boltz*self%T)
+    ! [molecules/cm^3]*[mol/molecules]*[g/mol] = [g/cm^3]
+    rho = density*(1.0_dp/N_avo)*mubar 
+
+    ! Heat capacity in erg/(g*K)
+    do j = 1,self%nz
+      cp(j) = 0.0_dp
+      do i = 1,self%sp%ng
+        call heat_capacity_eval(self%sp%g(i)%thermo, self%T(j), found, cp_tmp) ! J/(mol*K)
+        if (.not. found) then
+          err = "not found"
+          return
+        endif
+        ! J/(mol*K)
+        cp(j) = cp(j) + cp_tmp*self%f_i(j,i) ! J/(mol*K)
+      enddo
+      ! J/(mol*K) * (mol/kg) = J/(kg*K)
+      cp(j) = cp(j)*(1.0_dp/(mubar(j)*1.0e-3_dp))
+      ! J/(kg*K) * (erg/J) * (kg/g) = erg/(g*K)
+      cp(j) = cp(j)*1.0e4_dp
+    enddo
+
+    ! [ergs/(cm^2*s)] * [1/cm] * [cm^3/g] * [g*K/erg] = [K/s]
+    res(1) = (fluxes(1)/self%dz(1))*(1.0_dp/(rho(1)*cp(1)))
+    do i = 1,self%nz
+      res(i+1) = (fluxes(i+1)/self%dz(i))*(1.0_dp/(rho(i)*cp(i)))
     enddo
 
   end subroutine
