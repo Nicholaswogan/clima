@@ -64,7 +64,7 @@ contains
     pdensities(:,:) = 1.0_dp
     radii(:,:) = 1.0e-5_dp
     
-    call rad%radiate(T(1), T, P, densities, dz, pdensities, radii, err)
+    call rad%radiate(T(1), T, P, densities, dz, pdensities, radii, err=err)
     if (allocated(err)) then
       print*,err
       stop 1
