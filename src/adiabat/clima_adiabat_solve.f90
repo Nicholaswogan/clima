@@ -254,11 +254,11 @@ contains
 
   end function
 
-  subroutine AdiabatClimate_objective(self, P_i_surf, x, ignoring_convection, res, err)
+  subroutine AdiabatClimate_objective(self, P_i_surf, x, include_heat_capacity, res, err)
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
     real(dp), intent(in) :: x(:)
-    logical, intent(in) :: ignoring_convection
+    logical, intent(in) :: include_heat_capacity
     real(dp), intent(out) :: res(:)
     character(:), allocatable, intent(out) :: err
 
@@ -281,17 +281,17 @@ contains
 
     ! resets self%T_surf, self%T, self%densities, self%lapse_rate
     ! also does radiative transfer and computes res
-    call AdiabatClimate_objective_(self, P_i_surf, T_in, ignoring_convection, res, err)
+    call AdiabatClimate_objective_(self, P_i_surf, T_in, include_heat_capacity, res, err)
     if (allocated(err)) return
 
   end subroutine
 
-  subroutine AdiabatClimate_objective_(self, P_i_surf, T_in, ignoring_convection, res, err)
+  subroutine AdiabatClimate_objective_(self, P_i_surf, T_in, include_heat_capacity, res, err)
     use clima_const, only: k_boltz
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
     real(dp), intent(in) :: T_in(:)
-    logical, intent(in) :: ignoring_convection
+    logical, intent(in) :: include_heat_capacity
     real(dp), intent(out) :: res(:)
     character(:), allocatable, intent(out) :: err
 
@@ -339,7 +339,7 @@ contains
     enddo
     f_total(1) = f_total(1) + self%surface_heat_flow
 
-    if (ignoring_convection) then
+    if (include_heat_capacity) then
       call AdiabatClimate_residuals_with_heat_capacity(self, f_total, res, err)
       if (allocated(err)) return
     else
@@ -348,11 +348,11 @@ contains
 
   end subroutine
 
-  subroutine AdiabatClimate_jacobian(self, P_i_surf, x, ignoring_convection, jac, err)
+  subroutine AdiabatClimate_jacobian(self, P_i_surf, x, include_heat_capacity, jac, err)
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
     real(dp), intent(in) :: x(:)
-    logical, intent(in) :: ignoring_convection
+    logical, intent(in) :: include_heat_capacity
     real(dp), intent(out) :: jac(:,:)
     character(:), allocatable, intent(out) :: err
 
@@ -373,7 +373,7 @@ contains
     allocate(T_in(self%nz+1),res_perturb(size(self%inds_Tx)))
 
     ! First evaluate res at T.
-    call AdiabatClimate_objective(self, P_i_surf, x, ignoring_convection, res, err)
+    call AdiabatClimate_objective(self, P_i_surf, x, include_heat_capacity, res, err)
     if (allocated(err)) return
 
     T_in(1) = self%T_surf
@@ -393,7 +393,7 @@ contains
         T_in(self%ind_conv_lower(ind):self%ind_conv_upper(ind)) + deltaT
       endif
 
-      call AdiabatClimate_objective_(self, P_i_surf, T_perturb, ignoring_convection, res_perturb, err)
+      call AdiabatClimate_objective_(self, P_i_surf, T_perturb, include_heat_capacity, res_perturb, err)
       if (allocated(err)) return
 
       ! Compute jacobian

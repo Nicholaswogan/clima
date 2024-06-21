@@ -318,7 +318,7 @@ contains
 
     type(dop853_rc) :: dop
     logical :: status_ok, convecting_with_below
-    integer :: idid, i, j, k, n
+    integer :: idid, i, j, k, n, kk
     real(dp) :: Pn, T_root, Ptop
     real(dp), allocatable :: u(:)
     integer, allocatable :: icomp(:)
@@ -391,7 +391,8 @@ contains
         err = 'dop853 initialization failed'
         return
       endif
-
+      
+      kk = 1
       do
         call dop%integrate(Pn, u, Ptop, [d%rtol], [d%atol], iout=2, idid=idid)
         if (allocated(d%err)) then
@@ -434,7 +435,18 @@ contains
 
         endblock; endif
 
+        if (kk > 100000) then
+          err = 'Terrible integration error in clima_adiabat_rc. Report this bug!'
+          return
+        endif
+
+        kk = kk + 1
       enddo
+
+      if (k > 2*d%nz) then
+        err = 'Terrible out-of-bounds error in clima_adiabat_rc. Report this bug!'
+        return
+      endif
 
       if (k == 2*d%nz) exit
 
