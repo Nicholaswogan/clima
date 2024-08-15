@@ -326,7 +326,10 @@ contains
     call self%rad%radiate(self%T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, &
       compute_solar=compute_solar, err=err)
     if (allocated(err)) return
-    if (self%tidally_locked_dayside) then; block
+
+    ! Considers a tidally locked dayside climate. We only compute this for
+    ! compute_solar == True.
+    if (self%tidally_locked_dayside .and. compute_solar) then; block
       real(dp) :: tau_LW, k_term, f_term, rad_enhancement
       call self%heat_redistribution_parameters(tau_LW, k_term, f_term, err)
       if (allocated(err)) return
