@@ -32,9 +32,9 @@ CPMAddPackage(
 # futils
 CPMAddPackage(
   NAME futils
-  VERSION 0.1.11
+  VERSION 0.1.13
   GITHUB_REPOSITORY "Nicholaswogan/futils"
-  GIT_TAG "v0.1.11"
+  GIT_TAG "v0.1.13"
   EXCLUDE_FROM_ALL ON
 )
 
