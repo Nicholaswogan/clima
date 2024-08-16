@@ -2,24 +2,15 @@ cimport futils_pxd as f_pxd
 
 cdef void rebin_error_message(int ierr):
 
-  cdef int err_length
-  cdef void *err_ptr
-  cdef ndarray err_
+  cdef char err[ERR_LEN+1]
 
   if ierr != 0:
-    f_pxd.futils_rebin_error_message_wrapper1(
+    f_pxd.futils_rebin_error_message_wrapper(
       &ierr, 
-      &err_length, 
-      &err_ptr
+      err
     )
-    err_ = np.zeros((),dtype=np.dtype(('S', err_length+1)))
-    f_pxd.futils_rebin_error_message_wrapper2(
-      &err_length, 
-      err_ptr, 
-      <char *> err_.data
-    )
-    raise Exception(err_.item().decode())
-
+    if len(err.strip()) > 0:
+      raise Exception(err.decode().strip())
 
 cpdef rebin(ndarray[double, ndim=1] old_bins, ndarray[double, ndim=1]  old_vals, ndarray[double, ndim=1]  new_bins):
   """Rebins `old_vals` defined on `old_bins` to `new_bins`. An example is
@@ -107,68 +98,3 @@ cpdef rebin_with_errors(ndarray[double, ndim=1] old_bins, ndarray[double, ndim=1
   rebin_error_message(ierr)
 
   return new_vals, new_errs
-
-cpdef grid_at_resolution(double wv_min, double wv_max, double R):
-  """Computes a grid of bins at a given resolution `R`
-
-  Parameters
-  ----------
-  wv_min : double
-      Minimum bin extent
-  wv_max : double
-      Maximum bin extent
-  R : double
-      Bin resolution (dlam = lam/R)
-
-  Returns
-  -------
-  wavl : ndarray[double,ndim=1]
-      Ouput grid
-  """
-
-  cdef int wavl_len
-  cdef void *wavl_ptr
-  cdef int ierr
-
-  f_pxd.futils_grid_at_resolution_wrapper1(
-    &wv_min, &wv_max, &R, 
-    &wavl_len, &wavl_ptr, 
-    &ierr 
-  )
-  cdef ndarray wavl = np.empty(wavl_len, np.double)
-  f_pxd.futils_grid_at_resolution_wrapper2(
-    &wavl_len, wavl_ptr, <double *> wavl.data
-  )
-
-  rebin_error_message(ierr)
-
-  return wavl
-
-cpdef make_bins(ndarray[double, ndim=1] wv):
-  """Given a series of wavelength points, find the corresponding bin edges
-
-  Parameters
-  ----------
-  wv : ndarray[double,ndim=1]
-      Wavelength points.
-
-  Returns
-  -------
-  wavl : ndarray[double,ndim=1]
-      Bin edges
-  """
-
-  cdef int wv_len = wv.shape[0]
-  cdef int wavl_len = wv_len + 1
-  cdef ndarray wavl = np.empty(wavl_len, np.double)
-  cdef int ierr
-
-  f_pxd.futils_make_bins_wrapper(
-    &wv_len, <double *> wv.data, 
-    &wavl_len, <double *> wavl.data, 
-    &ierr
-  )
-
-  rebin_error_message(ierr)
-
-  return wavl

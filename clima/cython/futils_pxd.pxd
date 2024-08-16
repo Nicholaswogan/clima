@@ -16,19 +16,6 @@ cdef extern void futils_rebin_with_errors_wrapper(
   int *ierr
 )
 
-cdef extern void futils_grid_at_resolution_wrapper1(
-  double *wv_min, double *wv_max, double *R, int *wavl_len,
-  void *wavl_ptr, int *ierr 
-)
-cdef extern void futils_grid_at_resolution_wrapper2(int *wavl_len, void *wavl_ptr, double *wavl)
-
-cdef extern void futils_make_bins_wrapper(
-  int *wv_len, double *wv, int *wavl_len, double *wavl, int *ierr
-)
-
-cdef extern void futils_rebin_error_message_wrapper1(
-  int *ierr, int *err_length, void *err_ptr
-)
-cdef extern void futils_rebin_error_message_wrapper2(
-  int *err_length, void *err_ptr, char *err
+cdef extern void futils_rebin_error_message_wrapper(
+  int *ierr, char *err
 )
