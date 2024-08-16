@@ -109,6 +109,22 @@ cpdef rebin_with_errors(ndarray[double, ndim=1] old_bins, ndarray[double, ndim=1
   return new_vals, new_errs
 
 cpdef grid_at_resolution(double wv_min, double wv_max, double R):
+  """Computes a grid of bins at a given resolution `R`
+
+  Parameters
+  ----------
+  wv_min : double
+      Minimum bin extent
+  wv_max : double
+      Maximum bin extent
+  R : double
+      Bin resolution (dlam = lam/R)
+
+  Returns
+  -------
+  wavl : ndarray[double,ndim=1]
+      Ouput grid
+  """
 
   cdef int wavl_len
   cdef void *wavl_ptr
@@ -129,6 +145,18 @@ cpdef grid_at_resolution(double wv_min, double wv_max, double R):
   return wavl
 
 cpdef make_bins(ndarray[double, ndim=1] wv):
+  """Given a series of wavelength points, find the corresponding bin edges
+
+  Parameters
+  ----------
+  wv : ndarray[double,ndim=1]
+      Wavelength points.
+
+  Returns
+  -------
+  wavl : ndarray[double,ndim=1]
+      Bin edges
+  """
 
   cdef int wv_len = wv.shape[0]
   cdef int wavl_len = wv_len + 1
