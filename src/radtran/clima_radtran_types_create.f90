@@ -1078,7 +1078,7 @@ contains
     
     call h%open(filename,'r')
     
-    if (.not. h%exists('log10xs')) then
+    if (.not. h%exist('log10xs')) then
       call h%close()
       err = filename//': dataset "log10xs" does not exist'
       return
@@ -1416,7 +1416,7 @@ contains
     character(*), intent(in) :: prefix
     character(:), allocatable, intent(out) :: err
     
-    if (.not. h%exists(dataset)) then
+    if (.not. h%exist(dataset)) then
       err = prefix//': dataset "'//dataset//'" does not exist'
       return
     endif

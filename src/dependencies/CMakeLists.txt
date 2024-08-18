@@ -21,11 +21,11 @@ CPMAddPackage(
 # h5fortran
 CPMAddPackage(
   NAME h5fortran
-  VERSION 4.5.0
+  VERSION 4.10.6
   OPTIONS
     "CMAKE_POSITION_INDEPENDENT_CODE ON"
   GITHUB_REPOSITORY "geospace-code/h5fortran"
-  GIT_TAG "v4.5.0"
+  GIT_TAG "v4.10.6"
   EXCLUDE_FROM_ALL ON
 )
 
