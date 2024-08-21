@@ -130,10 +130,12 @@ module clima_adiabat
     procedure :: make_profile => AdiabatClimate_make_profile
     procedure :: make_column => AdiabatClimate_make_column
     procedure :: make_profile_bg_gas => AdiabatClimate_make_profile_bg_gas
+    procedure :: make_profile_dry => AdiabatClimate_make_profile_dry
     ! Constructs atmosphere and does radiative transfer
     procedure :: TOA_fluxes => AdiabatClimate_TOA_fluxes
     procedure :: TOA_fluxes_column => AdiabatClimate_TOA_fluxes_column
     procedure :: TOA_fluxes_bg_gas => AdiabatClimate_TOA_fluxes_bg_gas
+    procedure :: TOA_fluxes_dry => AdiabatClimate_TOA_fluxes_dry
     ! Non-linear solves for equilibrium climate
     procedure :: surface_temperature => AdiabatClimate_surface_temperature
     procedure :: surface_temperature_column => AdiabatClimate_surface_temperature_column
@@ -493,6 +495,76 @@ contains
     end subroutine
   end subroutine
 
+  !> Given a P, T and mixing ratios, this function will update all atmospheric variables
+  !> (except self%P_trop and self%convecting_with_below) to reflect these inputs. 
+  !> The atmosphere is assumed to be dry (no condensibles). Any gas exceeding saturation 
+  !> will not be altered.
+  subroutine AdiabatClimate_make_profile_dry(self, P, T, f_i, err)
+    use clima_adiabat_dry, only: make_profile_dry
+    use clima_const, only: k_boltz, N_avo
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: P(:) !! Pressure (dynes/cm^2). The first element is the surface.
+    real(dp), intent(in) :: T(:) !! Temperature (K) defined on `P`.
+    real(dp), intent(in) :: f_i(:,:) !! Mixing ratios defined on `P` of shape (size(P),ng).
+    character(:), allocatable, intent(out) :: err
+
+    real(dp), allocatable :: P_e(:), z_e(:), T_e(:), f_i_e(:,:), lapse_rate_e(:)
+    real(dp), allocatable :: density(:)
+    integer :: i, j
+    
+    allocate(P_e(2*self%nz+1),z_e(2*self%nz+1),T_e(2*self%nz+1))
+    allocate(f_i_e(2*self%nz+1,self%sp%ng),lapse_rate_e(2*self%nz+1))
+    allocate(density(self%nz))
+
+    call make_profile_dry(P, T, f_i, &
+                          self%sp, self%nz, &
+                          self%planet_mass, self%planet_radius, self%P_top, &
+                          self%rtol, self%atol, &
+                          P_e, z_e, T_e, f_i_e, lapse_rate_e, &
+                          err)
+    if (allocated(err)) return
+
+    ! We assume the atmosphere is dry
+    self%N_surface = 0.0_dp
+    self%N_ocean = 0.0_dp
+
+    self%T_surf = T_e(1)
+    self%P_surf = P_e(1)
+    do i = 1,self%nz
+      self%P(i) = P_e(2*i)
+      self%T(i) = T_e(2*i)
+      self%z(i) = z_e(2*i)
+      self%dz(i) = z_e(2*i+1) - z_e(2*i-1)
+      do j =1,self%sp%ng
+        self%f_i(i,j) = f_i_e(2*i,j)
+      enddo
+    enddo
+
+    density = self%P/(k_boltz*self%T)
+    do j =1,self%sp%ng
+      self%densities(:,j) = self%f_i(:,j)*density(:)
+    enddo
+
+    do i = 1,self%sp%ng
+      ! mol/cm^2 in atmosphere
+      self%N_atmos(i) = sum(density*self%f_i(:,i)*self%dz)/N_avo
+    enddo
+
+    ! lapse rates
+    self%lapse_rate_intended(1) = lapse_rate_e(1)
+    do i = 2,self%nz
+      self%lapse_rate_intended(i) = lapse_rate_e(2*i-2)
+    enddo
+
+    ! Convecting with below is not changed. We don't get convecting information.
+
+    self%lapse_rate(1) = (log(self%T(1)) - log(self%T_surf))/(log(self%P(1)) - log(self%P_surf))
+    do i = 2,self%nz
+      self%lapse_rate(i) = (log(self%T(i)) - log(self%T(i-1)))/(log(self%P(i)) - log(self%P(i-1)))
+    enddo
+
+  end subroutine
+
   !> Copies the atmosphere to the data used for radiative transfer
   subroutine AdiabatClimate_copy_atm_to_radiative_grid(self)
     class(AdiabatClimate), intent(inout) :: self
@@ -594,6 +666,32 @@ contains
     ! Do radiative transfer
     call self%copy_atm_to_radiative_grid()
     call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, ISR=ISR, OLR=OLR, err=err)
+    if (allocated(err)) return
+    
+  end subroutine
+
+  !> Calls `make_profile_dry`, then does radiative transfer on the constructed atmosphere
+  subroutine AdiabatClimate_TOA_fluxes_dry(self, P, T, f_i, ISR, OLR, err)
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: P(:) !! Pressure (dynes/cm^2). The first element is the surface.
+    real(dp), intent(in) :: T(:) !! Temperature (K) defined on `P`.
+    real(dp), intent(in) :: f_i(:,:) !! Mixing ratios defined on `P` of shape (size(P),ng).
+    real(dp), intent(out) :: ISR !! Top-of-atmosphere incoming solar radiation (mW/m^2)
+    real(dp), intent(out) :: OLR !! Top-of-atmosphere outgoing longwave radiation (mW/m^2)
+    character(:), allocatable, intent(out) :: err
+    
+    ! make atmosphere profile
+    call self%make_profile_dry(P, T, f_i, err)
+    if (allocated(err)) return
+
+    ! set albedo
+    if (associated(self%albedo_fcn)) then
+      self%rad%surface_albedo = self%albedo_fcn(self%T_surf)
+    endif
+    
+    ! Do radiative transfer
+    call self%copy_atm_to_radiative_grid()
+    call self%rad%TOA_fluxes(self%T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
     
   end subroutine

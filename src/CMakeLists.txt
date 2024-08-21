@@ -33,6 +33,7 @@ set(ADIABAT_SOURCES
   adiabat/clima_adiabat_general.f90
   adiabat/clima_adiabat_rc.f90
   adiabat/clima_adiabat_solve.f90
+  adiabat/clima_adiabat_dry.f90
   adiabat/clima_adiabat.f90
 )
 

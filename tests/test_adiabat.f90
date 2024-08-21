@@ -6,8 +6,8 @@ program test
   
   type(AdiabatClimate) :: c
   character(:), allocatable :: err
-  real(dp) :: T, OLR
-  real(dp), allocatable :: P_i_surf(:), N_i_surf(:)
+  real(dp) :: T, OLR, ISR, OLR1, ISR1
+  real(dp), allocatable :: P_i_surf(:), N_i_surf(:), f_i(:,:)
   integer :: i
   logical :: converged
   procedure(ocean_solubility_fcn), pointer :: ocean_fcn_ptr
@@ -71,13 +71,32 @@ program test
   c%T_trop = 150.0_dp
   P_i_surf = [270.0_dp, 10.0_dp, 1.0_dp, 1.0e-10_dp, 1.0e-10_dp, 1.0e-10_dp, 1.0e-10_dp]
   P_i_surf = P_i_surf*1.0e6_dp
-  call c%make_profile(280.0_dp, &
-      P_i_surf, &
+  call c%TOA_fluxes(280.0_dp, &
+      P_i_surf, ISR, OLR, &
       err=err)
   if (allocated(err)) then
     print*,err
     stop 1
   endif
+
+  ! Test make_profile_dry
+  allocate(f_i(c%nz+1,c%sp%ng))
+  f_i(1,:) = c%f_i(1,:)
+  do i = 1,c%nz
+    f_i(i+1,:) = c%f_i(i,:)
+  enddo
+  call c%TOA_fluxes_dry( &
+    [c%P_surf,c%P], &
+    [c%T_surf,c%T], &
+    f_i, &
+    ISR1, OLR1, &
+    err &
+  )
+  if (allocated(err)) then
+    print*,err
+    stop 1
+  endif
+  print*,ISR1/ISR, OLR1/OLR
 
   ! Test ocean solubility functionality
   ocean_fcn_ptr => ocean_fcn

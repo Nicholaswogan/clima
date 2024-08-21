@@ -142,6 +142,30 @@ subroutine adiabatclimate_make_profile_bg_gas_wrapper(ptr, T_surf, ng, P_i_surf,
 
 end subroutine
 
+subroutine adiabatclimate_make_profile_dry_wrapper(ptr, dim_P, P, dim_T, T, dim1_f_i, dim2_f_i, f_i, err) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: dim_P
+  real(c_double), intent(in) :: P(dim_P)
+  integer(c_int), intent(in) :: dim_T
+  real(c_double), intent(in) :: T(dim_T)
+  integer(c_int), intent(in) :: dim1_f_i, dim2_f_i
+  real(c_double), intent(in) :: f_i(dim1_f_i,dim2_f_i)
+  character(c_char), intent(out) :: err(err_len+1)
+
+  character(:), allocatable :: err_f
+  type(AdiabatClimate), pointer :: c
+
+  call c_f_pointer(ptr, c)
+  call c%make_profile_dry(P, T, f_i, err_f)
+
+  err(1) = c_null_char
+  if (allocated(err_f)) then
+    call copy_string_ftoc(err_f, err)
+  endif
+
+end subroutine
+
 subroutine adiabatclimate_toa_fluxes_wrapper(ptr, T_surf, ng, P_i_surf, ISR, OLR, err) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), value, intent(in) :: ptr
@@ -209,6 +233,31 @@ subroutine adiabatclimate_toa_fluxes_bg_gas_wrapper(ptr, T_surf, ng, P_i_surf, P
   call copy_string_ctof(bg_gas, bg_gas_f)
 
   call c%TOA_fluxes_bg_gas(T_surf, P_i_surf, P_surf, bg_gas_f, ISR, OLR, err_f)
+
+  err(1) = c_null_char
+  if (allocated(err_f)) then
+    call copy_string_ftoc(err_f, err)
+  endif
+
+end subroutine
+
+subroutine adiabatclimate_toa_fluxes_dry_wrapper(ptr, dim_P, P, dim_T, T, dim1_f_i, dim2_f_i, f_i, ISR, OLR, err) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: dim_P
+  real(c_double), intent(in) :: P(dim_P)
+  integer(c_int), intent(in) :: dim_T
+  real(c_double), intent(in) :: T(dim_T)
+  integer(c_int), intent(in) :: dim1_f_i, dim2_f_i
+  real(c_double), intent(in) :: f_i(dim1_f_i,dim2_f_i)
+  real(c_double), intent(out) :: ISR, OLR
+  character(c_char), intent(out) :: err(err_len+1)
+
+  character(:), allocatable :: err_f
+  type(AdiabatClimate), pointer :: c
+
+  call c_f_pointer(ptr, c)
+  call c%TOA_fluxes_dry(P, T, f_i, ISR, OLR, err_f)
 
   err(1) = c_null_char
   if (allocated(err_f)) then

@@ -87,6 +87,37 @@ cdef class AdiabatClimate:
     &ng, <double *>P_i_surf.data, err)
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
+
+  def make_profile_dry(self, ndarray[double, ndim=1] P, ndarray[double, ndim=1] T, ndarray[double, ndim=2] f_i):
+    """Given a P, T and mixing ratios, this function will update all atmospheric variables
+    (except self%P_trop and self%convecting_with_below) to reflect these inputs. 
+    The atmosphere is assumed to be dry (no condensibles). Any gas exceeding saturation 
+    will not be altered.
+
+    Parameters
+    ----------
+    P : ndarray[double,ndim=1]
+        Pressure (dynes/cm^2). The first element is the surface.
+    T : ndarray[double,ndim=1]
+        Temperature (K) defined on `P`.
+    f_i : ndarray[double,ndim=2]
+        Mixing ratios defined on `P` of shape (size(P),ng).
+    """
+    cdef int dim_P = P.shape[0]
+    cdef int dim_T = T.shape[0]
+    cdef ndarray f_i_ = np.asfortranarray(f_i)
+    cdef int dim1_f_i = f_i_.shape[0]
+    cdef int dim2_f_i = f_i_.shape[1]
+    cdef char err[ERR_LEN+1]
+    wa_pxd.adiabatclimate_make_profile_dry_wrapper(
+      self._ptr, 
+      &dim_P, <double *>P.data,
+      &dim_T, <double *>T.data,
+      &dim1_f_i, &dim2_f_i, <double *>f_i_.data,
+      err
+    )
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
     
   def make_column(self, double T_surf, ndarray[double, ndim=1] N_i_surf):
     """Similar to `make_profile`, but instead the input is column reservoirs 
@@ -211,6 +242,37 @@ cdef class AdiabatClimate:
     cdef double ISR, OLR;
     wa_pxd.adiabatclimate_toa_fluxes_bg_gas_wrapper(self._ptr, &T_surf,
     &ng, <double *>P_i_surf.data, &P_surf, bg_gas_c, &ISR, &OLR, err)
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
+    return ISR, OLR
+
+  def TOA_fluxes_dry(self, ndarray[double, ndim=1] P, ndarray[double, ndim=1] T, ndarray[double, ndim=2] f_i):
+    """Calls `make_profile_dry`, then does radiative transfer on the constructed atmosphere
+
+    Parameters
+    ----------
+    P : ndarray[double,ndim=1]
+        Pressure (dynes/cm^2). The first element is the surface.
+    T : ndarray[double,ndim=1]
+        Temperature (K) defined on `P`.
+    f_i : ndarray[double,ndim=2]
+        Mixing ratios defined on `P` of shape (size(P),ng).
+    """
+    cdef int dim_P = P.shape[0]
+    cdef int dim_T = T.shape[0]
+    cdef ndarray f_i_ = np.asfortranarray(f_i)
+    cdef int dim1_f_i = f_i_.shape[0]
+    cdef int dim2_f_i = f_i_.shape[1]
+    cdef char err[ERR_LEN+1]
+    cdef double ISR, OLR;
+    wa_pxd.adiabatclimate_toa_fluxes_dry_wrapper(
+      self._ptr, 
+      &dim_P, <double *>P.data,
+      &dim_T, <double *>T.data,
+      &dim1_f_i, &dim2_f_i, <double *>f_i_.data,
+      &ISR, &OLR,
+      err
+    )
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
     return ISR, OLR

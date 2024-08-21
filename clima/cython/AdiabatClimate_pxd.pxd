@@ -28,6 +28,14 @@ cdef extern void adiabatclimate_make_column_wrapper(AdiabatClimate *ptr, double 
 cdef extern void adiabatclimate_make_profile_bg_gas_wrapper(AdiabatClimate *ptr, double *T_surf, int *ng, 
                                       double *P_i_surf, double *P_surf, char *bg_gas, char *err)
 
+cdef extern void adiabatclimate_make_profile_dry_wrapper(
+  AdiabatClimate *ptr, 
+  int *dim_P, double *P,
+  int *dim_T, double *T,
+  int *dim1_f_i, int *dim2_f_i, double *f_i,
+  char *err
+)
+
 cdef extern void adiabatclimate_toa_fluxes_wrapper(AdiabatClimate *ptr, double *T_surf, int *ng, 
                                      double *P_i_surf, double *ISR, double *OLR, char *err)
 
@@ -37,6 +45,15 @@ cdef extern void adiabatclimate_toa_fluxes_column_wrapper(AdiabatClimate *ptr, d
 cdef extern void adiabatclimate_toa_fluxes_bg_gas_wrapper(AdiabatClimate *ptr, double *T_surf, int *ng, 
                                      double *P_i_surf, double *P_surf, char *bg_gas, double *ISR, 
                                      double *OLR, char *err)
+
+cdef extern void adiabatclimate_toa_fluxes_dry_wrapper(
+  AdiabatClimate *ptr, 
+  int *dim_P, double *P,
+  int *dim_T, double *T,
+  int *dim1_f_i, int *dim2_f_i, double *f_i,
+  double *ISR, double *OLR,
+  char *err
+)
 
 cdef extern void adiabatclimate_surface_temperature_wrapper(AdiabatClimate *ptr, int *ng, 
                                       double *P_i_surf, double *T_guess, double *T_surf, char *err)
