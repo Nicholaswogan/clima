@@ -141,9 +141,6 @@ cdef extern void adiabatclimate_max_rc_iters_set(AdiabatClimate *ptr, int *val)
 cdef extern void adiabatclimate_max_rc_iters_convection_get(AdiabatClimate *ptr, int *val)
 cdef extern void adiabatclimate_max_rc_iters_convection_set(AdiabatClimate *ptr, int *val)
 
-cdef extern void adiabatclimate_radiation_norm_term_get(AdiabatClimate *ptr, double *val)
-cdef extern void adiabatclimate_radiation_norm_term_set(AdiabatClimate *ptr, double *val)
-
 cdef extern void adiabatclimate_verbose_get(AdiabatClimate *ptr, bool *val)
 cdef extern void adiabatclimate_verbose_set(AdiabatClimate *ptr, bool *val)
 

@@ -104,9 +104,6 @@ module clima_adiabat
     !> Max number of iterations for which convective layers can
     !> be converged to radiative layers in the RCE routine
     integer :: max_rc_iters_convection = 5
-    !> A term that weights the importance of maintaining radiative
-    !> equilibrium to convection.
-    real(dp) :: radiation_norm_term = 1.0e-3_dp
     !> If False, then the jacobian calculation in RCE does not recompute
     !> solar radiative transfer.
     logical :: compute_solar_in_jac = .false.
