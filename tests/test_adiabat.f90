@@ -97,6 +97,7 @@ program test
     stop 1
   endif
   print*,ISR1/ISR, OLR1/OLR
+  deallocate(f_i)
 
   ! Test ocean solubility functionality
   ocean_fcn_ptr => ocean_fcn
