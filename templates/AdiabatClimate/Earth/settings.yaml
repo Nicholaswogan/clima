@@ -26,10 +26,6 @@ optical-properties:
     # These methods are explained in Amundsen et al. (2017) (DOI: 10.1051/0004-6361/201629322).
     k-method: RandomOverlapResortRebin
 
-    # If you choose method RandomOverlapResortRebin, then you must supply
-    # `number-of-bins`, which is the number of bins the method rebins to
-    number-of-bins: 16
-
     # Here you specify opacites. You can see avaliable opacities by looking in
     # `clima/data/` folder. `CIA`, `rayleigh`, `photolysis-xs` and `water-continuum`
     # are optional. If you omit these keys then these opacities will not be included.
@@ -39,5 +35,4 @@ optical-properties:
     opacities: {k-distributions: on, CIA: on, rayleigh: on}
   solar:
     k-method: RandomOverlapResortRebin
-    number-of-bins: 16
     opacities: {k-distributions: on, CIA: on, rayleigh: on}

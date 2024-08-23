@@ -12,7 +12,6 @@ planet:
 optical-properties:
   ir:
     k-method: RandomOverlapResortRebin
-    number-of-bins: 32
     opacities:
       k-distributions: [H2O, CO2, CH4]
       CIA: [CH4-CH4, CO2-CH4, CO2-CO2, CO2-H2, H2-CH4, H2-H2, N2-H2, N2-N2]
@@ -20,7 +19,6 @@ optical-properties:
       water-continuum: MT_CKD
   solar:
     k-method: RandomOverlapResortRebin
-    number-of-bins: 32
     opacities:
       k-distributions: [H2O, CO2, CH4]
       CIA: [CH4-CH4, CO2-CH4, CO2-CO2, CO2-H2, H2-CH4, H2-H2, N2-H2, N2-N2]

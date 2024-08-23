@@ -15,10 +15,8 @@ module clima_types
   end type
   
   type :: SettingsOpacity
-    integer, allocatable :: new_num_k_bins
   
     character(:), allocatable :: k_method
-    integer :: nbins
     
     logical, allocatable :: k_distributions_bool
     character(s_str_len), allocatable :: k_distributions(:)

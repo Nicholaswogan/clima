@@ -78,7 +78,6 @@ module clima_radtran_types
   end enum
   
   type :: Ksettings
-    integer, allocatable :: new_num_k_bins
     ! approach to combining k-distributions
     character(:), allocatable :: k_method_name ! name
     integer :: k_method ! enum (see above)
@@ -253,7 +252,6 @@ contains
     character(:), allocatable :: out
 
     character(:), allocatable :: line
-    character(s_str_len) :: tmp_str
     integer :: i
 
     out = ''
@@ -261,22 +259,6 @@ contains
     line = '    '
     line = line//'k-method: '//self%kset%k_method_name
     out = out//line
-
-    if (self%kset%k_method == k_RandomOverlapResortRebin) then
-      out = out//new_line('(a)')
-      write(tmp_str,'(i0)') self%kset%nbin
-      line = '    '
-      line = line//'number-of-bins: '//trim(tmp_str)
-      out = out//line
-    endif
-
-    if (allocated(self%kset%new_num_k_bins)) then
-      out = out//new_line('(a)')
-      write(tmp_str,'(i0)') self%kset%new_num_k_bins
-      line = '    '
-      line = line//'new-num-k-bins: '//trim(tmp_str)
-      out = out//line
-    endif
 
     out = out//new_line('(a)')
     line = '    '

@@ -817,9 +817,8 @@ contains
     type(type_list), pointer :: tmp
     class(type_node), pointer :: node
     type(type_dictionary), pointer :: opacities
-    type(type_scalar), pointer :: scalar
     type (type_error), allocatable :: io_err
-    integer :: ind, tmp_int
+    integer :: ind
     logical :: success
     
     if (allocated(op)) deallocate(op)
@@ -833,29 +832,13 @@ contains
     if (associated(node)) then
 
       ! k-distribution settings
-      ! ability to rebin k-coefficients in the files, before any calculations
-      scalar => op_dict%get_scalar('new-num-k-bins',required=.false.,error = io_err)
-      if (associated(scalar)) then
-        tmp_int = scalar%to_integer(0, success)
-        if (.not. success) then
-          err = 'Failed to convert "new-num-k-bins" to a real in "'//filename//'"'
-          return
-        endif
-        allocate(op%new_num_k_bins)
-        op%new_num_k_bins = tmp_int
-        if (op%new_num_k_bins < 1) then
-          err = '"new-num-k-bins" in "'//filename//'" must be bigger than 0.'
-          return
-        endif
-      endif
       
       ! get k-method, and check that it is valid
       op%k_method = op_dict%get_string("k-method", error=io_err)
       if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
       op%k_method = trim(op%k_method)
       if (op%k_method == "RandomOverlapResortRebin") then
-        op%nbins = op_dict%get_integer("number-of-bins", error=io_err)
-        if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
+        ! do nothing
       elseif (op%k_method == "RandomOverlap") then
         ! do nothing
       elseif (op%k_method == "AdaptiveEquivalentExtinction") then
