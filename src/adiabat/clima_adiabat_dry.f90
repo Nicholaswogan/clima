@@ -58,7 +58,7 @@ contains
     use futils, only: linspace
     real(dp), target, intent(in) :: P_in(:)
     real(dp), target, intent(in) :: T_in(:)
-    real(dp), target, intent(in) :: f_i_in(:,:)
+    real(dp), intent(in) :: f_i_in(:,:)
     type(Species), target, intent(inout) :: sp
     integer, target, intent(in) :: nz
     real(dp), target, intent(in) :: planet_mass, planet_radius
@@ -69,7 +69,7 @@ contains
     real(dp), target, intent(out) :: lapse_rate(:)
     character(:), allocatable, intent(out) :: err
 
-    real(dp), allocatable :: tmp_arr(:)
+    real(dp), target, allocatable :: tmp_arr(:), f_i_in_copy(:,:)
     real(dp), allocatable :: log10P_in_interp(:)
     type(AdiabatDryProfileData) :: d
     integer :: i, ierr
@@ -114,10 +114,16 @@ contains
       return
     endif
 
+    ! First, lets renormalize the mixing ratios so they sum to 1
+    f_i_in_copy = f_i_in
+    do i = 1,size(f_i_in,1)
+      f_i_in_copy(i,:) = f_i_in_copy(i,:)/sum(f_i_in_copy(i,:))
+    enddo
+
     ! Associate inputs
     d%P_in => P_in
     d%T_in => T_in
-    d%f_i_in => f_i_in
+    d%f_i_in => f_i_in_copy
     d%sp => sp
     d%nz => nz
     d%planet_mass => planet_mass
@@ -160,7 +166,7 @@ contains
     ! Mixing ratios
     allocate(d%f_i_interp(sp%ng))
     do i = 1,sp%ng
-      tmp_arr = log10(f_i_in(:,i))
+      tmp_arr = log10(f_i_in_copy(:,i))
       tmp_arr = tmp_arr(size(tmp_arr):1:-1)
       call d%f_i_interp(i)%initialize(log10P_in_interp, tmp_arr, ierr)
       if (ierr /= 0) then
