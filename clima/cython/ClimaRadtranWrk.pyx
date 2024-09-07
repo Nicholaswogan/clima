@@ -53,6 +53,17 @@ cdef class ClimaRadtranWrk:
       rwrk_pxd.climaradtranwrk_fdn_n_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
+  property amean:
+    """ndarray[double,ndim=2], size (nz+1,nw). Mean intensity in photons/cm^2/s.
+    Only used in solar radiative transfer.
+    """
+    def __get__(self):
+      cdef int dim1, dim2
+      rwrk_pxd.climaradtranwrk_amean_get_size(self._ptr, &dim1, &dim2)
+      cdef ndarray arr = np.empty((dim1, dim2), np.double, order="F")
+      rwrk_pxd.climaradtranwrk_amean_get(self._ptr, &dim1, &dim2, <double *>arr.data)
+      return arr
+
   property tau_band:
     "ndarray[double,ndim=2], size (nz,nw). Band optical thickness."
     def __get__(self):

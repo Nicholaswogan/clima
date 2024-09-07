@@ -146,6 +146,8 @@ contains
     allocate(rz%tau_band(nz))
 
     allocate(rz%amean(nz+1))
+    allocate(rz%amean1(nz+1))
+    allocate(rz%amean2(nz+1))
     allocate(rz%fup1(nz+1))
     allocate(rz%fdn1(nz+1))
     allocate(rz%fup2(nz+1))

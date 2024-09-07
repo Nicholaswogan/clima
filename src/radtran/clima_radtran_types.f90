@@ -213,6 +213,8 @@ module clima_radtran_types
     real(dp), allocatable :: tau_band(:) !! band optical thickness.
   
     real(dp), allocatable :: amean(:)
+    real(dp), allocatable :: amean1(:)
+    real(dp), allocatable :: amean2(:)
     real(dp), allocatable :: fup1(:)
     real(dp), allocatable :: fdn1(:)
     real(dp), allocatable :: fup2(:)

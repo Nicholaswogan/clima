@@ -18,13 +18,13 @@ contains
                    P, T_surface, T, densities, dz, &
                    pdensities, radii, &
                    rw, rz, &
-                   fup_a, fdn_a, fup_n, fdn_n, tau_band) result(ierr)
+                   fup_a, fdn_a, fup_n, fdn_n, amean, tau_band) result(ierr)
     use clima_radtran_types, only: RadiateXSWrk, RadiateZWrk, Ksettings
     use clima_radtran_types, only: OpticalProperties, Kcoefficients
     use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
     use clima_radtran_types, only: k_RandomOverlap, k_RandomOverlapResortRebin, k_AdaptiveEquivalentExtinction
     use clima_eqns, only: planck_fcn, ten2power
-    use clima_const, only: k_boltz, pi
+    use clima_const, only: k_boltz, pi, plank, c_light
   
     type(OpticalProperties), target, intent(inout) :: op !! Optical properties
     
@@ -55,6 +55,7 @@ contains
                                                     !! at the edges of the vertical grid
     real(dp), intent(out) :: fup_n(:), fdn_n(:) !! (nz+1) mW/m2 at the edges of the vertical grid 
                                                 !! (integral of fup_a and fdn_a over wavelength grid)
+    real(dp), intent(out) :: amean(:,:) !! (nz+1,nw) Mean intensity in photons/cm^2/s (Only for Solar)
     real(dp), intent(out) :: tau_band(:,:) !! (nz,nw) The optical depth of each layer
     integer :: ierr !! if ierr /= 0 on return, then there was an error
 
@@ -62,7 +63,7 @@ contains
     integer :: nz, ng
     integer :: i, j, k, l, n, jj
     integer :: ierr_0
-    real(dp) :: avg_freq
+    real(dp) :: avg_freq, avg_wavl
     
     ! array of indexes for recursive
     ! correlated-k
@@ -273,6 +274,7 @@ contains
       
       rz%fup2 = 0.0_dp
       rz%fdn2 = 0.0_dp
+      rz%amean2 = 0.0_dp
       
       if (op%nk /= 0) then
         
@@ -284,10 +286,15 @@ contains
           do j = 1,size(zenith_u)
             rz%fup1 = 0.0_dp
             rz%fdn1 = 0.0_dp
+            rz%amean1 = 0.0_dp
             rz%tau_band = 0.0_dp
             call k_loops(op, zenith_u(j), albedo, emissivity, cols, rw%ks, rz, iks, 1)
             rz%fup2(:) = rz%fup2(:) + rz%fup1(:)*zenith_weights(j)
             rz%fdn2(:) = rz%fdn2(:) + rz%fdn1(:)*zenith_weights(j)
+            if (op%op_type == FarUVOpticalProperties .or. &
+                op%op_type == SolarOpticalProperties) then
+              rz%amean2 = rz%amean2 + rz%amean1*zenith_weights(j)
+            endif
           enddo
         elseif (kset%k_method == k_RandomOverlapResortRebin) then
           ! Random Overlap with Resorting and Rebinning.
@@ -310,6 +317,13 @@ contains
         fup_a(i,l) = rz%fup2(n)
         fdn_a(i,l) = rz%fdn2(n)
       enddo
+      if (op%op_type == FarUVOpticalProperties .or. &
+          op%op_type == SolarOpticalProperties) then
+        do i = 1,nz+1
+          n = nz+2-i
+          amean(i,l) = rz%amean2(n)
+        enddo
+      endif
       do i = 1,nz
         n = nz+1-i
         tau_band(i,l) = rz%tau_band(n) ! band optical thickness
@@ -330,6 +344,14 @@ contains
       do l = 1,op%nw
         fup_a(:,l) = fup_a(:,l)*photons_sol(l)*diurnal_fac
         fdn_a(:,l) = fdn_a(:,l)*photons_sol(l)*diurnal_fac
+        amean(:,l) = amean(:,l)*photons_sol(l)*diurnal_fac
+
+        ! Convert from from mW/m^2/Hz to mW/m^2/nm
+        avg_freq = 0.5_dp*(op%freq(l) + op%freq(l+1))
+        avg_wavl = 1.0e9_dp*c_light/avg_freq ! nm
+        amean(:,l) = amean(:,l)*(avg_freq/avg_wavl)
+        ! Convert from mW/m^2/nm to photons/cm^2/s
+        amean(:,l) = amean(:,l)*(avg_wavl/(plank*c_light*1.0e16_dp))*(op%wavl(l+1) - op%wavl(l))
       enddo
     endif
     
@@ -390,6 +412,7 @@ contains
     do ii = 1,size(zenith_u)
     rz%fup1 = 0.0_dp
     rz%fdn1 = 0.0_dp
+    rz%amean1 = 0.0_dp
     rz%tau_band = 0.0_dp
     
     do i = 1,op%k(1)%ngauss
@@ -426,6 +449,10 @@ contains
       ! k-coeff weights (kset%wbin(i))
       rz%fup1(:) = rz%fup1(:) + rz%fup(:)*op%k(1)%weights(i)
       rz%fdn1(:) = rz%fdn1(:) + rz%fdn(:)*op%k(1)%weights(i)
+      if (op%op_type == FarUVOpticalProperties .or. &
+          op%op_type == SolarOpticalProperties) then
+        rz%amean1 = rz%amean1 + rz%amean(:)*op%k(1)%weights(i)
+      endif
 
       ! Save the optical thickness in the band.
       rz%tau_band(:) = rz%tau_band(:) + rz%tau(:)*op%k(1)%weights(i)
@@ -434,6 +461,10 @@ contains
 
     rz%fup2 = rz%fup2 + rz%fup1*zenith_weights(ii)
     rz%fdn2 = rz%fdn2 + rz%fdn1*zenith_weights(ii)
+    if (op%op_type == FarUVOpticalProperties .or. &
+          op%op_type == SolarOpticalProperties) then
+      rz%amean2 = rz%amean2 + rz%amean1*zenith_weights(ii)
+    endif
     enddo
 
   end subroutine
@@ -521,6 +552,7 @@ contains
     do ii = 1,size(zenith_u)
     rz%fup1 = 0.0_dp
     rz%fdn1 = 0.0_dp
+    rz%amean1 = 0.0_dp
     rz%tau_band = 0.0_dp
     
     ! loop over mixed k-coeffs
@@ -554,6 +586,10 @@ contains
       ! k-coeff weights (kset%wbin(i))
       rz%fup1 = rz%fup1 + rz%fup*kset%wbin(i)
       rz%fdn1 = rz%fdn1 + rz%fdn*kset%wbin(i)
+      if (op%op_type == FarUVOpticalProperties .or. &
+          op%op_type == SolarOpticalProperties) then
+        rz%amean1 = rz%amean1 + rz%amean*kset%wbin(i)
+      endif
 
       ! Save the optical thickness in the band.
       rz%tau_band(:) = rz%tau_band(:) + rz%tau(:)*kset%wbin(i)
@@ -562,6 +598,10 @@ contains
 
     rz%fup2 = rz%fup2 + rz%fup1*zenith_weights(ii)
     rz%fdn2 = rz%fdn2 + rz%fdn1*zenith_weights(ii)
+    if (op%op_type == FarUVOpticalProperties .or. &
+        op%op_type == SolarOpticalProperties) then
+      rz%amean2 = rz%amean2 + rz%amean1*zenith_weights(ii)
+    endif
     enddo
     
   end subroutine
@@ -629,6 +669,10 @@ contains
         
         rz%fup1 = rz%fup1 + rz%fup*gauss_weight
         rz%fdn1 = rz%fdn1 + rz%fdn*gauss_weight
+        if (op%op_type == FarUVOpticalProperties .or. &
+          op%op_type == SolarOpticalProperties) then
+          rz%amean1 = rz%amean1 + rz%amean*gauss_weight
+        endif
 
         ! Save the optical thickness in the band.
         rz%tau_band(:) = rz%tau_band(:) + rz%tau(:)*gauss_weight

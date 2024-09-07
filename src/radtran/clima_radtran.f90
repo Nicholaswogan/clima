@@ -19,6 +19,9 @@ module clima_radtran
     !> (nz+1) mW/m2 at the edges of the vertical grid 
     !> (integral of fup_a and fdn_a over wavelength grid)
     real(dp), allocatable :: fup_n(:), fdn_n(:)
+    !> (nz+1,nw) Mean intensity in photons/cm^2/s. Only used
+    !> in solar radiative transfer.
+    real(dp), allocatable :: amean(:,:)
     !> Band optical thickness (nz,nw)
     real(dp), allocatable :: tau_band(:,:)
     
@@ -183,6 +186,8 @@ contains
     allocate(rad%wrk_ir%fdn_a(nz+1, rad%ir%nw))
     allocate(rad%wrk_ir%fup_n(nz+1))
     allocate(rad%wrk_ir%fdn_n(nz+1))
+    allocate(rad%wrk_ir%amean(nz+1, rad%ir%nw))
+    rad%wrk_ir%amean = 0.0_dp ! not used
     allocate(rad%wrk_ir%tau_band(nz,rad%ir%nw))
 
     ! Solar work arrays
@@ -192,6 +197,7 @@ contains
     allocate(rad%wrk_sol%fdn_a(nz+1, rad%sol%nw))
     allocate(rad%wrk_sol%fup_n(nz+1))
     allocate(rad%wrk_sol%fdn_n(nz+1))
+    allocate(rad%wrk_sol%amean(nz+1, rad%sol%nw))
     allocate(rad%wrk_sol%tau_band(nz,rad%sol%nw))
 
     ! total flux
@@ -238,7 +244,7 @@ contains
                    P, T_surface, T, densities, dz, &
                    pdensities, radii, &
                    wrk_ir%rx, wrk_ir%rz, &
-                   wrk_ir%fup_a, wrk_ir%fdn_a, wrk_ir%fup_n, wrk_ir%fdn_n, wrk_ir%tau_band)
+                   wrk_ir%fup_a, wrk_ir%fdn_a, wrk_ir%fup_n, wrk_ir%fdn_n, wrk_ir%amean, wrk_ir%tau_band)
     if (ierr /= 0) then
       err = 'Input particle radii are outside the data range.'
       return
@@ -252,7 +258,7 @@ contains
                    P, T_surface, T, densities, dz, &
                    pdensities, radii, &
                    wrk_sol%rx, wrk_sol%rz, &
-                   wrk_sol%fup_a, wrk_sol%fdn_a, wrk_sol%fup_n, wrk_sol%fdn_n, wrk_sol%tau_band)
+                   wrk_sol%fup_a, wrk_sol%fdn_a, wrk_sol%fup_n, wrk_sol%fdn_n, wrk_sol%amean, wrk_sol%tau_band)
     if (ierr /= 0) then
       err = 'Input particle radii are outside the data range.'
       return
