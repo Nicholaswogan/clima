@@ -25,7 +25,6 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     url = "https://github.com/Nicholaswogan/clima",
-    include_package_data=True,
     cmake_args=['-DCMAKE_BUILD_TYPE=Release',\
                 '-DBUILD_PYTHON_CLIMA=ON',\
                 '-DBUILD_EXECUTABLES=OFF',\
