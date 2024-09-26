@@ -15,7 +15,7 @@ program test
   c = AdiabatClimate('../templates/AdiabatClimate/species.yaml', &
                      '../templates/AdiabatClimate/Earth/settings.yaml', &
                      '../templates/ModernEarth/Sun_now.txt', &
-                     '../clima/data', &
+                     '../data', &
                      err=err)
   if (allocated(err)) then
     print*,err
@@ -143,7 +143,7 @@ contains
     c = AdiabatClimate('../templates/AdiabatClimate/species.yaml', &
                      '../tests/settings_RCE_test.yaml', &
                      '../templates/ModernEarth/Sun_now.txt', &
-                     '../clima/data', &
+                     '../data', &
                      err=err)
     if (allocated(err)) then
       print*,err

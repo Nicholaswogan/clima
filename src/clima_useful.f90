@@ -1,11 +1,20 @@
 module clima_useful
   use clima_const, only: dp
   use minpack_module, only: fcn_hybrj
+  use h5fortran, only: hdf5_file
   implicit none
   private
 
+  public :: hdf5_file_closer
   public :: MinpackHybrd1Vars, MinpackHybrj
   public :: linear_solve
+
+  ! Helps close hdf5 files
+  type :: hdf5_file_closer
+    type(hdf5_file), pointer :: h => null()
+  contains
+    final :: hdf5_file_closer_final
+  end type
 
   type :: MinpackHybrd1Vars
     integer :: n
@@ -63,6 +72,13 @@ module clima_useful
   end interface
 
 contains
+
+  subroutine hdf5_file_closer_final(self)
+    type(hdf5_file_closer), intent(inout) :: self
+    if (associated(self%h)) then
+      if (self%h%is_open) call self%h%close()
+    endif
+  end subroutine
 
   function create_MinpackHybrd1Vars(n, tol) result(v)
     integer, intent(in) :: n

@@ -20,7 +20,7 @@ contains
     "../templates/ModernEarth/settings.yaml", &
     "../templates/ModernEarth/Sun_now.txt", &
     "../templates/ModernEarth/atmosphere.txt", &
-    "../clima/data", &
+    "../data", &
     err)
     if (allocated(err)) then
       print*,err

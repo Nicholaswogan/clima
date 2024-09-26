@@ -35,7 +35,7 @@ contains
     num_zeniths = 8
     surface_albedo = 0.15_dp
     rad = Radtran("../templates/ModernEarth/settings.yaml",&
-    "../templates/ModernEarth/Sun_now.txt", num_zeniths, surface_albedo, nz, "../clima/data", err)
+    "../templates/ModernEarth/Sun_now.txt", num_zeniths, surface_albedo, nz, "../data", err)
     if (allocated(err)) then
       print*,err
       stop 1

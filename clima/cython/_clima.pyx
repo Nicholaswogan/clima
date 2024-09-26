@@ -5,6 +5,7 @@ from cpython.object cimport PyObject_GenericSetAttr
 import numpy as np
 import ctypes as ct
 import os
+import photochem_clima_data
 
 DEF S_STR_LEN = 20;
 DEF ERR_LEN = 1024;
