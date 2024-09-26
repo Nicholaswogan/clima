@@ -48,6 +48,7 @@ cdef class AdiabatClimate:
     self._init_called = True
 
     if data_dir == None:
+      import photochem_clima_data
       data_dir_ = photochem_clima_data.DATA_DIR
     else:
       data_dir_ = data_dir
