@@ -1,3 +1,0 @@
-[submodule "data"]
-	path = clima/data
-	url = https://github.com/Nicholaswogan/photochem_clima_data
