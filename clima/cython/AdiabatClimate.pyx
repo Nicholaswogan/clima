@@ -441,16 +441,18 @@ cdef class AdiabatClimate:
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
 
-  def out2atmosphere_txt(self, str filename, ndarray[double, ndim=1] eddy, cbool overwrite = False, cbool clip = True):
+  def out2atmosphere_txt(self, str filename, ndarray[double, ndim=1] eddy, int number_of_decimals=5, cbool overwrite = False, cbool clip = True):
     """Saves state of the atmosphere to a file.
 
     Parameters
     ----------
     filename : str
         Output filename
-    eddy: ndarray[double,ndim=1]
+    eddy : ndarray[double,ndim=1]
         Array of eddy diffusions (cm^2/s) to write to the output file. This is
         useful for coupling to the photochemical model.
+    number_of_decimals : int
+        Number of decimals
     overwrite : bool, optional
         If true, then output file can be overwritten, by default False
     clip : bool, optional
@@ -461,7 +463,7 @@ cdef class AdiabatClimate:
     cdef bytes filename_b = pystring2cstring(filename)
     cdef char *filename_c = filename_b
     cdef char err[ERR_LEN+1]
-    wa_pxd.adiabatclimate_out2atmosphere_txt_wrapper(self._ptr, filename_c, &nz, <double *>eddy.data, &overwrite, &clip, err)  
+    wa_pxd.adiabatclimate_out2atmosphere_txt_wrapper(self._ptr, filename_c, &nz, <double *>eddy.data, &number_of_decimals, &overwrite, &clip, err)  
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
 

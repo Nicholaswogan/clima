@@ -433,12 +433,13 @@ subroutine adiabatclimate_to_regular_grid_wrapper(ptr, err) bind(c)
 
 end subroutine
 
-subroutine adiabatclimate_out2atmosphere_txt_wrapper(ptr, filename, nz, eddy, overwrite, clip, err) bind(c)
+subroutine adiabatclimate_out2atmosphere_txt_wrapper(ptr, filename, nz, eddy, number_of_decimals, overwrite, clip, err) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), value, intent(in) :: ptr
   character(kind=c_char), intent(in) :: filename(*)
   integer(c_int), intent(in) :: nz
   real(c_double), intent(in) :: eddy(nz)
+  integer(c_int), intent(in) :: number_of_decimals
   logical(c_bool), intent(in) :: overwrite, clip
   character(kind=c_char), intent(out) :: err(err_len+1)
   
@@ -454,7 +455,7 @@ subroutine adiabatclimate_out2atmosphere_txt_wrapper(ptr, filename, nz, eddy, ov
   overwrite_f = overwrite
   clip_f = clip
   
-  call c%out2atmosphere_txt(filename_f, eddy, overwrite_f, clip_f, err_f)
+  call c%out2atmosphere_txt(filename_f, eddy, number_of_decimals, overwrite_f, clip_f, err_f)
   err(1) = c_null_char
   if (allocated(err_f)) then
     call copy_string_ftoc(err_f, err)

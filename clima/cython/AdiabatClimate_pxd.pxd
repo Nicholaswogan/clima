@@ -73,7 +73,7 @@ cdef extern void adiabatclimate_set_ocean_solubility_fcn_wrapper(AdiabatClimate 
 
 cdef extern void adiabatclimate_to_regular_grid_wrapper(AdiabatClimate *ptr, char *err)
 
-cdef extern void adiabatclimate_out2atmosphere_txt_wrapper(AdiabatClimate *ptr, char *filename, int *nz, double *eddy, bool *overwrite, bool *clip, char *err)
+cdef extern void adiabatclimate_out2atmosphere_txt_wrapper(AdiabatClimate *ptr, char *filename, int *nz, double *eddy, int *number_of_decimals, bool *overwrite, bool *clip, char *err)
 
 cdef extern void adiabatclimate_heat_redistribution_parameters_wrapper(AdiabatClimate *ptr, double *tau_LW, double *k_term, double *f_term, char *err)
 

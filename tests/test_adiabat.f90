@@ -7,7 +7,7 @@ program test
   type(AdiabatClimate) :: c
   character(:), allocatable :: err
   real(dp) :: T, OLR, ISR, OLR1, ISR1
-  real(dp), allocatable :: P_i_surf(:), N_i_surf(:), f_i(:,:)
+  real(dp), allocatable :: P_i_surf(:), N_i_surf(:), f_i(:,:), eddy(:)
   integer :: i
   logical :: converged
   procedure(ocean_solubility_fcn), pointer :: ocean_fcn_ptr
@@ -35,6 +35,15 @@ program test
     stop 1
   endif
   print*,T, c%T_trop
+
+  allocate(eddy(size(c%P)))
+  eddy = 1.0e6_dp
+  call c%out2atmosphere_txt('test.txt', eddy, 5, .true., .true., err)
+  if (allocated(err)) then
+    print*,err
+    stop 1
+  endif
+  deallocate(eddy)
 
   ! Test surface_temperature_column
   c%tidally_locked_dayside = .false.

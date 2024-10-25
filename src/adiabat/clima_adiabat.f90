@@ -1049,17 +1049,22 @@ contains
 
   end subroutine
 
-  subroutine AdiabatClimate_out2atmosphere_txt(self, filename, eddy, overwrite, clip, err)
+  subroutine AdiabatClimate_out2atmosphere_txt(self, filename, eddy, number_of_decimals, overwrite, clip, err)
     use futils, only: FileCloser
     class(AdiabatClimate), target, intent(inout) :: self
     character(len=*), intent(in) :: filename
     real(dp), intent(in) :: eddy(:)
+    integer, intent(in) :: number_of_decimals
     logical, intent(in) :: overwrite, clip
     character(:), allocatable, intent(out) :: err
-    type(FileCloser) :: file
     
     character(len=100) :: tmp
     integer :: io, i, j
+    integer :: number_of_spaces
+    character(len=10) :: number_of_decimals_str, number_of_spaces_str
+    character(:), allocatable :: fmt_label, fmt_number
+    real(dp) :: clip_value
+    type(FileCloser) :: file
 
     call self%to_regular_grid(err)
     if (allocated(err)) return
@@ -1067,6 +1072,12 @@ contains
     if (size(eddy,1) /= self%nz) then
       err = '"eddy" has the wrong size'
       return
+    endif
+
+    if (clip) then
+      clip_value = 1.0e-40_dp
+    else
+      clip_value = - huge(1.0_dp)
     endif
     
     if (overwrite) then
@@ -1084,35 +1095,58 @@ contains
         return
       endif
     endif
+
+    ! number of decimals must be reasonable
+    if (number_of_decimals < 2 .or. number_of_decimals > 17) then
+      err = '"number_of_decimals" should be between 1 and 17.'
+      return
+    endif
+    number_of_spaces = number_of_decimals + 9
+    ! make sure number of spaces works with the length of species names
+    do i = 1,self%sp%ng
+      number_of_spaces = max(number_of_spaces,len_trim(self%species_names(i)) + 3)
+    enddo
+    write(number_of_decimals_str,'(i10)') number_of_decimals
+    write(number_of_spaces_str,'(i10)') number_of_spaces
+
+    fmt_label = "(a"//trim(adjustl(number_of_spaces_str))//")"
+    fmt_number = "(es"//trim(adjustl(number_of_spaces_str))//"."//trim(adjustl(number_of_decimals_str))//"e3)"
     
     tmp = 'alt'
-    write(unit=2,fmt="(3x,a27)",advance='no') tmp
+    write(unit=2,fmt=fmt_label,advance='no') tmp
     tmp = 'press'
-    write(unit=2,fmt="(a27)",advance='no') tmp
+    write(unit=2,fmt=fmt_label,advance='no') tmp
     tmp = 'den'
-    write(unit=2,fmt="(a27)",advance='no') tmp
+    write(unit=2,fmt=fmt_label,advance='no') tmp
     tmp = 'temp'
-    write(unit=2,fmt="(a27)",advance='no') tmp
+    write(unit=2,fmt=fmt_label,advance='no') tmp
     tmp = 'eddy'
-    write(unit=2,fmt="(a27)",advance='no') tmp
+    write(unit=2,fmt=fmt_label,advance='no') tmp
     do j = 1,self%sp%ng
       tmp = self%species_names(j)
-      write(unit=2,fmt="(a27)",advance='no') tmp
+      write(unit=2,fmt=fmt_label,advance='no') tmp
     enddo
     
     do i = 1,self%nz
       write(2,*)
-      write(unit=2,fmt="(es27.17e3)",advance='no') self%z(i)/1.e5_dp
-      write(unit=2,fmt="(es27.17e3)",advance='no') self%P(i)/1.e6_dp
-      write(unit=2,fmt="(es27.17e3)",advance='no') sum(self%densities(i,:))
-      write(unit=2,fmt="(es27.17e3)",advance='no') self%T(i)
-      write(unit=2,fmt="(es27.17e3)",advance='no') eddy(i)
+      write(tmp,fmt=fmt_number) self%z(i)/1.e5_dp
+      write(unit=2,fmt=fmt_label,advance='no') adjustl(tmp)
+
+      write(tmp,fmt=fmt_number) self%P(i)/1.e6_dp
+      write(unit=2,fmt=fmt_label,advance='no') adjustl(tmp)
+
+      write(tmp,fmt=fmt_number) sum(self%densities(i,:))
+      write(unit=2,fmt=fmt_label,advance='no') adjustl(tmp)
+
+      write(tmp,fmt=fmt_number) self%T(i)
+      write(unit=2,fmt=fmt_label,advance='no') adjustl(tmp)
+
+      write(tmp,fmt=fmt_number) eddy(i)
+      write(unit=2,fmt=fmt_label,advance='no') adjustl(tmp)
+
       do j = 1,self%sp%ng
-        if (clip) then
-          write(unit=2,fmt="(es27.17e3)",advance='no') max(self%f_i(i,j),1.0e-40_dp)
-        else
-          write(unit=2,fmt="(es27.17e3)",advance='no') self%f_i(i,j)
-        endif
+        write(tmp,fmt=fmt_number) max(self%f_i(i,j), clip_value)
+        write(unit=2,fmt=fmt_label,advance='no') adjustl(tmp)
       enddo
     enddo
     
