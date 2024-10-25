@@ -1,20 +1,20 @@
 
 CPMAddPackage(
   NAME forwarddiff
-  VERSION 0.1.2
+  VERSION 0.1.3
   OPTIONS 
     "BUILD_EXECUTABLE OFF"
   GITHUB_REPOSITORY "Nicholaswogan/forwarddiff"
-  GIT_TAG "v0.1.2"
+  GIT_TAG "v0.1.3"
   EXCLUDE_FROM_ALL ON
 )
 
 # fortran-yaml-c
 CPMAddPackage(
   NAME fortran-yaml-c
-  VERSION 0.2.4
+  VERSION 0.2.6
   GITHUB_REPOSITORY "Nicholaswogan/fortran-yaml-c"
-  GIT_TAG "v0.2.4"
+  GIT_TAG "v0.2.6"
   EXCLUDE_FROM_ALL ON
 )
 
