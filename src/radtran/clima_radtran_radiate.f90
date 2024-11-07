@@ -430,7 +430,7 @@ contains
       enddo
 
       ! sum
-      rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%tausp(:) + rz%taua_1(:) &
+      rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%taua_1(:) &
                   + rw%tau_grey_sum(:)
       do j = 1,nz
         rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j))/rz%tau(j))
@@ -567,8 +567,8 @@ contains
       enddo
       
       ! sum all optical depths
-      ! total = gas scattering + continumm opacities + particle absorption + particle scattering + k-coeff
-      rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%tausp(:) + rz%taua_1(:)
+      ! total = gas scattering + continumm opacities + particle absorption + k-coeff
+      rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%taua_1(:)
       do j = 1,nz
         rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j))/rz%tau(j))
       enddo
@@ -648,7 +648,7 @@ contains
         enddo
         
         ! sum
-        rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%tausp(:) + rz%taua_1(:)
+        rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%taua_1(:)
         do j = 1,nz
           rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j))/rz%tau(j))
         enddo
