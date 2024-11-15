@@ -383,6 +383,20 @@ contains
 
       endif
 
+      ! Some logic to identify cold traps at the surface.
+      if (d%j == 2 .and. .not.d%in_convecting_region) then
+        call d%T%evaluate(log10(Pn), T_root)
+        call root_fcn(d, Pn, T_root, d%gout)
+        do i = 1,d%sp%ng
+          if (d%sp_type(i) == CondensingSpeciesType .and. d%gout(i) <= 0.0_dp) then
+            ! If d%gout(i) is <= 0, this means a moist species is increasing with decreasing pressure
+            ! so, we must switch it to a dry species.
+            d%sp_type(i) = DrySpeciesType
+          endif
+        enddo
+        call update_f_i_dry(d, Pn, d%f_i(1,:))
+      endif
+
       call dop%initialize(fcn=right_hand_side_dop, solout=solout_dop, n=n, &
                         iprint=0, icomp=icomp, status_ok=status_ok)
       dop%d => d
