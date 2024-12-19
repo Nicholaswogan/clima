@@ -165,7 +165,8 @@ contains
 
   end subroutine
 
-  module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, sp_custom, P_custom, mix_custom, err) result(converged)
+  module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, &
+    sp_custom, P_custom, mix_custom, err) result(converged)
     use minpack_module, only: hybrd1
     use clima_useful, only: MinpackHybrj, linear_solve
     class(AdiabatClimate), intent(inout) :: self
