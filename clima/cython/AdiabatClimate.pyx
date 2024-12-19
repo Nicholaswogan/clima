@@ -408,6 +408,23 @@ cdef class AdiabatClimate:
     convecting_with_below : ndarray[bool,ndim=1], optional
         An array describing a guess for the radiative vs. convective 
         regions of the atmosphere
+    custom_dry_mix : dict of {str: ndarray[double,ndim=1]}, optional
+        Allows the user to specify vertically inhomogenous mixing ratios for dry species. 
+        The dictionary must contain a "pressure" key specifying a pressure grid in dynes/cm^2.
+        The other keys are mixing ratio profiles for dry species at each pressure point. 
+        The total custom surface pressure is determined by:
+
+        ```python
+        P_dry_surf = 0.0
+        for key in custom_dry_mix:
+            if key != 'pressure':
+                ind = self.species_names.index(key)
+                P_dry_surf += P_i_surf[ind]
+        ```
+
+        The underlying code interpolates `custom_dry_mix` to the appropriate pressure levels.
+        Note, these mixing ratios are not absolute volume mixing ratios. They are instead
+        gas concentrations relative to all gases specified in `custom_dry_mix`.
 
     Returns
     -------
