@@ -175,7 +175,8 @@ module clima_adiabat
     end subroutine
 
     !> Compute full radiative-convective equilibrium.
-    module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, sp_custom, P_custom, mix_custom, err) result(converged)
+    module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, &
+      sp_custom, P_custom, mix_custom, err) result(converged)
       class(AdiabatClimate), intent(inout) :: self
       !> Array of surface pressures of each species (dynes/cm^2)
       real(dp), intent(in) :: P_i_surf(:)
