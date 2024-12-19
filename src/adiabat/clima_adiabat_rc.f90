@@ -4,13 +4,14 @@ module clima_adiabat_rc
   use dop853_module, only: dop853_class
   use futils, only: brent_class
   use clima_eqns, only: ocean_solubility_fcn
-  use clima_adiabat_general, only: OceanFunction, DrySpeciesType, CondensingSpeciesType
+  use clima_adiabat_general, only: OceanFunction, DrySpeciesType, CondensingSpeciesType, CustomDrySpeciesType
   use linear_interpolation_module, only: linear_interp_1d
   implicit none
 
   type :: AdiabatRCProfileData
     ! Input data
     real(dp), pointer :: T_surf
+    type(linear_interp_1d), pointer :: mix_custom(:)
     logical, pointer :: convecting_with_below(:)
     type(Species), pointer :: sp
     integer, pointer :: nz
@@ -89,6 +90,7 @@ contains
   ! outputs: Pressure, mixing ratios, z, lapse rate everywhere
 
   subroutine make_profile_rc(T_surf, T, P_i_surf, &
+                             sp_custom, mix_custom, &
                              convecting_with_below, &
                              sp, nz, planet_mass, &
                              planet_radius, P_top, RH, &
@@ -104,6 +106,8 @@ contains
     real(dp), target, intent(in) :: T_surf !! K
     real(dp), target, intent(inout) :: T(:) !! (nz)
     real(dp), intent(in) :: P_i_surf(:) !! (ng) dynes/cm2
+    logical, intent(in) :: sp_custom(:)
+    type(linear_interp_1d), target, intent(inout) :: mix_custom(:)
     logical, target, intent(in) :: convecting_with_below(:)
 
     type(Species), target, intent(inout) :: sp
@@ -123,7 +127,7 @@ contains
 
     type(AdiabatRCProfileData) :: d
     integer :: i, j
-    real(dp) :: P_sat, grav, P_surface_inventory
+    real(dp) :: P_sat, grav, P_surface_inventory, f_tmp, P_custom
 
     ! check inputs
     if (size(T) /= nz) then
@@ -178,6 +182,7 @@ contains
     ! associate
     ! inputs
     d%T_surf => T_surf
+    d%mix_custom => mix_custom
     d%convecting_with_below => convecting_with_below
     d%sp => sp
     d%nz => nz
@@ -210,7 +215,16 @@ contains
     ! gravity at the surface of planet
     grav = gravity(planet_radius, planet_mass, 0.0_dp)
 
+    d%P_surf = 0.0_dp
+    P_custom = 0.0_dp
     do i = 1,d%sp%ng
+
+      if (sp_custom(i)) then
+        ! The total custom pressure.
+        P_custom = P_custom + P_i_surf(i)
+        cycle
+      endif
+
       ! compute saturation vapor pressures
       P_sat = huge(1.0_dp)
       if (allocated(d%sp%g(i)%sat)) then
@@ -231,7 +245,26 @@ contains
         N_surface(i) = 0.0_dp ! no surface reservoir if not condensing at the surface
         d%sp_type(i) = DrySpeciesType
       endif
+
+      d%P_surf = d%P_surf + d%P_i_cur(i)
     enddo
+
+    d%P_surf = d%P_surf + P_custom
+    if (P_top > d%P_surf) then
+      err = 'make_profile: "P_top" is bigger than the surface pressure'
+      return
+    endif
+    do i = 1,d%sp%ng
+      if (.not.sp_custom(i)) cycle
+
+      call d%mix_custom(i)%evaluate(log10(d%P_surf), f_tmp)
+      d%P_i_cur(i) = P_custom*10.0_dp**f_tmp
+      N_surface(i) = 0.0_dp
+      d%sp_type(i) = CustomDrySpeciesType
+    enddo
+
+    d%f_i_cur(:) = d%P_i_cur(:)/d%P_surf ! mixing ratios
+    call update_f_i_dry(d, d%P_surf, d%f_i_cur)
 
     ! compute gases dissolved in oceans. This allows for multiple ocean.
     do j = 1,sp%ng
@@ -254,14 +287,6 @@ contains
         N_ocean(:,j) = 0.0_dp
       endif
     enddo
-
-    d%P_surf = sum(d%P_i_cur) ! total pressure
-    if (P_top > d%P_surf) then
-      err = 'make_profile: "P_top" is bigger than the surface pressure'
-      return
-    endif
-    d%f_i_cur(:) = d%P_i_cur(:)/d%P_surf ! mixing ratios
-    call update_f_i_dry(d, d%P_surf, d%f_i_cur)
 
     ! Make P profile
     call linspace(log10(d%P_surf),log10(P_top),P)
@@ -690,7 +715,7 @@ contains
     d%P_i_cur(:) = f_i_layer(:)*P
     P_dry = 0.0_dp
     do i = 1,d%sp%ng
-      if (d%sp_type(i) == DrySpeciesType) then
+      if (d%sp_type(i) == DrySpeciesType .or. d%sp_type(i) == CustomDrySpeciesType) then
         P_dry = P_dry + d%P_i_cur(i)
       endif
     enddo
@@ -704,7 +729,7 @@ contains
     real(dp), intent(out) :: f_i_layer(:), f_dry
     logical, intent(out) :: super_saturated
 
-    real(dp) :: f_moist
+    real(dp) :: f_moist, f_dry_tot, f_custom_tot, f_tmp, f_custom(d%sp%ng)
     integer :: i
 
     super_saturated = .false.
@@ -721,9 +746,27 @@ contains
     ! fraction of the atmosphere that is dry
     f_dry = max(1.0_dp - f_moist, 1.0e-40_dp)
     ! mixing ratios of dry species
+    f_dry_tot = 0.0_dp ! Total DrySpeciesType dry mixing ratio
+    f_custom_tot = 0.0_dp ! Total mixing ratio from interpolation
+    f_custom = 0.0_dp ! Save all the mixing ratios from interpolation
     do i = 1,d%sp%ng
       if (d%sp_type(i) == DrySpeciesType) then
+        f_dry_tot = f_dry_tot + d%f_i_dry(i)
         f_i_layer(i) = f_dry*d%f_i_dry(i)
+      elseif (d%sp_type(i) == CustomDrySpeciesType) then
+        call d%mix_custom(i)%evaluate(log10(P), f_tmp)
+        f_tmp = 10.0_dp**f_tmp
+        f_custom_tot = f_custom_tot + f_tmp
+        f_custom(i) = f_tmp
+      endif
+    enddo
+    f_custom = f_custom/max(f_custom_tot, tiny(1.0_dp)) ! Normalize to 1
+    do i = 1,d%sp%ng
+      if (d%sp_type(i) == CustomDrySpeciesType) then
+        ! (1.0_dp - f_dry_tot) is the fraction of the dry atmosphere yet not filled.
+        ! So we will distribution custom interpolated gases into this. Then to get true mixing
+        ! ratio, multiply by f_dry
+        f_i_layer(i) = f_custom(i)*(1.0_dp - f_dry_tot)*f_dry
       endif
     enddo
 
@@ -762,7 +805,7 @@ contains
         return
       endif
       d%cp_i_cur(i) = cp
-      if (d%sp_type(i) == DrySpeciesType) then
+      if (d%sp_type(i) == DrySpeciesType .or. d%sp_type(i) == CustomDrySpeciesType) then
         cp_dry = cp_dry + d%f_i_dry(i)*cp ! J/(mol*K)
       endif
     enddo

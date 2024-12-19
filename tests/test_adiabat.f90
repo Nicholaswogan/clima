@@ -181,6 +181,31 @@ contains
       stop 1
     endif
 
+    ! Test custom mixing ratio
+    block
+      character(5), allocatable :: sp_custom(:)
+      real(dp), allocatable :: P_custom(:), mix_custom(:,:)
+      sp_custom = ['N2']
+      P_custom = [1.0e6_dp, 1.0e-7_dp]
+      allocate(mix_custom(2,1))
+      mix_custom(:,1) = [1.0_dp, 1.0_dp]
+
+      converged = c%RCE( &
+          P_i_surf, &
+          c%T_surf, &
+          c%T, &
+          c%convecting_with_below, &
+          sp_custom, &
+          P_custom, &
+          mix_custom, &
+          err=err&
+      )
+      if (allocated(err)) then
+        print*,err
+        stop 1
+      endif
+    end block
+
   end subroutine
 
 end program

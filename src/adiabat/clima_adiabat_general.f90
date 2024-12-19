@@ -9,7 +9,7 @@ module clima_adiabat_general
 
   public :: make_profile, make_column
   public :: OceanFunction
-  public :: DrySpeciesType, CondensingSpeciesType
+  public :: DrySpeciesType, CondensingSpeciesType, CustomDrySpeciesType
 
   type :: OceanFunction
     procedure(ocean_solubility_fcn), nopass, pointer :: fcn => null()
@@ -77,7 +77,7 @@ module clima_adiabat_general
 
   ! sp_type
   enum, bind(c)
-    enumerator :: DrySpeciesType, CondensingSpeciesType
+    enumerator :: DrySpeciesType, CondensingSpeciesType, CustomDrySpeciesType
   end enum
 
   type, extends(dop853_class) :: dop853_custom

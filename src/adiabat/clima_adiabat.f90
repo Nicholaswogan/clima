@@ -2,6 +2,7 @@ module clima_adiabat
   use clima_const, only: dp, s_str_len
   use clima_types, only: Species
   use clima_radtran, only: Radtran
+  use linear_interpolation_module, only: linear_interp_1d
   use clima_eqns, only: ocean_solubility_fcn, temp_dependent_albedo_fcn
   use clima_adiabat_general, only: OceanFunction
   use iso_c_binding, only: c_ptr, c_null_ptr
@@ -67,6 +68,13 @@ module clima_adiabat
     real(dp), allocatable :: P_r(:)
     real(dp), allocatable :: densities_r(:,:)
     real(dp), allocatable :: dz_r(:)
+
+    ! For custom mixing ratios
+    !> Length ng. If true, then the species has a custom dry mixing ratio
+    logical, private, allocatable :: sp_custom(:)
+    !> Length ng. Contains 1-D interpolators for log10P (dynes/cm^2) and 
+    !> log10mix (vmr) for each custom species, if specified
+    type(linear_interp_1d), private, allocatable :: mix_custom(:)
 
     ! Information about convection
     integer :: n_convecting_zones !! number of convecting zones
@@ -167,7 +175,7 @@ module clima_adiabat
     end subroutine
 
     !> Compute full radiative-convective equilibrium.
-    module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, err) result(converged)
+    module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, sp_custom, P_custom, mix_custom, err) result(converged)
       class(AdiabatClimate), intent(inout) :: self
       !> Array of surface pressures of each species (dynes/cm^2)
       real(dp), intent(in) :: P_i_surf(:)
@@ -178,6 +186,9 @@ module clima_adiabat
       !> An array describing a guess for the radiative vs. convective 
       !> regions of the atmosphere
       logical, optional, intent(in) :: convecting_with_below(:)
+      character(*), optional, intent(in) :: sp_custom(:)
+      real(dp), optional, intent(in) :: P_custom(:)
+      real(dp), optional, intent(in) :: mix_custom(:,:)
       character(:), allocatable, intent(out) :: err
       logical :: converged !! Whether the routine converged or not.
     end function
@@ -264,6 +275,10 @@ contains
     ! and the optical-properties from the settings file
     c%rad = Radtran(c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz_r, data_dir, err)
     if (allocated(err)) return
+
+    ! Custom mixing ratios
+    allocate(c%sp_custom(c%sp%ng))
+    allocate(c%mix_custom(c%sp%ng))
 
     ! Convection
     allocate(c%super_saturated(c%nz))

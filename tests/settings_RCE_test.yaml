@@ -10,7 +10,7 @@ planet:
 optical-properties:
   ir:
     k-method: AdaptiveEquivalentExtinction
-    opacities: {k-distributions: on, CIA: on, rayleigh: on}
+    opacities: {k-distributions: on, CIA: on, rayleigh: on, photolysis-xs: on}
   solar:
     k-method: AdaptiveEquivalentExtinction
-    opacities: {k-distributions: on, CIA: on, rayleigh: on}
+    opacities: {k-distributions: on, CIA: on, rayleigh: on, photolysis-xs: on}

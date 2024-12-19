@@ -33,6 +33,7 @@ contains
     self%T_surf = T_in(1)
     self%T = T_in(2:)
     call make_profile_rc(self%T_surf, self%T, P_i_surf, &
+                         self%sp_custom, self%mix_custom, &
                          self%convecting_with_below, &
                          self%sp, self%nz, self%planet_mass, &
                          self%planet_radius, self%P_top, self%RH, &
@@ -82,7 +83,89 @@ contains
 
   end subroutine
 
-  module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, err) result(converged)
+  !> initializes custom mixing ratios
+  subroutine intialize_custom_inputs(self, sp_custom, P_custom, mix_custom, err)
+    class(AdiabatClimate), intent(inout) :: self
+    character(*), optional, intent(in) :: sp_custom(:)
+    real(dp), optional, intent(in) :: P_custom(:)
+    real(dp), optional, intent(in) :: mix_custom(:,:)
+    character(:), allocatable, intent(out) :: err
+
+    real(dp), allocatable :: mix_custom_copy(:,:)
+    real(dp), allocatable :: log10P_interp(:), log10mix_interp(:)
+    integer :: i, ind, istat
+
+    ! Ensure all are input if just one is input
+    if (present(sp_custom) .or. present(P_custom) .or. present(mix_custom)) then
+      if (.not.present(sp_custom)) then
+        err = '`sp_custom` must be an input if `P_custom` and `mix_custom` are inputs'
+        return
+      endif
+      if (.not.present(P_custom)) then
+        err = '`P_custom` must be an input if `sp_custom` and `mix_custom` are inputs'
+        return
+      endif
+      if (.not.present(mix_custom)) then
+        err = '`mix_custom` must be an input if `P_custom` and `sp_custom` are inputs'
+        return
+      endif
+    endif
+
+    self%sp_custom = .false.
+    if (.not.present(sp_custom)) return ! no custom inputs
+
+    ! Check shapes
+    if (size(sp_custom) /= size(mix_custom,2)) then
+      err = '`sp_custom` and `mix_custom` have incompatible shapes'
+      return
+    endif
+    if (size(P_custom) /= size(mix_custom,1)) then
+      err = '`P_custom` and `mix_custom` have incompatible shapes'
+      return
+    endif
+    if (any(mix_custom < 0.0_dp)) then
+      err = '`mix_custom` can not have negative values'
+      return
+    endif
+    if (any(P_custom <= 0.0_dp)) then
+      err = '`P_custom` must be >= 0 for all values'
+      return
+    endif
+
+    ! Normalize mixing ratios so they sum to 1
+    mix_custom_copy = mix_custom
+    do i = 1,size(mix_custom,1)
+      mix_custom_copy(i,:) = mix_custom_copy(i,:)/sum(mix_custom_copy(i,:))
+    enddo
+
+    ! Pressures. Ensure constant extrapolation
+    log10P_interp = [[huge(1.0_dp),P_custom], tiny(1.0_dp)]
+    log10P_interp = log10(log10P_interp(size(log10P_interp):1:-1))
+    allocate(log10mix_interp(size(log10P_interp)))
+
+    do i = 1,size(sp_custom)
+      ind = findloc(self%species_names, sp_custom(i), 1)
+      if (ind == 0) then
+        err = 'Custom species "'//trim(sp_custom(i))//'" is not in the list of species'
+        return
+      endif
+
+      log10mix_interp(2:size(log10mix_interp)-1) = mix_custom_copy(:,i)
+      log10mix_interp(1) = mix_custom_copy(1,i)
+      log10mix_interp(size(log10mix_interp)) = mix_custom_copy(size(mix_custom_copy,1),i)
+      log10mix_interp = log10(log10mix_interp(size(log10mix_interp):1:-1))
+
+      self%sp_custom(ind) = .true.
+      call self%mix_custom(ind)%initialize(log10P_interp, log10mix_interp, istat)
+      if (istat /= 0) then
+        err = 'Interpolation initialization for custom mixing ratios failed'
+        return
+      endif
+    enddo
+
+  end subroutine
+
+  module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, sp_custom, P_custom, mix_custom, err) result(converged)
     use minpack_module, only: hybrd1
     use clima_useful, only: MinpackHybrj, linear_solve
     class(AdiabatClimate), intent(inout) :: self
@@ -90,6 +173,9 @@ contains
     real(dp), intent(in) :: T_surf_guess
     real(dp), intent(in) :: T_guess(:)
     logical, optional, intent(in) :: convecting_with_below(:)
+    character(*), optional, intent(in) :: sp_custom(:)
+    real(dp), optional, intent(in) :: P_custom(:)
+    real(dp), optional, intent(in) :: mix_custom(:,:)
     character(:), allocatable, intent(out) :: err
     logical :: converged
 
@@ -109,6 +195,9 @@ contains
       err = "T_guess has the wrong dimension"
       return
     endif
+
+    call intialize_custom_inputs(self, sp_custom, P_custom, mix_custom, err)
+    if (allocated(err)) return
     
     allocate(convecting_with_below_save(self%nz,0))
     allocate(difference(self%nz))
