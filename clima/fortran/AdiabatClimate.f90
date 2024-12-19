@@ -342,9 +342,11 @@ subroutine adiabatclimate_surface_temperature_bg_gas_wrapper(ptr, ng, P_i_surf, 
 end subroutine
 
 subroutine adiabatclimate_rce_wrapper(ptr, ng, P_i_surf, T_surf_guess, dim_T_guess, T_guess, &
-                                      convecting_with_below_present, dim_convecting_with_below, &
-                                      convecting_with_below, converged, err) bind(c)
-  use clima, only: AdiabatClimate
+                                      convecting_with_below_present, dim_convecting_with_below, convecting_with_below, &
+                                      custom_present, dim_sp_custom, sp_custom, dim_P_custom, P_custom, &
+                                      dim1_mix_custom, dim2_mix_custom, mix_custom, &
+                                      converged, err) bind(c)
+  use clima, only: AdiabatClimate, s_str_len
   type(c_ptr), value, intent(in) :: ptr
   integer(c_int), intent(in) :: ng
   real(c_double), intent(in) :: P_i_surf(ng)
@@ -354,9 +356,18 @@ subroutine adiabatclimate_rce_wrapper(ptr, ng, P_i_surf, T_surf_guess, dim_T_gue
   logical(c_bool), intent(in) :: convecting_with_below_present
   integer(c_int), intent(in) :: dim_convecting_with_below
   logical(c_bool), intent(in) :: convecting_with_below(dim_convecting_with_below)
+  logical(c_bool), intent(in) :: custom_present
+  integer(c_int), intent(in) :: dim_sp_custom
+  character(c_char), intent(out) :: sp_custom(dim_sp_custom*s_str_len+1)
+  integer(c_int), intent(in) :: dim_P_custom
+  real(c_double), intent(in) :: P_custom(dim_P_custom)
+  integer(c_int), intent(in) :: dim1_mix_custom, dim2_mix_custom
+  real(c_double), intent(in) :: mix_custom(dim1_mix_custom,dim2_mix_custom)
   logical(c_bool), intent(out) :: converged
   character(c_char), intent(out) :: err(err_len+1)
 
+  character(s_str_len), allocatable :: sp_custom_f(:)
+  integer :: i, j, k
   logical, allocatable :: convecting_with_below_f(:)
   logical :: converged_f
   character(:), allocatable :: err_f
@@ -366,10 +377,22 @@ subroutine adiabatclimate_rce_wrapper(ptr, ng, P_i_surf, T_surf_guess, dim_T_gue
 
   allocate(convecting_with_below_f(dim_convecting_with_below))
   convecting_with_below_f = convecting_with_below
+
+  allocate(sp_custom_f(dim_sp_custom))
+  do i = 1,dim_sp_custom
+    do j = 1,s_str_len
+      k = j + (i - 1) * s_str_len
+      sp_custom_f(i)(j:j) = sp_custom(k)
+    enddo
+  enddo
   
   converged_f = .false.
-  if (convecting_with_below_present) then
-    converged_f = c%RCE(P_i_surf, T_surf_guess, T_guess, convecting_with_below_f, err_f)
+  if (convecting_with_below_present .and. custom_present) then
+    converged_f = c%RCE(P_i_surf, T_surf_guess, T_guess, convecting_with_below_f, sp_custom_f, P_custom, mix_custom, err_f)
+  elseif (convecting_with_below_present .and. .not.custom_present) then
+    converged_f = c%RCE(P_i_surf, T_surf_guess, T_guess, convecting_with_below_f, err=err_f)
+  elseif (.not.convecting_with_below_present .and. custom_present) then
+    converged_f = c%RCE(P_i_surf, T_surf_guess, T_guess, sp_custom=sp_custom_f, P_custom=P_custom, mix_custom=mix_custom, err=err_f)
   else
     converged_f = c%RCE(P_i_surf, T_surf_guess, T_guess, err=err_f)
   endif

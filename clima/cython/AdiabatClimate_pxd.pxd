@@ -65,9 +65,13 @@ cdef extern void adiabatclimate_surface_temperature_bg_gas_wrapper(AdiabatClimat
                                       double *P_i_surf, double *P_surf, char *bg_gas, 
                                       double *T_guess, double *T_surf, char *err)
 
-cdef extern void adiabatclimate_rce_wrapper(AdiabatClimate *ptr, int *ng, double *P_i_surf, double *T_surf_guess,
-                                      int *dim_T_guess, double *T_guess, bool *convecting_with_below_present, 
-                                      int *dim_convecting_with_below, bool *convecting_with_below, bool *converged, char *err)
+cdef extern void adiabatclimate_rce_wrapper(
+  AdiabatClimate *ptr, int *ng, double *P_i_surf, double *T_surf_guess, int *dim_T_guess, double *T_guess, 
+  bool *convecting_with_below_present, int *dim_convecting_with_below, bool *convecting_with_below,
+  bool *custom_present, int *dim_sp_custom, char* sp_custom, int *dim_P_custom, double *P_custom, 
+  int *dim1_mix_custom, int *dim2_mix_custom, double *mix_custom,
+  bool *converged, char *err
+)
 
 cdef extern void adiabatclimate_set_ocean_solubility_fcn_wrapper(AdiabatClimate *ptr, char *species_c, ocean_solubility_fcn fcn, char *err)
 

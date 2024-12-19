@@ -394,7 +394,7 @@ cdef class AdiabatClimate:
     return T_surf
 
   def RCE(self, ndarray[double, ndim=1] P_i_surf, double T_surf_guess, ndarray[double, ndim=1] T_guess,
-          convecting_with_below = None):
+          convecting_with_below = None, custom_dry_mix = None):
     """Compute full radiative-convective equilibrium.
 
     Parameters
@@ -416,6 +416,7 @@ cdef class AdiabatClimate:
     """
     cdef int ng = P_i_surf.shape[0]
     cdef int dim_T_guess = T_guess.shape[0]
+
     cdef ndarray[cbool, ndim=1] convecting_with_below_ = np.array([False],dtype=np.bool_)
     cdef cbool convecting_with_below_present
     if convecting_with_below is None:
@@ -424,12 +425,49 @@ cdef class AdiabatClimate:
       convecting_with_below_present = True
       convecting_with_below_ = convecting_with_below
     cdef int dim_convecting_with_below = convecting_with_below_.shape[0]
+
+    # Custom mixing ratio
+    cdef cbool custom_present = False
+    # initialize arrays
+    cdef int dim_sp_custom = 1
+    cdef ndarray sp_custom_c = np.zeros(dim_sp_custom*S_STR_LEN + 1, 'S1')
+    cdef int dim_P_custom = 1
+    cdef ndarray[double, ndim=1] P_custom = np.empty(dim_P_custom, np.double)
+    cdef int dim1_mix_custom = 1
+    cdef int dim2_mix_custom = 1
+    cdef ndarray[double, ndim=2, mode='fortran'] mix_custom = np.empty((dim1_mix_custom,dim2_mix_custom), np.double)
+    cdef list species
+
+    if custom_dry_mix is not None:
+      custom_present = True
+
+      species = list(custom_dry_mix.keys())
+      if 'pressure' not in species:
+        raise ClimaException('`pressure` must be a key in `custom_dry_mix`')
+      species.remove('pressure')
+      dim_sp_custom = len(species)
+      sp_custom_c = list2cstring(species, S_STR_LEN)
+
+      P_custom = custom_dry_mix['pressure']
+      dim_P_custom = len(P_custom)
+
+      dim1_mix_custom = dim_P_custom
+      dim2_mix_custom = dim_sp_custom
+      mix_custom = np.empty((dim_P_custom,dim_sp_custom), np.double, order='F')
+      for i,sp in enumerate(species):
+        if sp != 'pressure':
+          mix_custom[:,i] = custom_dry_mix[sp]
+
     cdef cbool converged
     cdef char err[ERR_LEN+1]
 
-    wa_pxd.adiabatclimate_rce_wrapper(self._ptr, &ng, <double *>P_i_surf.data, &T_surf_guess,
-                               &dim_T_guess, <double *>T_guess.data, &convecting_with_below_present,
-                               &dim_convecting_with_below, <cbool *>convecting_with_below_.data, &converged, err)
+    wa_pxd.adiabatclimate_rce_wrapper(
+      self._ptr, &ng, <double *>P_i_surf.data, &T_surf_guess, &dim_T_guess, <double *>T_guess.data, 
+      &convecting_with_below_present, &dim_convecting_with_below, <cbool *>convecting_with_below_.data,
+      &custom_present, &dim_sp_custom, <char*> sp_custom_c.data, &dim_P_custom, <double *> P_custom.data, 
+      &dim1_mix_custom, &dim2_mix_custom, <double *> mix_custom.data, 
+      &converged, err
+    )
     if len(err.strip()) > 0:
       raise ClimaException(err.decode("utf-8").strip())
     return converged
