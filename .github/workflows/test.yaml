@@ -34,9 +34,12 @@ jobs:
           numpy
           scipy 
           h5py
+          scikit-build 
           cmake 
+          ninja 
           cython 
           fypp 
+          pip 
           clang 
           gfortran
 
