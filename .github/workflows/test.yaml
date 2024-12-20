@@ -44,14 +44,9 @@ jobs:
           gfortran
           valgrind
 
-    # - name: Install dependencies
-    #   run: |
-    #     python -m pip install --upgrade pip
-    #     python -m pip install h5py fypp
-    #     sudo apt update
-    #     sudo apt install libblas-dev liblapack-dev
-    #     sudo apt install valgrind
-    #     sudo apt install libhdf5-dev
+    - name: Install dependencies
+      run: |
+        sudo apt install valgrind
 
     - name: configure cmake
       shell: bash -el {0}
@@ -61,8 +56,6 @@ jobs:
         export FC="$(which gfortran)"
         export CONDA_PREFIX_SAVE=$CONDA_PREFIX
         unset CONDA_PREFIX
-        echo $MAMBA_ROOT_PREFIX
-        echo $CONDA_PREFIX_SAVE
         cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_PREFIX_PATH=$CONDA_PREFIX_SAVE
         export CONDA_PREFIX=$CONDA_PREFIX_SAVE
 
@@ -71,7 +64,6 @@ jobs:
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
     - name: test
-      shell: bash -el {0}
       working-directory: ${{github.workspace}}/build
       run: |
         ./tests/test_radtran
