@@ -20,9 +20,14 @@ jobs:
         create-args: >-
           python
           numpy
+          scipy 
           h5py
+          scikit-build 
           cmake 
-          fypp
+          ninja 
+          cython 
+          fypp 
+          pip 
           clang 
           gfortran
 
