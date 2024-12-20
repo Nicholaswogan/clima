@@ -61,6 +61,8 @@ jobs:
         export FC="$(which gfortran)"
         export CONDA_PREFIX_SAVE=$CONDA_PREFIX
         unset CONDA_PREFIX
+        echo $MAMBA_ROOT_PREFIX
+        echo $CONDA_PREFIX_SAVE
         cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_PREFIX_PATH=$CONDA_PREFIX_SAVE
         export CONDA_PREFIX=$CONDA_PREFIX_SAVE
 
