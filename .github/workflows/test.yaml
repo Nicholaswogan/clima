@@ -11,20 +11,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-      with:
-          submodules: 'true'
-
-    # - name: Setup Fortran
-    #   uses: awvwgk/setup-fortran@main
-    #   id: setup-fortran
-    #   with:
-    #     compiler: gcc
-    #     version: 11
-
-    # - name: Setup Python
-    #   uses: actions/setup-python@v2
-    #   with:
-    #     python-version: 3.9
 
     - uses: mamba-org/setup-micromamba@v2
       with:
@@ -32,16 +18,12 @@ jobs:
         create-args: >-
           python
           numpy
-          scipy 
           h5py
-          scikit-build 
           cmake 
-          ninja 
-          cython 
           fypp 
-          pip 
           clang 
           gfortran
+          valgrind
 
     - name: Install Valgrind
       run: |
