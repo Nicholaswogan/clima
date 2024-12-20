@@ -54,6 +54,7 @@ jobs:
     #     sudo apt install libhdf5-dev
 
     - name: configure cmake
+      shell: bash -el {0}
       run: |
         export CC="$(which clang)"
         export CXX="$(which clang)"
@@ -64,6 +65,7 @@ jobs:
         export CONDA_PREFIX=$CONDA_PREFIX_SAVE
 
     - name: build
+      shell: bash -el {0}
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
     - name: test
