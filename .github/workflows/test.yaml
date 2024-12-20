@@ -14,18 +14,6 @@ jobs:
       with:
           submodules: 'true'
 
-    # - name: Setup Fortran
-    #   uses: awvwgk/setup-fortran@main
-    #   id: setup-fortran
-    #   with:
-    #     compiler: gcc
-    #     version: 11
-
-    # - name: Setup Python
-    #   uses: actions/setup-python@v2
-    #   with:
-    #     python-version: 3.9
-
     - uses: mamba-org/setup-micromamba@v2
       with:
         environment-name: test-env
@@ -37,11 +25,6 @@ jobs:
           fypp
           clang 
           gfortran
-
-    - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install valgrind
 
     - name: configure cmake
       shell: bash -el {0}
@@ -58,8 +41,12 @@ jobs:
       shell: bash -el {0}
       run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
+    - name: Install valgrind
+      run: |
+        sudo apt update
+        sudo apt install valgrind
+
     - name: test
-      shell: bash -el {0}
       working-directory: ${{github.workspace}}/build
       run: |
         ./tests/test_radtran
