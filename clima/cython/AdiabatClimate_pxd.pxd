@@ -65,6 +65,13 @@ cdef extern void adiabatclimate_surface_temperature_bg_gas_wrapper(AdiabatClimat
                                       double *P_i_surf, double *P_surf, char *bg_gas, 
                                       double *T_guess, double *T_surf, char *err)
 
+cdef extern void adiabatclimate_set_particle_density_and_radii(
+  AdiabatClimate *ptr, int *dim_P, double *P,  
+  int *dim1_pdensities, int *dim2_pdensities, double *pdensities, 
+  int *dim1_pradii, int *dim2_pradii, double *pradii, 
+  char *err
+)
+
 cdef extern void adiabatclimate_rce_wrapper(
   AdiabatClimate *ptr, int *ng, double *P_i_surf, double *T_surf_guess, int *dim_T_guess, double *T_guess, 
   bool *convecting_with_below_present, int *dim_convecting_with_below, bool *convecting_with_below,
@@ -127,6 +134,9 @@ cdef extern void adiabatclimate_surface_heat_flow_set(AdiabatClimate *ptr, doubl
 cdef extern void adiabatclimate_species_names_get_size(AdiabatClimate *ptr, int *dim1)
 cdef extern void adiabatclimate_species_names_get(AdiabatClimate *ptr, int *dim1, char* species_names)
 
+cdef extern void adiabatclimate_particle_names_get_size(AdiabatClimate *ptr, int *dim1)
+cdef extern void adiabatclimate_particle_names_get(AdiabatClimate *ptr, int *dim1, char* particle_names)
+
 cdef extern void adiabatclimate_rad_get(AdiabatClimate *ptr, rad_pxd.Radtran **ptr1)
 
 cdef extern void adiabatclimate_convecting_with_below_get_size(AdiabatClimate *ptr, int *dim1)
@@ -188,6 +198,12 @@ cdef extern void adiabatclimate_dz_get(AdiabatClimate *ptr, int *dim1, double *a
 
 cdef extern void adiabatclimate_densities_get_size(AdiabatClimate *ptr, int *dim1, int *dim2)
 cdef extern void adiabatclimate_densities_get(AdiabatClimate *ptr, int *dim1, int *dim2, double *arr)
+
+cdef extern void adiabatclimate_pdensities_get_size(AdiabatClimate *ptr, int *dim1, int *dim2)
+cdef extern void adiabatclimate_pdensities_get(AdiabatClimate *ptr, int *dim1, int *dim2, double *arr)
+
+cdef extern void adiabatclimate_pradii_get_size(AdiabatClimate *ptr, int *dim1, int *dim2)
+cdef extern void adiabatclimate_pradii_get(AdiabatClimate *ptr, int *dim1, int *dim2, double *arr)
 
 cdef extern void adiabatclimate_n_atmos_get_size(AdiabatClimate *ptr, int *dim1)
 cdef extern void adiabatclimate_n_atmos_get(AdiabatClimate *ptr, int *dim1, double *arr)

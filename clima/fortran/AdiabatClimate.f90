@@ -341,6 +341,31 @@ subroutine adiabatclimate_surface_temperature_bg_gas_wrapper(ptr, ng, P_i_surf, 
 
 end subroutine
 
+subroutine adiabatclimate_set_particle_density_and_radii(ptr, dim_P, P,  dim1_pdensities, dim2_pdensities, pdensities, &
+                                                         dim1_pradii, dim2_pradii, pradii, err) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: dim_P
+  real(c_double), intent(in) :: P(dim_P)
+  integer(c_int), intent(in) :: dim1_pdensities, dim2_pdensities
+  real(c_double), intent(in) :: pdensities(dim1_pdensities, dim2_pdensities)
+  integer(c_int), intent(in) :: dim1_pradii, dim2_pradii
+  real(c_double), intent(in) :: pradii(dim1_pradii, dim2_pradii)
+  character(c_char), intent(out) :: err(err_len+1)
+
+  character(:), allocatable :: err_f
+  type(AdiabatClimate), pointer :: c
+
+  call c_f_pointer(ptr, c)
+  call c%set_particle_density_and_radii(P, pdensities, pradii, err_f)
+
+  err(1) = c_null_char
+  if (allocated(err_f)) then
+    call copy_string_ftoc(err_f, err)
+  endif
+
+end subroutine
+
 subroutine adiabatclimate_rce_wrapper(ptr, ng, P_i_surf, T_surf_guess, dim_T_guess, T_guess, &
                                       convecting_with_below_present, dim_convecting_with_below, convecting_with_below, &
                                       custom_present, dim_sp_custom, sp_custom, dim_P_custom, P_custom, &
@@ -804,6 +829,35 @@ subroutine adiabatclimate_species_names_get(ptr, dim1, species_names) bind(c)
   
 end subroutine
 
+subroutine adiabatclimate_particle_names_get_size(ptr, dim1) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  dim1 = size(c%particle_names)
+end subroutine
+
+subroutine adiabatclimate_particle_names_get(ptr, dim1, particle_names) bind(c)
+  use clima, only: AdiabatClimate, s_str_len
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  character(kind=c_char), intent(out) :: particle_names(dim1*s_str_len+1)
+  type(AdiabatClimate), pointer :: c
+  
+  integer :: i, j, k
+  
+  call c_f_pointer(ptr, c)
+  do i = 1,dim1
+    do j = 1,s_str_len
+      k = j + (i - 1) * s_str_len
+      particle_names(k) = c%particle_names(i)(j:j)
+    enddo
+  enddo
+  particle_names(dim1*s_str_len+1) = c_null_char
+  
+end subroutine
+
 subroutine adiabatclimate_rad_get(ptr, ptr1) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), value, intent(in) :: ptr
@@ -1165,6 +1219,56 @@ subroutine adiabatclimate_densities_get_size(ptr, dim1, dim2) bind(c)
   dim2 = size(c%densities,2)
 end subroutine
 
+subroutine adiabatclimate_densities_get(ptr, dim1, dim2, arr) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1, dim2
+  real(c_double), intent(out) :: arr(dim1,dim2)
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  arr = c%densities
+end subroutine
+
+subroutine adiabatclimate_pdensities_get_size(ptr, dim1, dim2) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1, dim2
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  dim1 = size(c%pdensities,1)
+  dim2 = size(c%pdensities,2)
+end subroutine
+
+subroutine adiabatclimate_pdensities_get(ptr, dim1, dim2, arr) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1, dim2
+  real(c_double), intent(out) :: arr(dim1,dim2)
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  arr = c%pdensities
+end subroutine
+
+subroutine adiabatclimate_pradii_get_size(ptr, dim1, dim2) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1, dim2
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  dim1 = size(c%pradii,1)
+  dim2 = size(c%pradii,2)
+end subroutine
+
+subroutine adiabatclimate_pradii_get(ptr, dim1, dim2, arr) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1, dim2
+  real(c_double), intent(out) :: arr(dim1,dim2)
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  arr = c%pradii
+end subroutine
+
 subroutine adiabatclimate_n_atmos_get_size(ptr, dim1) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), value, intent(in) :: ptr
@@ -1221,14 +1325,4 @@ subroutine adiabatclimate_n_ocean_get(ptr, dim1, dim2, arr) bind(c)
   type(AdiabatClimate), pointer :: c
   call c_f_pointer(ptr, c)
   arr = c%N_ocean
-end subroutine
-
-subroutine adiabatclimate_densities_get(ptr, dim1, dim2, arr) bind(c)
-  use clima, only: AdiabatClimate
-  type(c_ptr), value, intent(in) :: ptr
-  integer(c_int), intent(in) :: dim1, dim2
-  real(c_double), intent(out) :: arr(dim1,dim2)
-  type(AdiabatClimate), pointer :: c
-  call c_f_pointer(ptr, c)
-  arr = c%densities
 end subroutine

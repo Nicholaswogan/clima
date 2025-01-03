@@ -165,6 +165,8 @@ contains
 
     if (.not. associated(tmp_list)) then
       ! No particles
+      sp%np = 0
+      allocate(sp%p(sp%np))
       return
     endif
 

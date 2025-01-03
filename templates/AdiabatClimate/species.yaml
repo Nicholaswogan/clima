@@ -3,6 +3,7 @@ atoms:
 - {name: N, mass: 14.0067}
 - {name: O, mass: 15.9994}
 - {name: C, mass: 12.011}
+- {name: S, mass: 32.06}
 
 # List of species that are in the model
 species:
@@ -87,4 +88,6 @@ species:
     - [29.659, 6.137261, -1.186521, 0.09578, -0.219663, -9.861391, 237.948]
   note: From the NIST database
 
-
+particles:
+- name: HCaer
+  composition: {C: 4, H: 2}

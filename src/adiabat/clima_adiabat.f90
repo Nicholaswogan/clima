@@ -57,6 +57,7 @@ module clima_adiabat
     
     ! species in the model
     character(s_str_len), allocatable :: species_names(:) !! copy of species names
+    character(s_str_len), allocatable :: particle_names(:) !! copy of particle names
     type(Species) :: sp
     
     ! Radiative transfer
@@ -68,6 +69,8 @@ module clima_adiabat
     real(dp), allocatable :: P_r(:)
     real(dp), allocatable :: densities_r(:,:)
     real(dp), allocatable :: dz_r(:)
+    real(dp), allocatable :: pdensities_r(:,:)
+    real(dp), allocatable :: pradii_r(:,:)
 
     ! For custom mixing ratios
     !> Length ng. If true, then the species has a custom dry mixing ratio
@@ -132,7 +135,15 @@ module clima_adiabat
     !> reservoir of gas dissolved in oceans in mol/cm^2 (ng, ng). There can be multiple oceans.
     !> The gases dissolved in ocean made of species 1 is given by `N_ocean(:,1)`.
     real(dp), allocatable :: N_ocean(:,:) 
-    
+    !> particle densities in particles/cm^3. (nz,np)
+    real(dp), allocatable :: pdensities(:,:)
+    !> For interpolating particle densities
+    type(linear_interp_1d), private, allocatable :: pdensities_interp(:)
+    !> particle radii in cm. (nz,np)
+    real(dp), allocatable :: pradii(:,:)
+    !> For interpolating particle radii
+    type(linear_interp_1d), private, allocatable :: pradii_interp(:)
+
   contains
     ! Constructs atmospheres
     procedure :: make_profile => AdiabatClimate_make_profile
@@ -152,6 +163,8 @@ module clima_adiabat
     procedure, private :: make_profile_rc => AdiabatClimate_make_profile_rc
     procedure :: RCE => AdiabatClimate_RCE
     ! Utilities
+    procedure, private :: interpolate_particles => AdiabatClimate_interpolate_particles
+    procedure :: set_particle_density_and_radii => AdiabatClimate_set_particle_density_and_radii
     procedure :: set_ocean_solubility_fcn => AdiabatClimate_set_ocean_solubility_fcn
     procedure :: to_regular_grid => AdiabatClimate_to_regular_grid
     procedure :: out2atmosphere_txt => AdiabatClimate_out2atmosphere_txt
@@ -198,6 +211,7 @@ module clima_adiabat
 contains
   
   function create_AdiabatClimate(species_f, settings_f, star_f, data_dir, double_radiative_grid, err) result(c)
+    use futils, only: linspace
     use clima_types, only: ClimaSettings 
     character(*), intent(in) :: species_f !! Species yaml file
     character(*), intent(in) :: settings_f !! Settings yaml file
@@ -210,7 +224,6 @@ contains
     
     type(ClimaSettings) :: s
     integer :: i
-    character(s_str_len) :: particle_names(0)
 
     ! species
     c%sp = Species(species_f, err)
@@ -220,6 +233,12 @@ contains
     allocate(c%species_names(c%sp%ng))
     do i = 1,c%sp%ng
       c%species_names(i) = c%sp%g(i)%name
+    enddo
+
+    ! unpack particles
+    allocate(c%particle_names(c%sp%np))
+    do i = 1,c%sp%np
+      c%particle_names(i) = c%sp%p(i)%name
     enddo
 
     ! default relative humidty is 1
@@ -272,9 +291,11 @@ contains
       c%nz_r = c%nz
     endif
     allocate(c%T_r(c%nz_r),c%P_r(c%nz_r),c%densities_r(c%nz_r,c%sp%ng),c%dz_r(c%nz_r))
+    allocate(c%pdensities_r(c%nz_r,c%sp%np),c%pradii_r(c%nz_r,c%sp%np))
     ! Make radiative transfer with list of species, from species file
     ! and the optical-properties from the settings file
-    c%rad = Radtran(c%species_names, particle_names, s, star_f, s%number_of_zenith_angles, s%surface_albedo, c%nz_r, data_dir, err)
+    c%rad = Radtran(c%species_names, c%particle_names, s, star_f, s%number_of_zenith_angles, &
+                    s%surface_albedo, c%nz_r, data_dir, err)
     if (allocated(err)) return
 
     ! Custom mixing ratios
@@ -293,6 +314,17 @@ contains
     allocate(c%P(c%nz), c%T(c%nz), c%f_i(c%nz,c%sp%ng), c%z(c%nz), c%dz(c%nz))
     allocate(c%densities(c%nz,c%sp%ng))
     allocate(c%N_atmos(c%sp%ng),c%N_surface(c%sp%ng),c%N_ocean(c%sp%ng,c%sp%ng))
+    allocate(c%pdensities(c%nz,c%sp%np),c%pradii(c%nz,c%sp%np))
+    allocate(c%pdensities_interp(c%sp%np),c%pradii_interp(c%sp%np))
+
+    ! Initialize particle density interpolators with no particles
+    call linspace(0.0_dp, -5.0_dp, c%P)
+    c%P = 10.0**c%P
+    c%pdensities = 0.0_dp
+    c%pradii = 1.0e-4_dp ! 1 micron
+    call c%set_particle_density_and_radii(c%P, c%pdensities, c%pradii, err)
+    if (allocated(err)) return
+    c%P = 0.0_dp
 
     ! Heat redistribution parameter
     c%L = c%planet_radius
@@ -349,6 +381,9 @@ contains
     do j =1,self%sp%ng
       self%densities(:,j) = self%f_i(:,j)*density(:)
     enddo
+
+    call self%interpolate_particles(self%P, err)
+    if (allocated(err)) return
 
     do i = 1,self%sp%ng
       ! mol/cm^2 in atmosphere
@@ -420,6 +455,9 @@ contains
     do j =1,self%sp%ng
       self%densities(:,j) = self%f_i(:,j)*density(:)
     enddo
+
+    call self%interpolate_particles(self%P, err)
+    if (allocated(err)) return
 
     do i = 1,self%sp%ng
       ! mol/cm^2 in atmosphere
@@ -561,6 +599,9 @@ contains
       self%densities(:,j) = self%f_i(:,j)*density(:)
     enddo
 
+    call self%interpolate_particles(self%P, err)
+    if (allocated(err)) return
+
     do i = 1,self%sp%ng
       ! mol/cm^2 in atmosphere
       self%N_atmos(i) = sum(density*self%f_i(:,i)*self%dz)/N_avo
@@ -597,6 +638,12 @@ contains
         self%densities_r(2*(i-1)+1,:) = self%densities(i,:)
         self%densities_r(2*(i-1)+2,:) = self%densities(i,:)
 
+        self%pdensities_r(2*(i-1)+1,:) = self%pdensities(i,:)
+        self%pdensities_r(2*(i-1)+2,:) = self%pdensities(i,:)
+
+        self%pradii_r(2*(i-1)+1,:) = self%pradii(i,:)
+        self%pradii_r(2*(i-1)+2,:) = self%pradii(i,:)
+
         self%dz_r(2*(i-1)+1) = 0.5_dp*self%dz(i)
         self%dz_r(2*(i-1)+2) = 0.5_dp*self%dz(i)
       enddo
@@ -629,7 +676,8 @@ contains
     
     ! Do radiative transfer
     call self%copy_atm_to_radiative_grid()
-    call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, ISR=ISR, OLR=OLR, err=err)
+    call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, &
+                             self%pdensities_r, self%pradii_r, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
     
   end subroutine
@@ -654,7 +702,8 @@ contains
     
     ! Do radiative transfer
     call self%copy_atm_to_radiative_grid()
-    call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, ISR=ISR, OLR=OLR, err=err)
+    call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, &
+                             self%pdensities_r, self%pradii_r, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
 
   end subroutine
@@ -681,7 +730,8 @@ contains
     
     ! Do radiative transfer
     call self%copy_atm_to_radiative_grid()
-    call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, ISR=ISR, OLR=OLR, err=err)
+    call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, &
+                             self%pdensities_r, self%pradii_r, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
     
   end subroutine
@@ -707,7 +757,8 @@ contains
     
     ! Do radiative transfer
     call self%copy_atm_to_radiative_grid()
-    call self%rad%TOA_fluxes(self%T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, ISR=ISR, OLR=OLR, err=err)
+    call self%rad%TOA_fluxes(self%T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, &
+                             self%pdensities_r, self%pradii_r, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
     
   end subroutine
@@ -973,6 +1024,109 @@ contains
       endblock; endif
     end subroutine
   end function
+
+  subroutine AdiabatClimate_interpolate_particles(self, P, err)
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: P(:)
+    character(:), allocatable, intent(out) :: err
+
+    integer :: i, j
+
+    ! Check inputs
+    if (size(P) /= self%nz) then
+      err = '`P` has the wrong shape'
+      return
+    endif
+
+    do i = 1,self%sp%np
+      do j = 1,self%nz
+        call self%pdensities_interp(i)%evaluate(log10(P(j)), self%pdensities(j,i))
+        self%pdensities(j,i) = 10.0_dp**self%pdensities(j,i)
+        call self%pradii_interp(i)%evaluate(log10(P(j)), self%pradii(j,i))
+        self%pradii(j,i) = 10.0_dp**self%pradii(j,i)
+      enddo
+    enddo
+
+  end subroutine
+
+  !> Sets particle densities and radii
+  subroutine AdiabatClimate_set_particle_density_and_radii(self, P, pdensities, pradii, err)
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: P(:) !! Array of pressures in dynes/cm^2
+    !> Particle densities in particles/cm^3 at each pressure and for each particle
+    !> in the model. Shape (nz, np).
+    real(dp), intent(in) :: pdensities(:,:) 
+    !> Particle radii in cm at each pressure and for each particle
+    !> in the model. Shape (nz, np).
+    real(dp), intent(in) :: pradii(:,:)
+    character(:), allocatable, intent(out) :: err
+
+    real(dp), allocatable :: log10P(:), tmp(:)
+    integer :: i, istat
+
+    ! Check inputs
+    if (size(P) < 1) then
+      err = '`P` must have a length greater than zero'
+      return
+    endif
+    if (size(P) /= size(pdensities,1)) then
+      err = '`P` and `pdensities` have incompatible shapes'
+      return
+    endif
+    if (size(P) /= size(pradii,1)) then
+      err = '`P` and `pradii` have incompatible shapes'
+      return
+    endif
+    if (size(pdensities,2) /= self%sp%np) then
+      err = 'The second dimension of `pdensities` does not match the number of particles'
+      return
+    endif
+    if (size(pradii,2) /= self%sp%np) then
+      err = 'The second dimension of `pradii` does not match the number of particles'
+      return
+    endif
+    if (any(P <= 0.0_dp)) then
+      err = 'All elements of `P` must be larger than zero'
+      return
+    endif
+    if (any(pdensities < 0.0_dp)) then
+      err = 'All elements of `pdensities` must be larger than zero'
+      return
+    endif
+    if (any(pradii < 0.0_dp)) then
+      err = 'All elements of `pradii` must be larger than zero'
+      return
+    endif
+
+    log10P = [[huge(1.0_dp),P], tiny(1.0_dp)]
+    log10P = log10(log10P(size(log10P):1:-1))
+    allocate(tmp(size(log10P)))
+
+    do i = 1,self%sp%np
+      tmp(2:size(tmp)-1) = pdensities(:,i)
+      tmp(1) = pdensities(1,i)
+      tmp(size(tmp)) = pdensities(size(pdensities,1),i)
+      tmp = log10(max(tmp(size(tmp):1:-1),tiny(1.0_dp)))
+
+      call self%pdensities_interp(i)%initialize(log10P, tmp, istat)
+      if (istat /= 0) then
+        err = 'Interpolation initialization in `set_particle_density_and_radii` failed'
+        return
+      endif
+
+      tmp(2:size(tmp)-1) = pradii(:,i)
+      tmp(1) = pradii(1,i)
+      tmp(size(tmp)) = pradii(size(pradii,1),i)
+      tmp = log10(max(tmp(size(tmp):1:-1),tiny(1.0_dp)))
+
+      call self%pradii_interp(i)%initialize(log10P, tmp, istat)
+      if (istat /= 0) then
+        err = 'Interpolation initialization in `set_particle_density_and_radii` failed'
+        return
+      endif
+    enddo
+
+  end subroutine
 
   !> Sets a function for describing how gases dissolve in a liquid ocean.
   subroutine AdiabatClimate_set_ocean_solubility_fcn(self, sp, fcn, err)

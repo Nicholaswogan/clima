@@ -393,6 +393,39 @@ cdef class AdiabatClimate:
       raise ClimaException(err.decode("utf-8").strip())
     return T_surf
 
+  def set_particle_density_and_radii(self, ndarray[double, ndim=1] P, ndarray[double, ndim=2] pdensities, ndarray[double, ndim=2] pradii):
+    """Sets particle densities and radii.
+
+    Parameters
+    ----------
+    P_i_surf : ndarray[double,ndim=1]
+        Array of pressures in dynes/cm^2
+    pdensities : ndarray[double,ndim=2]
+        Particle densities in particles/cm^3 at each pressure and for each 
+        particle in the model. Shape (nz, np).
+    pradii : ndarray[double,ndim=2]
+        Particle radii in cm at each pressure and for each particle
+        in the model. Shape (nz, np).
+    """
+    cdef int dim_P = P.shape[0]
+    cdef int dim1_pdensities = pdensities.shape[0]
+    cdef int dim2_pdensities = pdensities.shape[1]
+    pdensities = np.asfortranarray(pdensities)
+    cdef int dim1_pradii = pradii.shape[0]
+    cdef int dim2_pradii = pradii.shape[1]
+    pradii = np.asfortranarray(pradii)
+    cdef char err[ERR_LEN+1]
+
+    wa_pxd.adiabatclimate_set_particle_density_and_radii(
+      self._ptr, &dim_P, <double *> P.data,  
+      &dim1_pdensities, &dim2_pdensities, <double *> pdensities.data, 
+      &dim1_pradii, &dim2_pradii, <double *> pradii.data, 
+      err
+    )
+
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
+
   def RCE(self, ndarray[double, ndim=1] P_i_surf, double T_surf_guess, ndarray[double, ndim=1] T_guess,
           convecting_with_below = None, custom_dry_mix = None):
     """Compute full radiative-convective equilibrium.
@@ -713,6 +746,15 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_species_names_get(self._ptr, &dim1, <char *>species_names_c.data)
       return c2stringarr(species_names_c, S_STR_LEN, dim1)
 
+  property particle_names:
+    "List, shape (np). The name of each particle in the model"
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.adiabatclimate_particle_names_get_size(self._ptr, &dim1)
+      cdef ndarray particle_names_c = np.empty(dim1*S_STR_LEN + 1, 'S1')
+      wa_pxd.adiabatclimate_particle_names_get(self._ptr, &dim1, <char *>particle_names_c.data)
+      return c2stringarr(particle_names_c, S_STR_LEN, dim1)
+
   property rad:
     "Radtran object that does radiative transfer"
     def __get__(self):
@@ -908,6 +950,24 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_densities_get_size(self._ptr, &dim1, &dim2)
       cdef ndarray arr = np.empty((dim1, dim2), np.double, order="F")
       wa_pxd.adiabatclimate_densities_get(self._ptr, &dim1, &dim2, <double *>arr.data)
+      return arr
+  
+  property pdensities:
+    "ndarray[double,ndim=2], shape (nz,np). Particle densities in particles/cm^3."
+    def __get__(self):
+      cdef int dim1, dim2
+      wa_pxd.adiabatclimate_pdensities_get_size(self._ptr, &dim1, &dim2)
+      cdef ndarray arr = np.empty((dim1, dim2), np.double, order="F")
+      wa_pxd.adiabatclimate_pdensities_get(self._ptr, &dim1, &dim2, <double *>arr.data)
+      return arr
+
+  property pradii:
+    "ndarray[double,ndim=2], shape (nz,np). Particle radii in cm."
+    def __get__(self):
+      cdef int dim1, dim2
+      wa_pxd.adiabatclimate_pradii_get_size(self._ptr, &dim1, &dim2)
+      cdef ndarray arr = np.empty((dim1, dim2), np.double, order="F")
+      wa_pxd.adiabatclimate_pradii_get(self._ptr, &dim1, &dim2, <double *>arr.data)
       return arr
 
   property N_atmos:

@@ -181,6 +181,19 @@ contains
       stop 1
     endif
 
+    ! Test setting particle densities
+    block
+      real(dp) :: pdensities(1,1), pradii(1,1)
+      pdensities(1,1) = 1.0e-100_dp
+      pradii(1,1) = 1.0e-4_dp
+      ! Test particle density
+      call c%set_particle_density_and_radii([1.0_dp],pdensities, pradii, err)
+      if (allocated(err)) then
+        print*,err
+        stop 1
+      endif
+    end block
+
     ! Test custom mixing ratio
     block
       character(5), allocatable :: sp_custom(:)
