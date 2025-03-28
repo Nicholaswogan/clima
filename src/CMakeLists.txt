@@ -58,7 +58,7 @@ target_link_libraries(clima
   finterp
   dop853
   minpack
-  forwarddiff
+  differentia
   ${LAPACK_LIBRARIES}
 )
 

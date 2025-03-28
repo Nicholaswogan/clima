@@ -232,7 +232,7 @@
     #:for TYPE1, NAME in TYPES_NAMES
     pure subroutine interp_1d_${NAME}$(me,x,f,istat)
     #:if NAME == 'dual'
-    use forwarddiff
+    use differentia
     #:endif
 
     implicit none
@@ -272,7 +272,7 @@
     #:endfor
 
     subroutine interp_1d_derivative(me, x, dfdx, istat)
-        use forwarddiff, only: derivative
+        use differentia, only: derivative
         class(linear_interp_1d),intent(inout) :: me
         real(wp), intent(in) :: x
         real(wp), intent(out) :: dfdx
@@ -281,7 +281,7 @@
         call derivative(fcn, x, f, dfdx)
     contains
         function fcn(x_) result(res_)
-            use forwarddiff, only: dual
+            use differentia, only: dual
             type(dual), intent(in) :: x_
             type(dual) :: res_
             call interp_1d_dual(me, x_, res_, istat)
@@ -363,7 +363,7 @@
     #:for TYPE1, NAME in TYPES_NAMES
     pure subroutine dintrv_${NAME}$(xt,x,ilo,ileft,iright,mflag,inearest)
     #:if NAME == 'dual'
-    use forwarddiff
+    use differentia
     #:endif
 
     implicit none

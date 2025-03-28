@@ -1,11 +1,11 @@
 
 CPMAddPackage(
-  NAME forwarddiff
-  VERSION 0.1.3
+  NAME differentia
+  VERSION 0.1.4
   OPTIONS 
     "BUILD_EXECUTABLE OFF"
-  GITHUB_REPOSITORY "Nicholaswogan/forwarddiff"
-  GIT_TAG "v0.1.3"
+  GITHUB_REPOSITORY "Nicholaswogan/Differentia"
+  GIT_TAG "v0.1.4"
   EXCLUDE_FROM_ALL ON
 )
 
@@ -51,7 +51,7 @@ set(fppFiles
 )
 fypp_f90("" "${fppFiles}" outFiles)
 add_library(finterp ${outFiles})
-target_link_libraries(finterp forwarddiff)
+target_link_libraries(finterp differentia)
 
 CPMAddPackage(
   NAME dop853

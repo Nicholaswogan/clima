@@ -96,7 +96,7 @@ contains
   !> between super-critical and sub-critical gases.
   function sat_pressure_crit_${NAME}$(self, T) result(p_sat)
     #:if NAME == 'dual'
-    use forwarddiff
+    use differentia
     #:endif
     use clima_const, only: Rgas
     class(SaturationData), intent(inout) :: self
@@ -111,7 +111,7 @@ contains
   !> Saturation pressure over liquid
   function sat_pressure_vap_${NAME}$(self, T) result(p_sat)
     #:if NAME == 'dual'
-    use forwarddiff
+    use differentia
     #:endif
     use clima_const, only: Rgas
     class(SaturationData), intent(inout) :: self
@@ -125,7 +125,7 @@ contains
   !> Saturation pressure over solid
   function sat_pressure_sub_${NAME}$(self, T) result(p_sat)
     #:if NAME == 'dual'
-    use forwarddiff
+    use differentia
     #:endif
     use clima_const, only: Rgas
     class(SaturationData), intent(inout) :: self
@@ -140,7 +140,7 @@ contains
   !> Saturation pressure over liquid or solid
   function sat_pressure_${NAME}$(self, T) result(p_sat)
     #:if NAME == 'dual'
-    use forwarddiff
+    use differentia
     #:endif
     class(SaturationData), intent(inout) :: self
     ${TYPE1}$, intent(in) :: T !! K
@@ -157,7 +157,7 @@ contains
   !> This is $\int L/T^2 dT$
   function integral_fcn_${NAME}$(A, B, T) result(res)
     #:if NAME == 'dual'
-    use forwarddiff
+    use differentia
     #:endif
     real(dp), intent(in) :: A, B
     ${TYPE1}$, intent(in) :: T !! K
@@ -168,7 +168,7 @@ contains
 
   !> Compute the derivative of the SVP function.
   function sat_pressure_derivative(self, T) result(dPdT)
-    use forwarddiff, only: derivative
+    use differentia, only: derivative
     class(SaturationData), intent(inout) :: self
     real(dp), intent(in) :: T !! K
     real(dp) :: dPdT !! dP/dT where P is dynes/cm^2 and T is K
@@ -176,7 +176,7 @@ contains
     call derivative(fcn, T, p_sat, dPdT)
   contains
     function fcn(x_) result(res_)
-      use forwarddiff, only: dual
+      use differentia, only: dual
       type(dual), intent(in) :: x_
       type(dual) :: res_
       res_ = sat_pressure_dual(self, x_)
