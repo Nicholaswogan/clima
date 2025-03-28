@@ -19,7 +19,7 @@ jobs:
           python
           numpy
           h5py
-          cmake 
+          "cmake<4" 
           fypp 
           clang 
           gfortran
