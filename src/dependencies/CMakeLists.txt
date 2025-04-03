@@ -19,13 +19,16 @@ CPMAddPackage(
 )
 
 # h5fortran
+# Here, I've made a tiny modification to v4.5.0 in a fork of the
+# original library (geospace-code/h5fortran) so that it does not 
+# exclude conda libraries. 
 CPMAddPackage(
   NAME h5fortran
-  VERSION 4.5.0
+  VERSION 4.5.0_c55f15e94300be746b22b4b840a6c4051d9fb323
   OPTIONS
     "CMAKE_POSITION_INDEPENDENT_CODE ON"
-  GITHUB_REPOSITORY "geospace-code/h5fortran"
-  GIT_TAG "v4.5.0"
+  GITHUB_REPOSITORY "Nicholaswogan/h5fortran"
+  GIT_TAG "c55f15e94300be746b22b4b840a6c4051d9fb323"
   EXCLUDE_FROM_ALL ON
 )
 
