@@ -72,7 +72,7 @@ contains
     ! other work
     real(dp) :: dfreq, TT, log10PP
     real(dp) :: albedo, emissivity
-    real(dp), allocatable :: cols(:,:), log10P(:)
+    real(dp), allocatable :: cols(:,:), log10P(:), log10P_cgs(:)
     real(dp), allocatable :: foreign_col(:)
 
     ! check to make sure the zenith anges and weights are OK
@@ -93,6 +93,7 @@ contains
     ng = size(densities, 2)
     allocate(log10P(nz))
     log10P = log10(P)
+    log10P_cgs = log10(P*1.0e6_dp)
     allocate(cols(nz,ng))
     do i = 1,ng
       cols(:,i) = densities(:,i)*dz(:)
@@ -224,6 +225,13 @@ contains
         enddo
       endif
 
+      ! Custom opacity
+      call op%custom_optical_properties(log10P_cgs, dz, l, rz%tauc, rz%w0c, rz%g0c)
+      rz%tauc = rz%tauc(nz:1:-1)
+      rz%w0c = rz%w0c(nz:1:-1)
+      rz%g0c = rz%g0c(nz:1:-1)
+      rz%tausc = rz%w0c*rz%tauc
+
       ! particles
       block
       real(dp) :: taup_1
@@ -245,9 +253,10 @@ contains
       do i = 1,op%npart
         do k = 1,nz
           n = nz+1-k
-          rz%gt(n) = rz%gt(n) + rw%gt(k,i)*rz%tausp_1(n,i)/(rz%tausp(n)+rz%tausg(n))
+          rz%gt(n) = rz%gt(n) + rw%gt(k,i)*rz%tausp_1(n,i)/(rz%tausp(n) + rz%tausg(n) + rz%tausc(n))
         enddo
       enddo
+      rz%gt = rz%gt + rz%g0c*rz%tausc/(rz%tausp + rz%tausg + rz%tausc)
       do k = 1,nz
         n = nz+1-k
         rz%gt(n) = min(rz%gt(n), max_gt)
@@ -431,9 +440,9 @@ contains
 
       ! sum
       rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%taua_1(:) &
-                  + rw%tau_grey_sum(:)
+                  + rw%tau_grey_sum(:) + rz%tauc(:)
       do j = 1,nz
-        rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j))/rz%tau(j))
+        rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j) + rz%tausc(j))/rz%tau(j))
       enddo
 
       if (op%op_type == FarUVOpticalProperties .or. &
@@ -567,10 +576,10 @@ contains
       enddo
       
       ! sum all optical depths
-      ! total = gas scattering + continumm opacities + particle absorption + k-coeff
-      rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%taua_1(:)
+      ! total = gas scattering + continumm opacities + particle absorption + k-coeff + custom opacity
+      rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%taua_1(:) + rz%tauc(:)
       do j = 1,nz
-        rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j))/rz%tau(j))
+        rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j) + rz%tausc(j))/rz%tau(j))
       enddo
       
       if (op%op_type == FarUVOpticalProperties .or. &
@@ -648,9 +657,9 @@ contains
         enddo
         
         ! sum
-        rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%taua_1(:)
+        rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%taua_1(:) + rz%tauc(:)
         do j = 1,nz
-          rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j))/rz%tau(j))
+          rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j) + rz%tausc(j))/rz%tau(j))
         enddo
         
         if (op%op_type == FarUVOpticalProperties .or. &

@@ -139,6 +139,8 @@ contains
     allocate(rz%tausp_1(nz,npart))
     allocate(rz%taup(nz))
 
+    allocate(rz%tauc(nz),rz%tausc(nz),rz%w0c(nz),rz%g0c(nz))
+
     allocate(rz%tau(nz))
     allocate(rz%w0(nz))
     allocate(rz%gt(nz))

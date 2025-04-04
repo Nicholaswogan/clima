@@ -66,6 +66,8 @@ module clima_radtran
     procedure :: equilibrium_temperature => Radtran_equilibrium_temperature
     procedure :: opacities2yaml => Radtran_opacities2yaml
     procedure :: apply_radiation_enhancement => Radtran_apply_radiation_enhancement
+    procedure :: set_custom_optical_properties => Radtran_set_custom_optical_properties
+    procedure :: unset_custom_optical_properties => Radtran_unset_custom_optical_properties
   end type
 
   interface Radtran
@@ -448,6 +450,29 @@ contains
       return
     endif
     
+  end subroutine
+
+  subroutine Radtran_set_custom_optical_properties(self, wv, P, dtau_dz, w0, g0, err)
+    class(Radtran), intent(inout) :: self
+    real(dp), intent(in) :: wv(:) !! Array of of wavelengths in nm
+    real(dp), intent(in) :: P(:) !! Array of pressures in dynes/cm^2
+    real(dp), intent(in) :: dtau_dz(:,:) !! (size(P),size(wv)), Optical depth per altitude.
+    real(dp), intent(in) :: w0(:,:) !! (size(P),size(wv)), Single scattering albedo
+    real(dp), intent(in) :: g0(:,:) !! (size(P),size(wv)), Asymetry parameter
+    character(:), allocatable, intent(out) :: err
+
+    call self%ir%set_custom_optical_properties(wv, P, dtau_dz, w0, g0, err)
+    if (allocated(err)) return
+
+    call self%sol%set_custom_optical_properties(wv, P, dtau_dz, w0, g0, err)
+    if (allocated(err)) return
+
+  end subroutine
+
+  subroutine Radtran_unset_custom_optical_properties(self)
+    class(Radtran), intent(inout) :: self
+    call self%ir%unset_custom_optical_properties()
+    call self%sol%unset_custom_optical_properties()
   end subroutine
   
 end module

@@ -40,6 +40,48 @@ cdef class Radtran:
     cdef ndarray out_c = np.empty(out_len + 1, 'S1')
     rad_pxd.radtran_opacities2yaml_wrapper_2(self._ptr, &out_cp, &out_len, <char *>out_c.data)
     return out_c[:-1].tobytes().decode()
+
+  def set_custom_optical_properties(self, ndarray[double, ndim=1] wv, ndarray[double, ndim=1] P, ndarray[double, ndim=2] dtau_dz, ndarray[double, ndim=2] w0, ndarray[double, ndim=2] g0):
+    """Sets particle densities and radii.
+
+    Parameters
+    ----------
+    P_i_surf : ndarray[double,ndim=1]
+        Array of pressures in dynes/cm^2
+    pdensities : ndarray[double,ndim=2]
+        Particle densities in particles/cm^3 at each pressure and for each 
+        particle in the model. Shape (nz, np).
+    pradii : ndarray[double,ndim=2]
+        Particle radii in cm at each pressure and for each particle
+        in the model. Shape (nz, np).
+    """
+    cdef int dim_wv = wv.shape[0]
+    cdef int dim_P = P.shape[0]
+    cdef int dim1_dtau_dz = dtau_dz.shape[0]
+    cdef int dim2_dtau_dz = dtau_dz.shape[1]
+    dtau_dz = np.asfortranarray(dtau_dz)
+    cdef int dim1_w0 = w0.shape[0]
+    cdef int dim2_w0 = w0.shape[1]
+    w0 = np.asfortranarray(w0)
+    cdef int dim1_g0 = g0.shape[0]
+    cdef int dim2_g0 = g0.shape[1]
+    g0 = np.asfortranarray(g0)
+
+    cdef char err[ERR_LEN+1]
+
+    rad_pxd.radtran_set_custom_optical_properties(
+      self._ptr, &dim_wv, <double *> wv.data, &dim_P, <double *> P.data,  
+      &dim1_dtau_dz, &dim2_dtau_dz, <double *> dtau_dz.data, 
+      &dim1_w0, &dim2_w0, <double *> w0.data, 
+      &dim1_g0, &dim2_g0, <double *> g0.data, 
+      err
+    )
+
+    if len(err.strip()) > 0:
+      raise ClimaException(err.decode("utf-8").strip())
+
+  def unset_custom_optical_properties(self):
+    rad_pxd.radtran_unset_custom_optical_properties(self._ptr)
     
   property surface_albedo:
     "ndarray[double,ndim=1]. The surface albedo in each solar wavelength bin"

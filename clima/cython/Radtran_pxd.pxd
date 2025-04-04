@@ -10,6 +10,17 @@ cdef extern void radtran_skin_temperature_wrapper(Radtran *ptr, double *bond_alb
 cdef extern void radtran_opacities2yaml_wrapper_1(Radtran *ptr, int *out_len, void **out_cp)
 cdef extern void radtran_opacities2yaml_wrapper_2(Radtran *ptr, void **out_cp, int *out_len, char* out_c)
 
+cdef extern void radtran_set_custom_optical_properties(
+  Radtran *ptr, int *dim_wv, double *wv, int *dim_P, double *P,  
+  int *dim1_dtau_dz, int *dim2_dtau_dz, double *dtau_dz, 
+  int *dim1_w0, int *dim2_w0, double *w0, 
+  int *dim1_g0, int *dim2_g0, double *g0, 
+  char *err
+)
+cdef extern void radtran_unset_custom_optical_properties(
+  Radtran *ptr
+)
+
 # getters and setters
 cdef extern void radtran_surface_albedo_get_size(Radtran *ptr, int *dim1)
 cdef extern void radtran_surface_albedo_get(Radtran *ptr, int *dim1, double *arr)

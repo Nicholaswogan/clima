@@ -128,8 +128,16 @@ module clima_radtran_types
     ! and if there are other gases in the atmosphere.
     type(WaterContinuum), allocatable :: cont
 
+    ! Custom optical properties
+    type(linear_interp_1d), private, allocatable :: dtau_dz_interp(:) ! nw
+    type(linear_interp_1d), private, allocatable :: w0_interp(:) ! nw
+    type(linear_interp_1d), private, allocatable :: g0_interp(:) ! nw
+
   contains
     procedure :: opacities2yaml => OpticalProperties_opacities2yaml
+    procedure :: set_custom_optical_properties => OpticalProperties_set_custom_optical_properties
+    procedure :: unset_custom_optical_properties => OpticalProperties_unset_custom_optical_properties
+    procedure :: custom_optical_properties => OpticalProperties_custom_optical_properties
   end type
   
   interface
@@ -205,6 +213,8 @@ module clima_radtran_types
     real(dp), allocatable :: tausp(:)
     real(dp), allocatable :: tausp_1(:,:)
     real(dp), allocatable :: taup(:)
+
+    real(dp), allocatable :: tauc(:), tausc(:), w0c(:), g0c(:)
 
     real(dp), allocatable :: tau(:)
     real(dp), allocatable :: w0(:)
@@ -347,5 +357,147 @@ contains
     endif
 
   end function
+
+  subroutine OpticalProperties_set_custom_optical_properties(self, wv, P, dtau_dz, w0, g0, err)
+    use futils, only: interp
+    class(OpticalProperties), intent(inout) :: self
+    real(dp), intent(in) :: wv(:) !! Array of of wavelengths in nm
+    real(dp), intent(in) :: P(:) !! Array of pressures in dynes/cm^2
+    real(dp), intent(in) :: dtau_dz(:,:) !! (size(P),size(wv)), Optical depth per altitude.
+    real(dp), intent(in) :: w0(:,:) !! (size(P),size(wv)), Single scattering albedo
+    real(dp), intent(in) :: g0(:,:) !! (size(P),size(wv)), Asymetry parameter
+    character(:), allocatable, intent(out) :: err
+    
+    real(dp), allocatable :: wv1(:), log10P(:), dtau_dz_tmp(:,:), w0_tmp(:,:), g0_tmp(:,:)
+    integer :: i, j, ierr
+
+    ! Check inputs
+    if (any(wv <= 0.0_dp)) then
+      err = 'All elements of `wv` must be larger than zero'
+      return
+    endif
+    if (any(P <= 0.0_dp)) then
+      err = 'All elements of `P` must be larger than zero'
+      return
+    endif
+    if (size(P) /= size(dtau_dz,1)) then
+      err = '`P` and `dtau_dz` have incompatible shapes'
+      return
+    endif
+    if (size(wv) /= size(dtau_dz,2)) then
+      err = '`wv` and `dtau_dz` have incompatible shapes'
+      return
+    endif
+    if (size(P) /= size(w0,1)) then
+      err = '`P` and `w0` have incompatible shapes'
+      return
+    endif
+    if (size(wv) /= size(w0,2)) then
+      err = '`wv` and `w0` have incompatible shapes'
+      return
+    endif
+    if (size(P) /= size(g0,1)) then
+      err = '`P` and `g0` have incompatible shapes'
+      return
+    endif
+    if (size(wv) /= size(g0,2)) then
+      err = '`wv` and `g0` have incompatible shapes'
+      return
+    endif
+
+    allocate(wv1(size(self%wavl)-1))
+    allocate(dtau_dz_tmp(size(P),size(self%wavl)-1))
+    allocate(w0_tmp(size(P),size(self%wavl)-1))
+    allocate(g0_tmp(size(P),size(self%wavl)-1))
+
+    ! Median wavelength
+    wv1 = 0.5_dp*(self%wavl(2:) + self%wavl(1:size(self%wavl)-1))
+
+    ! At each pressure, interpolate to the wavelength grid
+    do i = 1,size(P)
+      j = size(P) + 1 - i
+      call interp(wv1, wv, dtau_dz(i,:), dtau_dz_tmp(j,:), ierr=ierr)
+      if (ierr /= 0) then
+        err = 'Interpolation error in `set_custom_optical_properties`'
+        return
+      endif
+      call interp(wv1, wv, w0(i,:), w0_tmp(j,:), ierr=ierr)
+      if (ierr /= 0) then
+        err = 'Interpolation error in `set_custom_optical_properties`'
+        return
+      endif
+      call interp(wv1, wv, w0(i,:), w0_tmp(j,:), ierr=ierr)
+      if (ierr /= 0) then
+        err = 'Interpolation error in `set_custom_optical_properties`'
+        return
+      endif
+    enddo
+
+    ! Consider log10 pressure
+    log10P = log10(P)
+    log10P = log10P(size(log10P):1:-1)
+
+    if (.not.allocated(self%dtau_dz_interp)) then
+      allocate(self%dtau_dz_interp(self%nw))
+      allocate(self%w0_interp(self%nw))
+      allocate(self%g0_interp(self%nw))
+    endif
+   
+    ! At each wavelength bin, create an interpolator for altitude
+    do i = 1,size(wv1)
+      call self%dtau_dz_interp(i)%initialize(log10P, dtau_dz_tmp(:,i), ierr)
+      if (ierr /= 0) then
+        err = 'Interpolation initialization error in `set_custom_optical_properties`'
+        return
+      endif
+      call self%w0_interp(i)%initialize(log10P, w0_tmp(:,i), ierr)
+      if (ierr /= 0) then
+        err = 'Interpolation initialization error in `set_custom_optical_properties`'
+        return
+      endif
+      call self%g0_interp(i)%initialize(log10P, g0_tmp(:,i), ierr)
+      if (ierr /= 0) then
+        err = 'Interpolation initialization error in `set_custom_optical_properties`'
+        return
+      endif
+    enddo
+
+  end subroutine
+
+  subroutine OpticalProperties_unset_custom_optical_properties(self)
+    class(OpticalProperties), intent(inout) :: self
+    if (allocated(self%dtau_dz_interp)) then
+      deallocate(self%dtau_dz_interp)
+      deallocate(self%w0_interp)
+      deallocate(self%g0_interp)
+    endif
+  end subroutine
+
+  subroutine OpticalProperties_custom_optical_properties(self, log10P, dz, l, tau, w0, g0)
+    class(OpticalProperties), intent(inout) :: self
+    real(dp), intent(in) :: log10P(:) !! Pressure in dynes/cm^2
+    real(dp), intent(in) :: dz(:) !! Layer thickness in cm
+    integer, intent(in) :: l !! Wavelength index
+    real(dp), intent(out) :: tau(:) !! (nz), Optical depth.
+    real(dp), intent(out) :: w0(:) !! (nz), Single scattering albedo
+    real(dp), intent(out) :: g0(:) !! (nz), Asymetry parameter
+
+    integer :: j
+
+    if (.not.allocated(self%dtau_dz_interp)) then
+      tau = tiny(0.0_dp)
+      w0 = tiny(0.0_dp)
+      g0 = tiny(0.0_dp)
+      return
+    endif
+
+    do j = 1,size(log10P)
+      call self%dtau_dz_interp(l)%evaluate(log10P(j), tau(j))
+      tau(j) = tau(j)*dz(j)
+      call self%w0_interp(l)%evaluate(log10P(j), w0(j))
+      call self%g0_interp(l)%evaluate(log10P(j), g0(j))
+    enddo
+
+  end subroutine
   
 end module
