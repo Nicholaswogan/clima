@@ -82,6 +82,24 @@ contains
 
     write(output_unit,'(a)') rad%opacities2yaml()
 
+    ! Test custom opacity
+    block
+      real(dp) :: dtau_dz(2,2), w0(2,2), g0(2,2)
+      call rad%set_custom_optical_properties([1.0_dp, 2.0_dp],[1.0_dp, 0.1_dp], dtau_dz, w0, g0, err)
+      if (allocated(err)) then
+        print*,err
+        stop 1
+      endif
+
+      call rad%radiate(T(1), T, P, densities, dz, pdensities, radii, err=err)
+      if (allocated(err)) then
+        print*,err
+        stop 1
+      endif
+
+      call rad%unset_custom_optical_properties()
+    end block
+
   end subroutine
   
 end program
