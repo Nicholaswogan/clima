@@ -426,7 +426,7 @@ contains
         err = 'Interpolation error in `set_custom_optical_properties`'
         return
       endif
-      call interp(wv1, wv, g0(i,:), g0_tmp(j,:), ierr=ierr)
+      call interp(wv1, wv, w0(i,:), w0_tmp(j,:), ierr=ierr)
       if (ierr /= 0) then
         err = 'Interpolation error in `set_custom_optical_properties`'
         return
