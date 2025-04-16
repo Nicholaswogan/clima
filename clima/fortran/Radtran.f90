@@ -93,6 +93,35 @@ end subroutine
 !!! getters and setters !!!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+subroutine radtran_zenith_u_get_size(ptr, dim1) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  dim1 = size(rad%zenith_u,1)
+end subroutine
+
+subroutine radtran_zenith_u_get(ptr, dim1, arr) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(out) :: arr(dim1)
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  arr = rad%zenith_u
+end subroutine
+
+subroutine radtran_zenith_u_set(ptr, dim1, arr) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(in) :: arr(dim1)
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  rad%zenith_u = arr
+end subroutine
+
 subroutine radtran_surface_albedo_get_size(ptr, dim1) bind(c)
   use clima, only: Radtran
   type(c_ptr), value, intent(in) :: ptr

@@ -22,6 +22,10 @@ cdef extern void radtran_unset_custom_optical_properties(
 )
 
 # getters and setters
+cdef extern void radtran_zenith_u_get_size(Radtran *ptr, int *dim1)
+cdef extern void radtran_zenith_u_get(Radtran *ptr, int *dim1, double *arr)
+cdef extern void radtran_zenith_u_set(Radtran *ptr, int *dim1, double *arr)
+
 cdef extern void radtran_surface_albedo_get_size(Radtran *ptr, int *dim1)
 cdef extern void radtran_surface_albedo_get(Radtran *ptr, int *dim1, double *arr)
 cdef extern void radtran_surface_albedo_set(Radtran *ptr, int *dim1, double *arr)

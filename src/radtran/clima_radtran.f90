@@ -47,11 +47,11 @@ module clima_radtran
     type(OpticalProperties) :: sol
     
     real(dp) :: diurnal_fac = 0.5_dp
-    real(dp), allocatable :: zenith_u(:) ! cos(zenith_angle)
+    real(dp), allocatable :: zenith_u(:) !! cosine of the zenith angle in radians
     real(dp), allocatable :: zenith_weights(:) !
     !> surface albedo in each solar wavelength bin (sol%nw) 
     real(dp), allocatable :: surface_albedo(:) 
-    !> surface emissivity in each IR wavelength bin (sol%nw) 
+    !> surface emissivity in each IR wavelength bin (ir%nw) 
     real(dp), allocatable :: surface_emissivity(:) 
     real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2/Hz in each bin  
   
@@ -452,11 +452,12 @@ contains
     
   end subroutine
 
+  !> Sets custom optical properties
   subroutine Radtran_set_custom_optical_properties(self, wv, P, dtau_dz, w0, g0, err)
     class(Radtran), intent(inout) :: self
     real(dp), intent(in) :: wv(:) !! Array of of wavelengths in nm
-    real(dp), intent(in) :: P(:) !! Array of pressures in dynes/cm^2
-    real(dp), intent(in) :: dtau_dz(:,:) !! (size(P),size(wv)), Optical depth per altitude.
+    real(dp), intent(in) :: P(:) !! Array of pressures in dynes/cm^2. Must be decreasing.
+    real(dp), intent(in) :: dtau_dz(:,:) !! (size(P),size(wv)), Optical depth per altitude (1/cm).
     real(dp), intent(in) :: w0(:,:) !! (size(P),size(wv)), Single scattering albedo
     real(dp), intent(in) :: g0(:,:) !! (size(P),size(wv)), Asymetry parameter
     character(:), allocatable, intent(out) :: err
@@ -469,6 +470,7 @@ contains
 
   end subroutine
 
+  !> Unsets custom optical properties set with `set_custom_optical_properties`.
   subroutine Radtran_unset_custom_optical_properties(self)
     class(Radtran), intent(inout) :: self
     call self%ir%unset_custom_optical_properties()

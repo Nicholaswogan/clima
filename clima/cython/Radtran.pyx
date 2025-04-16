@@ -86,6 +86,21 @@ cdef class Radtran:
     "Unsets custom optical properties set with `set_custom_optical_properties`."
     rad_pxd.radtran_unset_custom_optical_properties(self._ptr)
     
+  property zenith_u:
+    "ndarray[double,ndim=1]. cosine of the zenith angle in radians."
+    def __get__(self):
+      cdef int dim1
+      rad_pxd.radtran_zenith_u_get_size(self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      rad_pxd.radtran_zenith_u_get(self._ptr, &dim1, <double *>arr.data)
+      return arr
+    def __set__(self, ndarray[double, ndim=1] arr):
+      cdef int dim1
+      rad_pxd.radtran_zenith_u_get_size(self._ptr, &dim1)
+      if arr.shape[0] != dim1:
+        raise ClimaException('"zenith_u" is the wrong size')
+      rad_pxd.radtran_zenith_u_set(self._ptr, &dim1, <double *>arr.data)
+
   property surface_albedo:
     "ndarray[double,ndim=1]. The surface albedo in each solar wavelength bin"
     def __get__(self):
