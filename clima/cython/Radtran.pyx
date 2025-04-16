@@ -42,18 +42,20 @@ cdef class Radtran:
     return out_c[:-1].tobytes().decode()
 
   def set_custom_optical_properties(self, ndarray[double, ndim=1] wv, ndarray[double, ndim=1] P, ndarray[double, ndim=2] dtau_dz, ndarray[double, ndim=2] w0, ndarray[double, ndim=2] g0):
-    """Sets particle densities and radii.
+    """Sets custom optical properties
 
     Parameters
     ----------
-    P_i_surf : ndarray[double,ndim=1]
-        Array of pressures in dynes/cm^2
-    pdensities : ndarray[double,ndim=2]
-        Particle densities in particles/cm^3 at each pressure and for each 
-        particle in the model. Shape (nz, np).
-    pradii : ndarray[double,ndim=2]
-        Particle radii in cm at each pressure and for each particle
-        in the model. Shape (nz, np).
+    wv : ndarray[double,ndim=1]
+        Array of of wavelengths in nm
+    P : ndarray[double,ndim=1]
+        Array of pressures in dynes/cm^2. Must be decreasing.
+    dtau_dz : ndarray[double,ndim=2]
+        Optical depth per altitude (1/cm). Shape (len(P), len(wv)).
+    w0 : ndarray[double,ndim=2]
+        Single scattering albedo. Shape (len(P), len(wv)).
+    g0 : ndarray[double,ndim=2]
+        Asymmetry parameter. Shape (len(P), len(wv)).
     """
     cdef int dim_wv = wv.shape[0]
     cdef int dim_P = P.shape[0]
@@ -81,6 +83,7 @@ cdef class Radtran:
       raise ClimaException(err.decode("utf-8").strip())
 
   def unset_custom_optical_properties(self):
+    "Unsets custom optical properties set with `set_custom_optical_properties`."
     rad_pxd.radtran_unset_custom_optical_properties(self._ptr)
     
   property surface_albedo:

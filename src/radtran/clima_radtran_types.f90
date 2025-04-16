@@ -358,14 +358,15 @@ contains
 
   end function
 
+  !> Sets custom optical properties
   subroutine OpticalProperties_set_custom_optical_properties(self, wv, P, dtau_dz, w0, g0, err)
     use futils, only: interp
     class(OpticalProperties), intent(inout) :: self
     real(dp), intent(in) :: wv(:) !! Array of of wavelengths in nm
-    real(dp), intent(in) :: P(:) !! Array of pressures in dynes/cm^2
-    real(dp), intent(in) :: dtau_dz(:,:) !! (size(P),size(wv)), Optical depth per altitude.
+    real(dp), intent(in) :: P(:) !! Array of pressures in dynes/cm^2. Must be decreasing.
+    real(dp), intent(in) :: dtau_dz(:,:) !! (size(P),size(wv)), Optical depth per altitude (1/cm).
     real(dp), intent(in) :: w0(:,:) !! (size(P),size(wv)), Single scattering albedo
-    real(dp), intent(in) :: g0(:,:) !! (size(P),size(wv)), Asymetry parameter
+    real(dp), intent(in) :: g0(:,:) !! (size(P),size(wv)), Asymmetry parameter
     character(:), allocatable, intent(out) :: err
     
     real(dp), allocatable :: wv1(:), log10P(:), dtau_dz_tmp(:,:), w0_tmp(:,:), g0_tmp(:,:)
@@ -464,6 +465,7 @@ contains
 
   end subroutine
 
+  !> Unsets custom optical properties set with `set_custom_optical_properties`.
   subroutine OpticalProperties_unset_custom_optical_properties(self)
     class(OpticalProperties), intent(inout) :: self
     if (allocated(self%dtau_dz_interp)) then
@@ -473,6 +475,7 @@ contains
     endif
   end subroutine
 
+  !> Interpolates the custom optical properties
   subroutine OpticalProperties_custom_optical_properties(self, log10P, dz, l, tau, w0, g0)
     class(OpticalProperties), intent(inout) :: self
     real(dp), intent(in) :: log10P(:) !! Pressure in dynes/cm^2
