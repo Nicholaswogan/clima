@@ -651,6 +651,8 @@ contains
       self%T_r = self%T
       self%P_r = self%P
       self%densities_r = self%densities
+      self%pdensities_r = self%pdensities
+      self%pradii_r = self%pradii
       self%dz_r = self%dz
     endif
 
