@@ -16,6 +16,7 @@ program test
                      '../templates/AdiabatClimate/Earth/settings.yaml', &
                      '../templates/ModernEarth/Sun_now.txt', &
                      '../data', &
+                     double_radiative_grid=.false., &
                      err=err)
   if (allocated(err)) then
     print*,err
@@ -45,7 +46,18 @@ program test
   endif
   deallocate(eddy)
 
+  c = AdiabatClimate('../templates/AdiabatClimate/species.yaml', &
+                     '../templates/AdiabatClimate/Earth/settings.yaml', &
+                     '../templates/ModernEarth/Sun_now.txt', &
+                     '../data', &
+                     err=err)
+  if (allocated(err)) then
+    print*,err
+    stop 1
+  endif
+
   ! Test surface_temperature_column
+  c%solve_for_T_trop = .true.
   c%tidally_locked_dayside = .false.
   N_i_surf = [15.0e3_dp, 400e-6_dp*23.0_dp, 1.0*36.0_dp, 1.0e-10_dp, 1.0e-10_dp, 1.0e-10_dp, 1.0e-10_dp]
   T = c%surface_temperature_column( &
