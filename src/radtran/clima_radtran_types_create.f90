@@ -332,20 +332,28 @@ contains
 
       if (tmp_bool) then; block
         character(s_str_len), allocatable :: cia_combos(:)
+        character(s_str_len), allocatable :: cia_species(:,:)
         ! Make a list of all possible CIA combos
         allocate(cia_combos(size(species_names)*size(species_names)))
+        allocate(cia_species(2,size(species_names)*size(species_names)))
         do i = 1,size(species_names)
           do j = 1,size(species_names)
             cia_combos(j + (i-1)*size(species_names)) = trim(species_names(i))//'-'//trim(species_names(j))
+            cia_species(1, j + (i-1)*size(species_names)) = trim(species_names(i))
+            cia_species(2, j + (i-1)*size(species_names)) = trim(species_names(j))
           enddo
         enddo
 
-        ! Look to see if the files / data exist 
+        ! Look to see if the files/data exist. Logic is included that will not include
+        ! H2O continuum if water continuum is separately specified.
         j = 0
         do i = 1,size(cia_combos)
           filename = datadir//"/CIA/"//trim(cia_combos(i))//".h5"
           inquire(file=filename, exist=file_exists)
-          if (file_exists) j = j + 1
+          if (file_exists .and. &
+            .not.(allocated(sop%water_continuum) .and. any('H2O' == cia_species(:,i))))  then
+            j = j + 1
+          endif
         enddo
 
         ! Make a list of avaliable data files
@@ -356,7 +364,8 @@ contains
         do i = 1,size(cia_combos)
           filename = datadir//"/CIA/"//trim(cia_combos(i))//".h5"
           inquire(file=filename, exist=file_exists)
-          if (file_exists) then
+          if (file_exists .and. &
+            .not.(allocated(sop%water_continuum) .and. any('H2O' == cia_species(:,i))))  then
             cia_list(j) = cia_combos(i)
             j = j + 1
           endif
@@ -565,18 +574,14 @@ contains
 
       ! Make sure water continuum is not already accounted for with CIA
       if (allocated(cia_list)) then
-        ind1 = findloc(cia_list, 'H2O-H2O', 1)
-        if (ind1 /= 0) then
-          err = 'Optical property "water-continuum" is set, but self water '// &
-                'continuum is already accounted for with H2O-H2O CIA.'
-          return
-        endif
-        ind1 = findloc(cia_list, 'H2O-N2', 1)
-        if (ind1 /= 0) then
-          err = 'Optical property "water-continuum" is set, but foreign water '// &
-                  'continuum is already accounted for with H2O-N2 CIA.'
-          return
-        endif
+        do i = 1,size(cia_list)
+          j = index(cia_list(i), "-")
+          if ('H2O' == cia_list(i)(1:j-1) .or. 'H2O' == cia_list(i)(j+1:)) then
+            err = 'Optical property "water-continuum" is set, but CIA "'//trim(cia_list(i))// &
+                  '" is also set. This is not allowed because it would double count opacity.'
+            return
+          endif
+        enddo
       endif
 
       allocate(op%cont)
