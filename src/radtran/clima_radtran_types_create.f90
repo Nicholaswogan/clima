@@ -6,14 +6,13 @@ submodule(clima_radtran_types) clima_radtran_types_create
 
 contains
   
-  module subroutine read_stellar_flux(star_file, nw, wavl, photon_scale_factor, photon_flux, err)
+  module subroutine read_stellar_flux(star_file, nw, wavl, photon_flux, err)
     use futils, only: inter2, addpnt
     use clima_const, only: c_light, plank
     
     character(len=*), intent(in) :: star_file
     integer, intent(in) :: nw
     real(dp), intent(in) :: wavl(nw+1)
-    real(dp), intent(in) :: photon_scale_factor
     real(dp), intent(out) :: photon_flux(nw)
     character(:), allocatable, intent(out) :: err
     
@@ -74,9 +73,6 @@ contains
     do i = 1,nw
       wavl_av = 0.5_dp*(wavl(i) + wavl(i+1))
       photon_flux(i) = flux(i)*(((wavl_av*1.0e-9_dp)*wavl_av)/c_light)
-      ! scale factor for the flux, for changing to different planets in the same
-      ! solar system
-      photon_flux(i) = photon_flux(i)*photon_scale_factor
     enddo
 
   end subroutine

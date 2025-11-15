@@ -840,13 +840,8 @@ contains
       if (self%solve_for_T_trop) then; block
         use clima_eqns, only: skin_temperature
         real(dp) :: bond_albedo, stellar_radiation
-        integer :: i
         bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
-        stellar_radiation = 0.0_dp
-        do i = 1,self%rad%sol%nw
-          stellar_radiation = stellar_radiation + self%rad%photons_sol(i)*(self%rad%sol%freq(i) - self%rad%sol%freq(i+1))
-        enddo
-        stellar_radiation = stellar_radiation/1.0e3_dp
+        stellar_radiation = self%rad%bolometric_flux()
         fvec_(2) = skin_temperature(stellar_radiation*rad_enhancement, bond_albedo) - self%T_trop
       endblock; endif
     end subroutine
@@ -926,13 +921,8 @@ contains
       if (self%solve_for_T_trop) then; block
         use clima_eqns, only: skin_temperature
         real(dp) :: bond_albedo, stellar_radiation
-        integer :: i
         bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
-        stellar_radiation = 0.0_dp
-        do i = 1,self%rad%sol%nw
-          stellar_radiation = stellar_radiation + self%rad%photons_sol(i)*(self%rad%sol%freq(i) - self%rad%sol%freq(i+1))
-        enddo
-        stellar_radiation = stellar_radiation/1.0e3_dp
+        stellar_radiation = self%rad%bolometric_flux()
         fvec_(2) = skin_temperature(stellar_radiation*rad_enhancement, bond_albedo) - self%T_trop
       endblock; endif
     end subroutine
@@ -1015,13 +1005,8 @@ contains
       if (self%solve_for_T_trop) then; block
         use clima_eqns, only: skin_temperature
         real(dp) :: bond_albedo, stellar_radiation
-        integer :: i
         bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
-        stellar_radiation = 0.0_dp
-        do i = 1,self%rad%sol%nw
-          stellar_radiation = stellar_radiation + self%rad%photons_sol(i)*(self%rad%sol%freq(i) - self%rad%sol%freq(i+1))
-        enddo
-        stellar_radiation = stellar_radiation/1.0e3_dp
+        stellar_radiation = self%rad%bolometric_flux()
         fvec_(2) = skin_temperature(stellar_radiation*rad_enhancement, bond_albedo) - self%T_trop
       endblock; endif
     end subroutine

@@ -48,12 +48,17 @@ module clima_radtran
     
     real(dp) :: diurnal_fac = 0.5_dp
     real(dp), allocatable :: zenith_u(:) !! cosine of the zenith angle in radians
-    real(dp), allocatable :: zenith_weights(:) !
+    real(dp), allocatable :: zenith_weights(:)
     !> surface albedo in each solar wavelength bin (sol%nw) 
     real(dp), allocatable :: surface_albedo(:) 
     !> surface emissivity in each IR wavelength bin (ir%nw) 
     real(dp), allocatable :: surface_emissivity(:) 
-    real(dp), allocatable :: photons_sol(:) ! (nw) mW/m2/Hz in each bin  
+    !> (nw) mW/m2/Hz in each bin from the input star file. This is 
+    !> later scaled by the variable `photon_scale_factor`.
+    real(dp), allocatable :: photons_sol(:)
+    !> A scale factor that is applied to `photons_sol` so that
+    !> bolometric luminosity can be easily changed.
+    real(dp) :: photon_scale_factor = 1.0_dp 
   
     type(ClimaRadtranWrk) :: wrk_ir
     type(ClimaRadtranWrk) :: wrk_sol
@@ -62,6 +67,8 @@ module clima_radtran
   contains
     procedure :: radiate => Radtran_radiate
     procedure :: TOA_fluxes => Radtran_TOA_fluxes
+    procedure :: set_bolometric_flux => Radtran_set_bolometric_flux
+    procedure :: bolometric_flux => Radtran_bolometric_flux
     procedure :: skin_temperature => Radtran_skin_temperature
     procedure :: equilibrium_temperature => Radtran_equilibrium_temperature
     procedure :: opacities2yaml => Radtran_opacities2yaml
@@ -176,9 +183,10 @@ contains
     else
       photon_scale_factor = 1.0_dp
     endif
+    rad%photon_scale_factor = photon_scale_factor
     ! photons hitting the planet
     allocate(rad%photons_sol(rad%sol%nw))
-    call read_stellar_flux(star_f, rad%sol%nw, rad%sol%wavl, photon_scale_factor, rad%photons_sol, err)
+    call read_stellar_flux(star_f, rad%sol%nw, rad%sol%wavl, rad%photons_sol, err)
     if (allocated(err)) return
 
     ! IR work arrays
@@ -255,7 +263,7 @@ contains
     ! Solar radiative transfer
     ierr = radiate(self%sol, &
                    self%surface_emissivity, &
-                   self%surface_albedo, self%diurnal_fac, self%photons_sol, &
+                   self%surface_albedo, self%diurnal_fac, self%photons_sol*self%photon_scale_factor, &
                    self%zenith_u, self%zenith_weights, &
                    P, T_surface, T, densities, dz, &
                    pdensities, radii, &
@@ -294,40 +302,44 @@ contains
 
   end subroutine
 
+  !> Sets the bolometric stellar flux by adjusting the `photon_scale_factor`.
+  subroutine Radtran_set_bolometric_flux(self, flux)
+    class(Radtran), target, intent(inout) :: self
+    real(dp), intent(in) :: flux !! Bolometric flux (W/m^2)
+    self%photon_scale_factor = 1.0_dp
+    self%photon_scale_factor = flux/self%bolometric_flux()
+  end subroutine
+
+  !> The bolometric stellar flux at the planet in W/m^2
+  function Radtran_bolometric_flux(self) result(flux)
+    class(Radtran), target, intent(inout) :: self
+    real(dp) :: flux !! Bolometric flux (W/m^2)
+    integer :: i
+
+    flux = 0.0_dp
+    do i = 1,self%sol%nw
+      flux = flux + self%photons_sol(i)*(self%sol%freq(i) - self%sol%freq(i+1))
+    enddo
+    flux = self%photon_scale_factor*flux/1.0e3_dp
+
+  end function
+
   !> The skin temperature
   function Radtran_skin_temperature(self, bond_albedo) result(T_skin)
     use clima_eqns, only: skin_temperature
     class(Radtran), target, intent(inout) :: self
-    real(dp), intent(in) :: bond_albedo
+    real(dp), intent(in) :: bond_albedo !! The bond albedo of a planet
     real(dp) :: T_skin
-
-    real(dp) :: stellar_radiation
-    integer :: i
-
-    stellar_radiation = 0.0_dp
-    do i = 1,self%sol%nw
-      stellar_radiation = stellar_radiation + self%photons_sol(i)*(self%sol%freq(i) - self%sol%freq(i+1))
-    enddo
-    stellar_radiation = stellar_radiation/1.0e3_dp
-    T_skin = skin_temperature(stellar_radiation, bond_albedo)
+    T_skin = skin_temperature(self%bolometric_flux(), bond_albedo)
   end function
 
   !> The equilibrium temperature
   function Radtran_equilibrium_temperature(self, bond_albedo) result(T_eq)
     use clima_eqns, only: equilibrium_temperature
     class(Radtran), target, intent(inout) :: self
-    real(dp), intent(in) :: bond_albedo
+    real(dp), intent(in) :: bond_albedo !! The bond albedo of a planet
     real(dp) :: T_eq
-
-    real(dp) :: stellar_radiation
-    integer :: i
-
-    stellar_radiation = 0.0_dp
-    do i = 1,self%sol%nw
-      stellar_radiation = stellar_radiation + self%photons_sol(i)*(self%sol%freq(i) - self%sol%freq(i+1))
-    enddo
-    stellar_radiation = stellar_radiation/1.0e3_dp
-    T_eq = equilibrium_temperature(stellar_radiation, bond_albedo)
+    T_eq = equilibrium_temperature(self%bolometric_flux(), bond_albedo)
   end function
 
   !> Returns a yaml string representing all opacities in the model.
