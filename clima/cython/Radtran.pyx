@@ -9,6 +9,28 @@ cdef class Radtran:
   def __dealloc__(self):
     pass
 
+  def set_bolometric_flux(self, double flux):
+    """Sets the bolometric stellar flux by adjusting the `photon_scale_factor`.
+
+    Parameters
+    ----------
+    flux : float
+        Bolometric flux (W/m^2)
+    """
+    rad_pxd.radtran_set_bolometric_flux_wrapper(self._ptr, &flux)
+
+  def bolometric_flux(self):
+    """The bolometric stellar flux at the planet in W/m^2
+
+    Returns 
+    -------
+    flux : float
+        Bolometric flux (W/m^2)
+    """
+    cdef double flux
+    rad_pxd.radtran_bolometric_flux_wrapper(self._ptr, &flux)
+    return flux
+
   def skin_temperature(self, double bond_albedo):
     """The skin temperature
 
@@ -25,6 +47,23 @@ cdef class Radtran:
     cdef double T_skin
     rad_pxd.radtran_skin_temperature_wrapper(self._ptr, &bond_albedo, &T_skin)
     return T_skin
+
+  def equilibrium_temperature(self, double bond_albedo):
+    """The equilibrium temperature
+
+    Parameters
+    ----------
+    bond_albedo : float
+        The bond albedo of a planet
+
+    Returns 
+    -------
+    float
+        The equilibrium temperature
+    """
+    cdef double T_eq
+    rad_pxd.radtran_equilibrium_temperature_wrapper(self._ptr, &bond_albedo, &T_eq)
+    return T_eq
 
   def opacities2yaml(self):
     """Returns a yaml string representing all opacities in the model.
@@ -130,6 +169,16 @@ cdef class Radtran:
       if arr.shape[0] != dim1:
         raise ClimaException('"surface_emissivity" is the wrong size')
       rad_pxd.radtran_surface_emissivity_set(self._ptr, &dim1, <double *>arr.data)
+
+  property photon_scale_factor:
+    """float. A scale factor that is applied to `photons_sol` so that
+    bolometric luminosity can be easily changed."""
+    def __get__(self):
+      cdef double val
+      rad_pxd.radtran_photon_scale_factor_get(self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      rad_pxd.radtran_photon_scale_factor_set(self._ptr, &val)
 
   property ir:
     "The OpticalProperties for longwave radiative transfer"

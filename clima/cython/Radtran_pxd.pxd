@@ -5,7 +5,13 @@ cdef extern from *:
   struct Radtran:
     pass
 
+cdef extern void radtran_set_bolometric_flux_wrapper(Radtran *ptr, double *flux)
+
+cdef extern void radtran_bolometric_flux_wrapper(Radtran *ptr, double *flux)
+
 cdef extern void radtran_skin_temperature_wrapper(Radtran *ptr, double *bond_albedo, double *T_skin)
+
+cdef extern void radtran_equilibrium_temperature_wrapper(Radtran *ptr, double *bond_albedo, double *T_eq)
 
 cdef extern void radtran_opacities2yaml_wrapper_1(Radtran *ptr, int *out_len, void **out_cp)
 cdef extern void radtran_opacities2yaml_wrapper_2(Radtran *ptr, void **out_cp, int *out_len, char* out_c)
@@ -33,6 +39,9 @@ cdef extern void radtran_surface_albedo_set(Radtran *ptr, int *dim1, double *arr
 cdef extern void radtran_surface_emissivity_get_size(Radtran *ptr, int *dim1)
 cdef extern void radtran_surface_emissivity_get(Radtran *ptr, int *dim1, double *arr)
 cdef extern void radtran_surface_emissivity_set(Radtran *ptr, int *dim1, double *arr)
+
+cdef extern void radtran_photon_scale_factor_get(Radtran *ptr, double *val)
+cdef extern void radtran_photon_scale_factor_set(Radtran *ptr, double *val)
 
 cdef extern void radtran_ir_get(Radtran *ptr, op_pxd.OpticalProperties **ptr1);
 

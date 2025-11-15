@@ -1,5 +1,23 @@
 ! Radtran
 
+subroutine radtran_set_bolometric_flux_wrapper(ptr, flux) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), value, intent(in) :: ptr
+  real(c_double), intent(in) :: flux
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  call rad%set_bolometric_flux(flux)
+end subroutine
+
+subroutine radtran_bolometric_flux_wrapper(ptr, flux) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), value, intent(in) :: ptr
+  real(c_double), intent(out) :: flux
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  flux = rad%bolometric_flux()
+end subroutine
+
 subroutine radtran_skin_temperature_wrapper(ptr, bond_albedo, T_skin) bind(c)
   use clima, only: Radtran
   type(c_ptr), value, intent(in) :: ptr
@@ -8,6 +26,16 @@ subroutine radtran_skin_temperature_wrapper(ptr, bond_albedo, T_skin) bind(c)
   type(Radtran), pointer :: rad
   call c_f_pointer(ptr, rad)
   T_skin = rad%skin_temperature(bond_albedo)
+end subroutine
+
+subroutine radtran_equilibrium_temperature_wrapper(ptr, bond_albedo, T_eq) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), value, intent(in) :: ptr
+  real(c_double), intent(in) :: bond_albedo
+  real(c_double), intent(out) :: T_eq
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  T_eq = rad%equilibrium_temperature(bond_albedo)
 end subroutine
 
 subroutine radtran_opacities2yaml_wrapper_1(ptr, out_len, out_cp) bind(c)
@@ -178,6 +206,24 @@ subroutine radtran_surface_emissivity_set(ptr, dim1, arr) bind(c)
   type(Radtran), pointer :: rad
   call c_f_pointer(ptr, rad)
   rad%surface_emissivity = arr
+end subroutine
+
+subroutine radtran_photon_scale_factor_get(ptr, val) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), value, intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  val = rad%photon_scale_factor
+end subroutine
+
+subroutine radtran_photon_scale_factor_set(ptr, val) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), value, intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  rad%photon_scale_factor = val
 end subroutine
 
 subroutine radtran_ir_get(ptr, ptr1) bind(c)
