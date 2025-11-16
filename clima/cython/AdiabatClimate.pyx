@@ -875,6 +875,15 @@ cdef class AdiabatClimate:
     def __set__(self, cbool val):
       wa_pxd.adiabatclimate_verbose_set(self._ptr, &val)
 
+  property f_i_surf:
+    "ndarray[double,ndim=1], shape (ng). Surface mixing ratios."
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.adiabatclimate_f_i_surf_get_size(self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.adiabatclimate_f_i_surf_get(self._ptr, &dim1, <double *>arr.data)
+      return arr
+
   property P_surf:
     "float. Surface pressure (dynes/cm^2)"
     def __get__(self):

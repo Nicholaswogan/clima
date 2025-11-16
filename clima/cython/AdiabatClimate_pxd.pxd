@@ -175,6 +175,9 @@ cdef extern void adiabatclimate_max_rc_iters_convection_set(AdiabatClimate *ptr,
 cdef extern void adiabatclimate_verbose_get(AdiabatClimate *ptr, bool *val)
 cdef extern void adiabatclimate_verbose_set(AdiabatClimate *ptr, bool *val)
 
+cdef extern void adiabatclimate_f_i_surf_get_size(AdiabatClimate *ptr, int *dim1)
+cdef extern void adiabatclimate_f_i_surf_get(AdiabatClimate *ptr, int *dim1, double *arr)
+
 cdef extern void adiabatclimate_p_surf_get(AdiabatClimate *ptr, double *val)
 
 cdef extern void adiabatclimate_p_trop_get(AdiabatClimate *ptr, double *val)

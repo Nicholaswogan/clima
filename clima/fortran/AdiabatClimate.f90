@@ -1086,6 +1086,25 @@ subroutine adiabatclimate_verbose_set(ptr, val) bind(c)
   c%verbose = val
 end subroutine
 
+subroutine adiabatclimate_f_i_surf_get_size(ptr, dim1) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  dim1 = size(c%f_i_surf,1)
+end subroutine
+
+subroutine adiabatclimate_f_i_surf_get(ptr, dim1, arr) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(out) :: arr(dim1)
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  arr = c%f_i_surf
+end subroutine
+
 subroutine adiabatclimate_p_surf_get(ptr, val) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), value, intent(in) :: ptr
