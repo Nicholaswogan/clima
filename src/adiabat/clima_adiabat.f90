@@ -121,6 +121,7 @@ module clima_adiabat
     logical :: verbose = .true. !! verbosity
     
     ! State of the atmosphere
+    real(dp), allocatable :: f_i_surf(:) !! Surface mixing ratios (ng)
     real(dp) :: P_surf !! Surface pressure (dynes/cm^2)
     real(dp) :: P_trop !! Tropopause pressure (dynes/cm^2)
     real(dp), allocatable :: P(:) !! pressure in each grid cell, dynes/cm^2 (nz)
@@ -311,7 +312,7 @@ contains
     allocate(c%ocean_fcns(c%sp%ng))
 
     ! allocate work variables
-    allocate(c%P(c%nz), c%T(c%nz), c%f_i(c%nz,c%sp%ng), c%z(c%nz), c%dz(c%nz))
+    allocate(c%f_i_surf(c%sp%ng), c%P(c%nz), c%T(c%nz), c%f_i(c%nz,c%sp%ng), c%z(c%nz), c%dz(c%nz))
     allocate(c%densities(c%nz,c%sp%ng))
     allocate(c%N_atmos(c%sp%ng),c%N_surface(c%sp%ng),c%N_ocean(c%sp%ng,c%sp%ng))
     allocate(c%pdensities(c%nz,c%sp%np),c%pradii(c%nz,c%sp%np))
@@ -365,6 +366,7 @@ contains
                       err)
     if (allocated(err)) return
 
+    self%f_i_surf = f_i_e(1,:)
     self%T_surf = T_surf
     self%P_surf = P_e(1)
     do i = 1,self%nz
@@ -439,6 +441,7 @@ contains
                      err)
     if (allocated(err)) return
     
+    self%f_i_surf = f_i_e(1,:)
     self%T_surf = T_surf
     self%P_surf = P_e(1)
     do i = 1,self%nz
@@ -582,6 +585,7 @@ contains
     self%N_surface = 0.0_dp
     self%N_ocean = 0.0_dp
 
+    self%f_i_surf = f_i_e(1,:)
     self%T_surf = T_e(1)
     self%P_surf = P_e(1)
     do i = 1,self%nz
@@ -1337,7 +1341,7 @@ contains
     ! gravity
     grav = gravity(self%planet_radius, self%planet_mass, 0.0_dp)
 
-    ! mean molecular weight at surface
+    ! mean molecular weight in first layer
     mubar = 0.0_dp
     do i = 1,self%sp%ng
       mubar = mubar + self%f_i(1,i)*self%sp%g(i)%mass

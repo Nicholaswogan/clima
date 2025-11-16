@@ -46,6 +46,7 @@ contains
 
     z_e(2*self%nz+1) = z_e(2*self%nz) + (z_e(2*self%nz) - z_e(2*self%nz-1))
 
+    self%f_i_surf = f_i_e(1,:)
     self%P_surf = P_e(1)
     do i = 1,self%nz
       self%P(i) = P_e(2*i)
