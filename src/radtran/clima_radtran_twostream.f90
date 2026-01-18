@@ -175,6 +175,9 @@ contains
     integer :: i, l
     real(dp) :: wrk_real, Ssfc, Rsfc
     real(dp) :: b0n, b1n
+    real(dp) :: b_avg
+
+    real(dp), parameter :: tau_min = 1.0e-10_dp
     
     real(dp), parameter :: u1 = 0.5_dp ! (Hemispheric mean)
     real(dp), parameter :: norm = 2.0_dp*pi*u1
@@ -205,8 +208,14 @@ contains
     ! C+ and C- (Equation 27)
     ! norm = 2.0_dp*pi*u1 (parameter)
     do i=1,nz
-      b0n = bplanck(i)
-      b1n = (bplanck(i+1) - b0n)/tau(i)
+      if (tau(i) <= tau_min) then
+        b_avg = 0.5_dp*(bplanck(i) + bplanck(i+1))
+        b0n = b_avg
+        b1n = 0.0_dp
+      else
+        b0n = bplanck(i)
+        b1n = (bplanck(i+1) - b0n)/tau(i)
+      endif
       
       cp0(i) = norm*(b0n + b1n*(1.0_dp/(gam1(i)+gam2(i))))
       cpb(i) = norm*(b0n + b1n*(tau(i) + 1.0_dp/(gam1(i)+gam2(i))))

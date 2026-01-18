@@ -4,6 +4,7 @@ module clima_radtran_radiate
 
   real(dp), parameter :: max_w0 = 0.99999_dp
   real(dp), parameter :: max_gt = 0.999999_dp
+  real(dp), parameter :: tau_min = 1.0e-20_dp
   
 contains
   
@@ -253,10 +254,10 @@ contains
       do i = 1,op%npart
         do k = 1,nz
           n = nz+1-k
-          rz%gt(n) = rz%gt(n) + rw%gt(k,i)*rz%tausp_1(n,i)/(rz%tausp(n) + rz%tausg(n) + rz%tausc(n))
+          rz%gt(n) = rz%gt(n) + rw%gt(k,i)*rz%tausp_1(n,i)/max(tau_min, (rz%tausp(n) + rz%tausg(n) + rz%tausc(n)))
         enddo
       enddo
-      rz%gt = rz%gt + rz%g0c*rz%tausc/(rz%tausp + rz%tausg + rz%tausc)
+      rz%gt = rz%gt + rz%g0c*rz%tausc/max(tau_min, (rz%tausp + rz%tausg + rz%tausc))
       do k = 1,nz
         n = nz+1-k
         rz%gt(n) = min(rz%gt(n), max_gt)
@@ -442,7 +443,11 @@ contains
       rz%tau(:) = rz%tausg(:) + rz%taua(:) + rz%taup(:) + rz%taua_1(:) &
                   + rw%tau_grey_sum(:) + rz%tauc(:)
       do j = 1,nz
-        rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j) + rz%tausc(j))/rz%tau(j))
+        if (rz%tau(j) <= tau_min) then
+          rz%w0(j) = 0.0_dp
+        else
+          rz%w0(j) = min(max_w0,(rz%tausg(j) + rz%tausp(j) + rz%tausc(j))/rz%tau(j))
+        endif
       enddo
 
       if (op%op_type == FarUVOpticalProperties .or. &
