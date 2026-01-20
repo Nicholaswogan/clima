@@ -472,6 +472,19 @@ contains
           call update_f_i_dry(d, Pn, d%f_i_cur)
           d%stopping_reason = ReachedPtop
 
+          ! Ensure we make progress away from the root. It is possible (especially with noisy
+          ! prescribed radiative T profiles) to repeatedly detect roots extremely close together,
+          ! which can lead to an excessive number of restarts. Nudge the restart pressure toward
+          ! Ptop by a few ulps and recompute the state from the previous segment's dense output.
+          if (Pn > Ptop) then
+            Pn = max(Ptop, Pn - 10.0_dp*spacing(Pn))
+            if (d%in_convecting_region) then
+              u = [dop%contd8(1, Pn), dop%contd8(2, Pn)]
+            else
+              u = [dop%contd8(1, Pn)]
+            endif
+          endif
+
         endblock; endif
 
         if (kk > 100000) then
