@@ -209,6 +209,10 @@ contains
     ! norm = 2.0_dp*pi*u1 (parameter)
     do i=1,nz
       if (tau(i) <= tau_min) then
+        ! NOTE: Toon et al. effectively use a linear-in-optical-depth source
+        ! function slope b1n = (B_{i+1}-B_i)/tau(i). For very optically thin layers
+        ! this is numerically unstable (0/0 or noise amplification), so we instead
+        ! take the tau->0 limit: constant source B ≈ mean(B_i,B_{i+1}) with zero slope.
         b_avg = 0.5_dp*(bplanck(i) + bplanck(i+1))
         b0n = b_avg
         b1n = 0.0_dp
