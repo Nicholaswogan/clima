@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION "3.14")
 cmake_policy(SET CMP0148 OLD) # To suppress a warning emerging from scikit-build
 
-project(Clima LANGUAGES Fortran C VERSION "0.5.14")
-set(PHOTOCHEM_CLIMA_DATA_VERSION "0.3.0")
+project(Clima LANGUAGES Fortran C VERSION "0.5.15")
+set(PHOTOCHEM_CLIMA_DATA_VERSION "0.3.1")
 
 set(CMAKE_Fortran_MODULE_DIRECTORY "${CMAKE_BINARY_DIR}/modules")
 
