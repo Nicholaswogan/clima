@@ -631,17 +631,28 @@ contains
       do i = 1,self%nz
         if (.not.self%convecting_with_below(i)) then
           difference(i) = self%lapse_rate(i) - self%lapse_rate_intended(i)
-        endif
-        if (difference(i) >= 0.0_dp) then
-          self%convecting_with_below(i) = .true.
+          if (difference(i) > max(self%convective_hysteresis_min, &
+                                  self%convective_hysteresis_frac_on*abs(self%lapse_rate_intended(i)))) then
+            self%convecting_with_below(i) = .true.
+          endif
         endif
       enddo
     else
       do i = 1,self%nz
-        if (difference(i) >= 0.0_dp) then
-          self%convecting_with_below(i) = .true.
+        if (convecting_with_below_save(i)) then
+          if (difference(i) < -max(self%convective_hysteresis_min, &
+                                   self%convective_hysteresis_frac_off*abs(self%lapse_rate_intended(i)))) then
+            self%convecting_with_below(i) = .false.
+          else
+            self%convecting_with_below(i) = .true.
+          endif
         else
-          self%convecting_with_below(i) = .false.
+          if (difference(i) > max(self%convective_hysteresis_min, &
+                                  self%convective_hysteresis_frac_on*abs(self%lapse_rate_intended(i)))) then
+            self%convecting_with_below(i) = .true.
+          else
+            self%convecting_with_below(i) = .false.
+          endif
         endif
       enddo
     endif

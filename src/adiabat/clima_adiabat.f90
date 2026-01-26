@@ -98,6 +98,14 @@ module clima_adiabat
     real(dp), allocatable :: lapse_rate_intended(:) !! The computed lapse rate (dlnT/dlnP)
     !> The size of the newton step.
     real(dp) :: convective_newton_step_size = 1.0e-1_dp
+    ! Hysteresis parameters for updating convective mask in RCE.
+    ! A radiative layer becomes convective only if superadiabaticity exceeds
+    ! `max(convective_hysteresis_min, convective_hysteresis_frac_on*|lapse_rate_intended|)`.
+    ! A convective layer becomes radiative only if it is stable by more than
+    ! `max(convective_hysteresis_min, convective_hysteresis_frac_off*|lapse_rate_intended|)`.
+    real(dp) :: convective_hysteresis_frac_on = 2.0e-2_dp
+    real(dp) :: convective_hysteresis_frac_off = 2.0e-2_dp
+    real(dp) :: convective_hysteresis_min = 1.0e-3_dp
 
     ! tolerances
     !> Relative tolerance of integration
