@@ -590,6 +590,10 @@ contains
     real(dp), allocatable :: lapse_rate_perturb(:), difference(:)
     logical, allocatable :: convecting_with_below_save(:)
     integer :: i, ierr
+    integer :: bt
+    real(dp) :: alpha, alpha_lim
+    character(:), allocatable :: err_trial
+    logical :: got_perturb
 
     ! work storage
     allocate(F(size(T_in)),dFdT(size(T_in),size(T_in)),deltaT(size(T_in)),T_perturb(size(T_in)))
@@ -612,13 +616,43 @@ contains
       return
     endif
 
-    ! Newton step
-    T_perturb = deltaT*self%convective_newton_step_size + T_in
+    ! Trial Newton step (used only for convective classification). Safeguard the step
+    ! size so `make_profile_rc` does not see invalid temperature profiles.
+    alpha = self%convective_newton_step_size
+    if (self%convective_newton_max_deltaT > 0.0_dp) then
+      alpha_lim = self%convective_newton_max_deltaT/max(1.0_dp, maxval(abs(deltaT)))
+      alpha = min(alpha, alpha_lim)
+    endif
+    alpha = max(0.0_dp, alpha)
 
-    ! Compute perturbed lapse rate
-    call self%make_profile_rc(P_i_surf, T_perturb, err)
-    if (allocated(err)) return
-    lapse_rate_perturb = self%lapse_rate
+    got_perturb = .false.
+    do bt = 1,20
+      T_perturb = deltaT*alpha + T_in
+
+      ! Ensure there are no invalid temperatures
+      if (minval(T_perturb) < 1.0_dp) then    
+        alpha = 0.5_dp*alpha
+        cycle
+      endif
+
+      ! Try to get a perturbed T profile.
+      call self%make_profile_rc(P_i_surf, T_perturb, err_trial)
+      if (.not. allocated(err_trial)) then
+        lapse_rate_perturb = self%lapse_rate
+        got_perturb = .true.
+        exit
+      else
+        deallocate(err_trial)
+        alpha = 0.5_dp*alpha
+      endif
+      
+      if (alpha < 1.0e-8_dp) exit
+    enddo
+
+    if (.not. got_perturb) then
+      err = 'Failed to update convecting zones.'
+      return
+    endif
 
     ! Re-update all variables at T_in, including self%lapse_rate_intended
     call AdiabatClimate_objective(self, P_i_surf, T_in, .true., F, err)
