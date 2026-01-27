@@ -792,14 +792,14 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_lapse_rate_intended_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
-  property convective_newton_step_size:
-    "float. The size of the newton step."
+  property convective_newton_max_deltaT:
+    "float. Maximum |deltaT| (K) allowed in the convective classification step."
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_convective_newton_step_size_get(self._ptr, &val)
+      wa_pxd.adiabatclimate_convective_newton_max_deltat_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_convective_newton_step_size_set(self._ptr, &val)
+      wa_pxd.adiabatclimate_convective_newton_max_deltat_set(self._ptr, &val)
   
   property rtol:
     "float. Relative tolerance of integration."

@@ -618,10 +618,11 @@ contains
 
     ! Trial Newton step (used only for convective classification). Safeguard the step
     ! size so `make_profile_rc` does not see invalid temperature profiles.
-    alpha = self%convective_newton_step_size
     if (self%convective_newton_max_deltaT > 0.0_dp) then
       alpha_lim = self%convective_newton_max_deltaT/max(1.0_dp, maxval(abs(deltaT)))
-      alpha = min(alpha, alpha_lim)
+      alpha = min(1.0_dp, alpha_lim)
+    else
+      alpha = 1.0_dp
     endif
     alpha = max(0.0_dp, alpha)
 

@@ -148,8 +148,8 @@ cdef extern void adiabatclimate_lapse_rate_get(AdiabatClimate *ptr, int *dim1, d
 cdef extern void adiabatclimate_lapse_rate_intended_get_size(AdiabatClimate *ptr, int *dim1)
 cdef extern void adiabatclimate_lapse_rate_intended_get(AdiabatClimate *ptr, int *dim1, double *arr)
 
-cdef extern void adiabatclimate_convective_newton_step_size_get(AdiabatClimate *ptr, double *val)
-cdef extern void adiabatclimate_convective_newton_step_size_set(AdiabatClimate *ptr, double *val)
+cdef extern void adiabatclimate_convective_newton_max_deltat_get(AdiabatClimate *ptr, double *val)
+cdef extern void adiabatclimate_convective_newton_max_deltat_set(AdiabatClimate *ptr, double *val)
 
 cdef extern void adiabatclimate_rtol_get(AdiabatClimate *ptr, double *val)
 cdef extern void adiabatclimate_rtol_set(AdiabatClimate *ptr, double *val)
@@ -216,6 +216,5 @@ cdef extern void adiabatclimate_n_surface_get(AdiabatClimate *ptr, int *dim1, do
 
 cdef extern void adiabatclimate_n_ocean_get_size(AdiabatClimate *ptr, int *dim1, int *dim2)
 cdef extern void adiabatclimate_n_ocean_get(AdiabatClimate *ptr, int *dim1, int *dim2, double *arr)
-
 
 

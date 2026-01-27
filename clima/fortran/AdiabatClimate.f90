@@ -924,22 +924,22 @@ subroutine adiabatclimate_lapse_rate_intended_get(ptr, dim1, arr) bind(c)
   arr = c%lapse_rate_intended
 end subroutine
 
-subroutine adiabatclimate_convective_newton_step_size_get(ptr, val) bind(c)
+subroutine adiabatclimate_convective_newton_max_deltat_get(ptr, val) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), value, intent(in) :: ptr
   real(c_double), intent(out) :: val
   type(AdiabatClimate), pointer :: c
   call c_f_pointer(ptr, c)
-  val = c%convective_newton_step_size
+  val = c%convective_newton_max_deltaT
 end subroutine
 
-subroutine adiabatclimate_convective_newton_step_size_set(ptr, val) bind(c)
+subroutine adiabatclimate_convective_newton_max_deltat_set(ptr, val) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), value, intent(in) :: ptr
   real(c_double), intent(in) :: val
   type(AdiabatClimate), pointer :: c
   call c_f_pointer(ptr, c)
-  c%convective_newton_step_size = val
+  c%convective_newton_max_deltaT = val
 end subroutine
 
 subroutine adiabatclimate_rtol_get(ptr, val) bind(c)
