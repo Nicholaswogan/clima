@@ -106,7 +106,8 @@ module clima_adiabat
     real(dp) :: convective_hysteresis_frac_on = 2.0e-2_dp
     real(dp) :: convective_hysteresis_frac_off = 2.0e-2_dp
     real(dp) :: convective_hysteresis_min = 1.0e-3_dp
-    !> Boundary-motion limiter for convective mask updates.
+    !> Boundary-motion limiter for convective mask updates. If < 0, no limiter
+    !> is applied.
     integer :: convective_max_boundary_shift = 1
 
     ! tolerances
