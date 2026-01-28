@@ -150,8 +150,10 @@ cdef extern void adiabatclimate_lapse_rate_intended_get(AdiabatClimate *ptr, int
 
 cdef extern void adiabatclimate_convective_newton_max_deltat_get(AdiabatClimate *ptr, double *val)
 cdef extern void adiabatclimate_convective_newton_max_deltat_set(AdiabatClimate *ptr, double *val)
+
 cdef extern void adiabatclimate_convective_max_boundary_shift_get(AdiabatClimate *ptr, int *val)
 cdef extern void adiabatclimate_convective_max_boundary_shift_set(AdiabatClimate *ptr, int *val)
+
 cdef extern void adiabatclimate_prevent_overconvection_get(AdiabatClimate *ptr, bint *val)
 cdef extern void adiabatclimate_prevent_overconvection_set(AdiabatClimate *ptr, bint *val)
 
