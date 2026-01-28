@@ -760,9 +760,12 @@ contains
       do while (i <= self%nz)
         if (.not.convecting_with_below_save(i) .and. convecting_with_below_candidate(i)) then
           l = i
-          do while (i <= self%nz .and. convecting_with_below_candidate(i) .and. &
-                    .not.convecting_with_below_save(i))
-            i = i + 1
+          do while (i <= self%nz)
+            if (convecting_with_below_candidate(i) .and. .not.convecting_with_below_save(i)) then
+              i = i + 1
+            else
+              exit
+            endif
           enddo
           r = i - 1
           len = r - l + 1
