@@ -703,12 +703,16 @@ contains
     ! Save hysteresis result as candidate mask for boundary limiting / nucleation.
     convecting_with_below_candidate = self%convecting_with_below
 
-    ! Boundary-motion limiter and controlled new-island nucleation (only when
-    ! convection can switch both ways).
-    if (.not.no_convection_to_radiation) then
+    ! Boundary-motion limiter and controlled new-island nucleation.
+    ! When no_convection_to_radiation is true, only allow radiative->convective
+    ! growth (no contraction).
+    if (self%convective_max_boundary_shift < 0) then
+      ! No limiter: adopt candidate mask directly.
+      self%convecting_with_below = convecting_with_below_candidate
+    else
       ! Start from previous mask and only allow limited boundary motion.
       self%convecting_with_below = convecting_with_below_save
-      shift = max(0, self%convective_max_boundary_shift)
+      shift = self%convective_max_boundary_shift
 
       if (shift > 0) then
         i = 1
@@ -721,7 +725,7 @@ contains
             enddo
             r = i - 1
 
-            ! candidate expansion/contraction limited by shift
+            ! candidate expansion limited by shift
             if (convecting_with_below_candidate(l)) then
               ! left boundary can move down by <= shift
               if (l - shift >= 1) then
@@ -740,12 +744,14 @@ contains
             endif
 
             ! allow contraction inside the zone based on candidate (only within shift)
-            if (shift < (r-l+1)) then
-              if (.not.any(convecting_with_below_candidate(l:l+shift))) then
-                self%convecting_with_below(l:l+shift) = .false.
-              endif
-              if (.not.any(convecting_with_below_candidate(r-shift:r))) then
-                self%convecting_with_below(r-shift:r) = .false.
+            if (.not.no_convection_to_radiation) then
+              if (shift < (r-l+1)) then
+                if (.not.any(convecting_with_below_candidate(l:l+shift))) then
+                  self%convecting_with_below(l:l+shift) = .false.
+                endif
+                if (.not.any(convecting_with_below_candidate(r-shift:r))) then
+                  self%convecting_with_below(r-shift:r) = .false.
+                endif
               endif
             endif
           else
@@ -754,8 +760,7 @@ contains
         enddo
       endif
 
-      ! Allow new convective islands if instability is strong enough and the
-      ! island meets the minimum thickness requirement.
+      ! Allow new convective islands if instability is strong enough.
       i = 1
       do while (i <= self%nz)
         if (.not.convecting_with_below_save(i) .and. convecting_with_below_candidate(i)) then
