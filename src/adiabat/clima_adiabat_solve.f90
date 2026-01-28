@@ -714,8 +714,12 @@ contains
       do while (i <= self%nz)
         if (self%convecting_with_below(i)) then
           l = i
-          do while (i <= self%nz .and. self%convecting_with_below(i))
-            i = i + 1
+          do while (i <= self%nz)
+            if (self%convecting_with_below(i)) then
+              i = i + 1
+            else
+              exit
+            endif
           enddo
           r = i - 1
           if (r < self%nz) then
@@ -739,8 +743,12 @@ contains
       do while (i <= self%nz)
         if (convecting_with_below_save(i)) then
           n_zones_prev = n_zones_prev + 1
-          do while (i <= self%nz .and. convecting_with_below_save(i))
-            i = i + 1
+          do while (i <= self%nz)
+            if (convecting_with_below_save(i)) then
+              i = i + 1
+            else
+              exit
+            endif
           enddo
         else
           i = i + 1
@@ -784,9 +792,13 @@ contains
       if (convecting_with_below_save(i)) then
         ! existing convective zone in previous mask
         l = i
-        do while (i <= self%nz .and. convecting_with_below_save(i))
-          i = i + 1
-        enddo
+          do while (i <= self%nz)
+            if (convecting_with_below_save(i)) then
+              i = i + 1
+            else
+              exit
+            endif
+          enddo
         r = i - 1
 
         ! candidate expansion limited by shift
