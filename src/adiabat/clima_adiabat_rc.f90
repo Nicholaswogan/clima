@@ -343,7 +343,7 @@ contains
 
     type(dop853_rc) :: dop
     logical :: status_ok, convecting_with_below
-    integer :: idid, i, j, k, n, kk
+    integer :: idid, i, j, k, n, kk, j_prev
     real(dp) :: Pn, T_root, Ptop
     real(dp), allocatable :: u(:)
     integer, allocatable :: icomp(:)
@@ -422,6 +422,7 @@ contains
         call update_f_i_dry(d, Pn, d%f_i(1,:))
       endif
 
+      j_prev = d%j
       call dop%initialize(fcn=right_hand_side_dop, solout=solout_dop, n=n, &
                         iprint=0, icomp=icomp, status_ok=status_ok)
       dop%d => d
@@ -495,6 +496,11 @@ contains
         kk = kk + 1
       enddo
 
+      if (d%j == j_prev) then
+        err = 'Integration stalled in clima_adiabat_rc: no progress in j'
+        return
+      endif
+
       if (k > 2*d%nz) then
         print*,'Terrible out-of-bounds error in clima_adiabat_rc. Report this bug!'
         stop 1
@@ -517,7 +523,7 @@ contains
     
     type(AdiabatRCProfileData), pointer :: d
     real(dp) :: z_cur, P_cur, T_cur, P_old
-    real(dp) :: T_i, PP, f_dry
+    real(dp) :: T_i, PP, f_dry, P_tol
     logical :: super_saturated
     integer :: i
     
@@ -586,8 +592,11 @@ contains
         PP = P_cur
       endif
 
-      if (d%P(d%j) <= P_old .and. d%P(d%j) >= PP) then
-        do while (d%P(d%j) >= PP)
+      ! Tolerance for P comparisons: use a relative scale plus a machine-precision guard.
+      P_tol = max(1.0e-10_dp*max(abs(P_old), abs(PP), abs(d%P(d%j))), &
+                  10.0_dp*spacing(max(P_old, PP)))
+      if (d%P(d%j) <= P_old .and. d%P(d%j) >= PP - P_tol) then
+        do while (d%P(d%j) >= PP - P_tol)
           d%z(d%j) = self%contd8(1, d%P(d%j))
           if (d%in_convecting_region) then
             T_i = self%contd8(2, d%P(d%j))
