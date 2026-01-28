@@ -942,6 +942,42 @@ subroutine adiabatclimate_convective_newton_max_deltat_set(ptr, val) bind(c)
   c%convective_newton_max_deltaT = val
 end subroutine
 
+subroutine adiabatclimate_convective_max_boundary_shift_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%convective_max_boundary_shift
+end subroutine
+
+subroutine adiabatclimate_convective_max_boundary_shift_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%convective_max_boundary_shift = val
+end subroutine
+
+subroutine adiabatclimate_prevent_overconvection_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  logical(c_bool), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%prevent_overconvection
+end subroutine
+
+subroutine adiabatclimate_prevent_overconvection_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  logical(c_bool), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%prevent_overconvection = val
+end subroutine
+
 subroutine adiabatclimate_rtol_get(ptr, val) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), value, intent(in) :: ptr

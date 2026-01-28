@@ -801,6 +801,24 @@ cdef class AdiabatClimate:
     def __set__(self, double val):
       wa_pxd.adiabatclimate_convective_newton_max_deltat_set(self._ptr, &val)
   
+  property convective_max_boundary_shift:
+    "int. Boundary-motion limiter for convective mask updates. If < 0, no limiter is applied."
+    def __get__(self):
+      cdef int val
+      wa_pxd.adiabatclimate_convective_max_boundary_shift_get(self._ptr, &val)
+      return val
+    def __set__(self, int val):
+      wa_pxd.adiabatclimate_convective_max_boundary_shift_set(self._ptr, &val)
+
+  property prevent_overconvection:
+    "bool. If true, shrink convective tops when a strong inversion exists above."
+    def __get__(self):
+      cdef bint val
+      wa_pxd.adiabatclimate_prevent_overconvection_get(self._ptr, &val)
+      return bool(val)
+    def __set__(self, bint val):
+      wa_pxd.adiabatclimate_prevent_overconvection_set(self._ptr, &val)
+
   property rtol:
     "float. Relative tolerance of integration."
     def __get__(self):
