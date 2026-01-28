@@ -597,6 +597,7 @@ contains
     logical :: got_perturb
     real(dp) :: thresh_on, thresh_off
     integer :: n_flip_on, n_flip_off, n_zones_prev
+    integer :: l, r
 
     ! work storage
     allocate(F(size(T_in)),dFdT(size(T_in),size(T_in)),deltaT(size(T_in)),T_perturb(size(T_in)))
@@ -705,6 +706,29 @@ contains
     ! Apply limiter to control mask changes (boundary motion and nucleation).
     call AdiabatClimate_apply_convective_mask_limiter(self, convecting_with_below_save, &
         convecting_with_below_candidate, difference, no_convection_to_radiation)
+
+    ! Post-limiter safeguard: if there is a strong inversion just above a convective
+    ! top, force that top layer to revert to radiative.
+    if (self%prevent_overconvection) then
+      i = 1
+      do while (i <= self%nz)
+        if (self%convecting_with_below(i)) then
+          l = i
+          do while (i <= self%nz .and. self%convecting_with_below(i))
+            i = i + 1
+          enddo
+          r = i - 1
+          if (r < self%nz) then
+            if (self%lapse_rate(r+1) < -max(self%convective_hysteresis_min, &
+                self%convective_hysteresis_frac_off*abs(self%lapse_rate_intended(r+1)))) then
+              self%convecting_with_below(r) = .false.
+            endif
+          endif
+        else
+          i = i + 1
+        endif
+      enddo
+    endif
 
     call AdiabatClimate_set_convecting_zones(self, self%convecting_with_below, err)
     if (allocated(err)) return

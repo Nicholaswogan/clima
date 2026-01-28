@@ -109,6 +109,8 @@ module clima_adiabat
     !> Boundary-motion limiter for convective mask updates. If < 0, no limiter
     !> is applied.
     integer :: convective_max_boundary_shift = 1
+    !> If true, shrink convective tops when a strong inversion exists just above.
+    logical :: prevent_overconvection = .true.
 
     ! tolerances
     !> Relative tolerance of integration
