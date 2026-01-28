@@ -589,15 +589,20 @@ contains
     real(dp), allocatable :: F(:), dFdT(:,:), deltaT(:), T_perturb(:)
     real(dp), allocatable :: lapse_rate_perturb(:), difference(:)
     logical, allocatable :: convecting_with_below_save(:)
+    logical, allocatable :: convecting_with_below_candidate(:)
     integer :: i, ierr
     integer :: bt
     real(dp) :: alpha, alpha_lim
     character(:), allocatable :: err_trial
     logical :: got_perturb
+    real(dp) :: thresh_on, thresh_off
+    integer :: l, r, shift, len
+    integer :: n_flip_on, n_flip_off, n_zones_prev
 
     ! work storage
     allocate(F(size(T_in)),dFdT(size(T_in),size(T_in)),deltaT(size(T_in)),T_perturb(size(T_in)))
     allocate(lapse_rate_perturb(self%nz),difference(self%nz))
+    allocate(convecting_with_below_candidate(self%nz))
 
     convecting_with_below_save = self%convecting_with_below
     self%convecting_with_below = .false.
@@ -666,24 +671,27 @@ contains
       do i = 1,self%nz
         if (.not.self%convecting_with_below(i)) then
           difference(i) = self%lapse_rate(i) - self%lapse_rate_intended(i)
-          if (difference(i) > max(self%convective_hysteresis_min, &
-                                  self%convective_hysteresis_frac_on*abs(self%lapse_rate_intended(i)))) then
+          thresh_on = max(self%convective_hysteresis_min, &
+                           self%convective_hysteresis_frac_on*abs(self%lapse_rate_intended(i)))
+          if (difference(i) > thresh_on) then
             self%convecting_with_below(i) = .true.
           endif
         endif
       enddo
     else
       do i = 1,self%nz
+        thresh_on = max(self%convective_hysteresis_min, &
+                         self%convective_hysteresis_frac_on*abs(self%lapse_rate_intended(i)))
+        thresh_off = max(self%convective_hysteresis_min, &
+                          self%convective_hysteresis_frac_off*abs(self%lapse_rate_intended(i)))
         if (convecting_with_below_save(i)) then
-          if (difference(i) < -max(self%convective_hysteresis_min, &
-                                   self%convective_hysteresis_frac_off*abs(self%lapse_rate_intended(i)))) then
+          if (difference(i) < -thresh_off) then
             self%convecting_with_below(i) = .false.
           else
             self%convecting_with_below(i) = .true.
           endif
         else
-          if (difference(i) > max(self%convective_hysteresis_min, &
-                                  self%convective_hysteresis_frac_on*abs(self%lapse_rate_intended(i)))) then
+          if (difference(i) > thresh_on) then
             self%convecting_with_below(i) = .true.
           else
             self%convecting_with_below(i) = .false.
@@ -692,8 +700,110 @@ contains
       enddo
     endif
 
+    ! Save hysteresis result as candidate mask for boundary limiting / nucleation.
+    convecting_with_below_candidate = self%convecting_with_below
+
+    ! Boundary-motion limiter and controlled new-island nucleation (only when
+    ! convection can switch both ways).
+    if (.not.no_convection_to_radiation) then
+      ! Start from previous mask and only allow limited boundary motion.
+      self%convecting_with_below = convecting_with_below_save
+      shift = max(0, self%convective_max_boundary_shift)
+
+      if (shift > 0) then
+        i = 1
+        do while (i <= self%nz)
+          if (convecting_with_below_save(i)) then
+            ! existing convective zone in previous mask
+            l = i
+            do while (i <= self%nz .and. convecting_with_below_save(i))
+              i = i + 1
+            enddo
+            r = i - 1
+
+            ! candidate expansion/contraction limited by shift
+            if (convecting_with_below_candidate(l)) then
+              ! left boundary can move down by <= shift
+              if (l - shift >= 1) then
+                if (any(convecting_with_below_candidate(l-shift:l-1))) then
+                  self%convecting_with_below(l-shift:l-1) = .true.
+                endif
+              endif
+            endif
+            if (convecting_with_below_candidate(r)) then
+              ! right boundary can move up by <= shift
+              if (r + shift <= self%nz) then
+                if (any(convecting_with_below_candidate(r+1:r+shift))) then
+                  self%convecting_with_below(r+1:r+shift) = .true.
+                endif
+              endif
+            endif
+
+            ! allow contraction inside the zone based on candidate (only within shift)
+            if (shift < (r-l+1)) then
+              if (.not.any(convecting_with_below_candidate(l:l+shift))) then
+                self%convecting_with_below(l:l+shift) = .false.
+              endif
+              if (.not.any(convecting_with_below_candidate(r-shift:r))) then
+                self%convecting_with_below(r-shift:r) = .false.
+              endif
+            endif
+          else
+            i = i + 1
+          endif
+        enddo
+      endif
+
+      ! Allow new convective islands if instability is strong enough and the
+      ! island meets the minimum thickness requirement.
+      i = 1
+      do while (i <= self%nz)
+        if (.not.convecting_with_below_save(i) .and. convecting_with_below_candidate(i)) then
+          l = i
+          do while (i <= self%nz .and. convecting_with_below_candidate(i) .and. &
+                    .not.convecting_with_below_save(i))
+            i = i + 1
+          enddo
+          r = i - 1
+          len = r - l + 1
+
+          ! require sufficiently strong instability within the candidate island
+          if (maxval(difference(l:r)) > max(self%convective_hysteresis_min, &
+              self%convective_hysteresis_frac_on*maxval(abs(self%lapse_rate_intended(l:r))))) then
+            ! cap nucleation size to 2*shift per iteration
+            if (len <= 2*shift) then
+              self%convecting_with_below(l:r) = .true.
+            else
+              self%convecting_with_below(l:l+2*shift-1) = .true.
+            endif
+          endif
+        else
+          i = i + 1
+        endif
+      enddo
+    endif
+
     call AdiabatClimate_set_convecting_zones(self, self%convecting_with_below, err)
     if (allocated(err)) return
+
+    if (self%verbose) then
+      n_zones_prev = 0
+      i = 1
+      do while (i <= self%nz)
+        if (convecting_with_below_save(i)) then
+          n_zones_prev = n_zones_prev + 1
+          do while (i <= self%nz .and. convecting_with_below_save(i))
+            i = i + 1
+          enddo
+        else
+          i = i + 1
+        endif
+      enddo
+      n_flip_on = count(.not.convecting_with_below_save .and. self%convecting_with_below)
+      n_flip_off = count(convecting_with_below_save .and. .not.self%convecting_with_below)
+      print"(1x,'Conv mask: +',i0,'  -',i0,'  zones ',i0,'->',i0)", &
+            n_flip_on, n_flip_off, n_zones_prev, self%n_convecting_zones
+    endif
 
   end subroutine
 

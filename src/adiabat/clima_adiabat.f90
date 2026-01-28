@@ -106,6 +106,8 @@ module clima_adiabat
     real(dp) :: convective_hysteresis_frac_on = 2.0e-2_dp
     real(dp) :: convective_hysteresis_frac_off = 2.0e-2_dp
     real(dp) :: convective_hysteresis_min = 1.0e-3_dp
+    !> Boundary-motion limiter for convective mask updates.
+    integer :: convective_max_boundary_shift = 1
 
     ! tolerances
     !> Relative tolerance of integration
@@ -119,10 +121,10 @@ module clima_adiabat
     !> xtol for RC equilibrium
     real(dp) :: xtol_rc = 1.0e-5_dp
     !> Max number of iterations in the RCE routine
-    integer :: max_rc_iters = 10
+    integer :: max_rc_iters = 30
     !> Max number of iterations for which convective layers can
     !> be converged to radiative layers in the RCE routine
-    integer :: max_rc_iters_convection = 5
+    integer :: max_rc_iters_convection = 10
     !> If False, then the jacobian calculation in RCE does not recompute
     !> solar radiative transfer.
     logical :: compute_solar_in_jac = .false.
