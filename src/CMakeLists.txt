@@ -52,7 +52,9 @@ add_library(clima
   clima.f90
 )
 target_link_libraries(clima 
-  fortran-yaml-c  
+  fortran-yaml-c
+  sundials_fcvode_mod 
+  sundials_cvode   
   h5fortran 
   futils 
   finterp

@@ -2,12 +2,67 @@ module clima_useful
   use clima_const, only: dp
   use minpack_module, only: fcn_hybrj
   use h5fortran, only: hdf5_file
+
+  use, intrinsic :: iso_c_binding, only: c_double, c_int, c_long, c_ptr, c_null_ptr
+  use fsundials_nvector_mod, only: N_Vector
+  use fsundials_matrix_mod, only: SUNMatrix
+  use fsundials_linearsolver_mod, only: SUNLinearSolver
   implicit none
   private
 
   public :: hdf5_file_closer
   public :: MinpackHybrd1Vars, MinpackHybrj
   public :: linear_solve
+  public :: SundialsCVode
+
+  type SundialsCVode
+    integer :: neq !! number of ODEs
+    procedure(cvode_rhs_fcn), pointer :: f => NULL() !! right-hand-side of ODEs
+    procedure(cvode_jac_fcn), pointer :: jac => NULL() !! jacobian of ODEs
+    !> cvode memory
+    type(c_ptr) :: cvode_mem = c_null_ptr
+    ! solution vector
+    real(c_double), allocatable :: yvec(:)
+    type(N_Vector), pointer :: sunvec_y => NULL()
+    ! absolute tolerance
+    real(c_double), allocatable :: abstol(:)
+    type(N_Vector), pointer :: abstol_nvec => NULL()
+    ! matrix and linear solver
+    type(SUNMatrix), pointer :: sunmat => NULL()
+    type(SUNLinearSolver), pointer :: sunlin => NULL()
+  contains
+    procedure :: finalize => SundialsCVode_finalize
+    procedure :: initialize => SundialsCVode_initialize
+    procedure :: integrate => SundialsCVode_integrate
+    final :: SundialsCVode_final
+  end type
+
+  abstract interface
+
+    !> Interface for the right-hand-side function defining the system
+    !> of ODEs.
+    function cvode_rhs_fcn(self, t, y, ydot) result(ierr)
+      import :: dp, SundialsCVode
+      implicit none
+      class(SundialsCVode), intent(inout) :: self
+      real(dp), intent(in) :: t !! current time
+      real(dp), intent(in) :: y(:) !! state vector
+      real(dp), intent(out) :: ydot(:) !! derivative vector
+      integer :: ierr !! Set to >= 0 if successful. Set to < 0 to terminate the integration 
+    end function
+
+    !> Interface for the user-supplied jacobian function
+    function cvode_jac_fcn(self, t, y, jac) result(ierr)
+      import :: dp, SundialsCVode
+      implicit none
+      class(SundialsCVode), intent(inout) :: self
+      real(dp), intent(in) :: t !! current time
+      real(dp), intent(in) :: y(:) !! state vector
+      real(dp), intent(out) :: jac(:,:) !! Jacobian matrix
+      integer  :: ierr !! Set to >= 0 if successful. Set to < 0 to terminate the integration
+    end function
+
+  end interface
 
   ! Helps close hdf5 files
   type :: hdf5_file_closer
@@ -184,4 +239,302 @@ contains
     call dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
   end subroutine
 
+  subroutine SundialsCVode_initialize(self, f, jac, neq, t0, y0, rtol, atol, err)
+    class(SundialsCVode), target, intent(inout) :: self
+    procedure(cvode_rhs_fcn) :: f !! right-hand-side function defining the system of ODEs.
+    procedure(cvode_jac_fcn) :: jac !! Jacobian of the right-hand-side function.
+    integer, intent(in) :: neq !! number of ODEs
+    real(dp), intent(in) :: t0 !! initial time
+    real(dp), intent(in) :: y0(:) !! Initial array
+    real(dp), intent(in), optional :: rtol
+    real(dp), intent(in), optional :: atol(:)
+    character(:), allocatable, intent(out) :: err
+
+    call SundialsCVode_initialize_impl(self, f, jac, neq, t0, y0, rtol, atol, err)
+  end subroutine
+
+  subroutine SundialsCVode_initialize_impl(self, f, jac, neq, t0, y0, rtol, atol, err)
+    use, intrinsic :: iso_c_binding
+    use fcvode_mod, only: CV_BDF, CV_NORMAL, CV_ONE_STEP, FCVodeInit, FCVodeSVtolerances, &
+                          FCVodeSetLinearSolver, FCVode, FCVodeCreate, FCVodeFree, &
+                          FCVodeSetMaxNumSteps, FCVodeSetJacFn, FCVodeSetInitStep, &
+                          FCVodeGetCurrentStep, FCVodeSetMaxErrTestFails, FCVodeSetMaxOrd, &
+                          FCVodeSetUserData, FCVodeSetErrHandlerFn, FCVodeSetMaxStep
+    use fsundials_nvector_mod, only: N_Vector, FN_VDestroy
+    use fnvector_serial_mod, only: FN_VMake_Serial   
+    use fsunmatrix_band_mod, only: FSUNBandMatrix
+    use fsunmatrix_dense_mod, only: FSUNDenseMatrix
+    use fsundials_matrix_mod, only: SUNMatrix, FSUNMatDestroy
+    use fsundials_linearsolver_mod, only: SUNLinearSolver, FSUNLinSolFree
+    use fsunlinsol_band_mod, only: FSUNLinSol_Band
+    use fsunlinsol_dense_mod, only: FSUNLinSol_Dense
+
+    type(SundialsCVode), target, intent(inout) :: self
+    procedure(cvode_rhs_fcn) :: f !! right-hand-side function defining the system of ODEs.
+    procedure(cvode_jac_fcn) :: jac !! Jacobian of the right-hand-side function.
+    integer, intent(in) :: neq !! number of ODEs
+    real(dp), intent(in) :: t0 !! initial time
+    real(dp), intent(in) :: y0(:) !! Initial array
+    real(dp), intent(in), optional :: rtol
+    real(dp), intent(in), optional :: atol(:)
+    character(:), allocatable, intent(out) :: err
+
+    integer(c_int) :: ierr
+    integer(c_int64_t) :: neq_c
+    real(c_double) :: t0_c, rtol_c
+    type(c_ptr) :: user_data
+
+    call self%finalize(err)
+    if (allocated(err)) return
+
+    if (neq /= size(y0)) then
+      err = 'Error'
+      return
+    endif
+
+    ! Set inputs
+    self%f => f
+    self%jac => jac
+    self%neq = neq
+    
+    ! Convert inputs to C
+    neq_c = neq
+    t0_c = t0
+    rtol_c = 1.0e-3_dp
+    if (present(rtol)) rtol_c = rtol
+    
+    ! Solution vector
+    allocate(self%yvec(neq_c))
+    self%yvec = y0
+    self%sunvec_y => FN_VMake_Serial(neq_c, self%yvec)
+    if (.not. associated(self%sunvec_y)) then
+      err = "CVODE setup error."
+      return
+    end if
+
+    ! Absolute tolerance
+    allocate(self%abstol(neq_c))
+    self%abstol = 1.0e-6_dp
+    if (present(atol)) self%abstol = atol
+    self%abstol_nvec => FN_VMake_Serial(neq_c, self%abstol)
+    if (.not. associated(self%abstol_nvec)) then
+      err = "CVODE setup error."
+      return
+    end if
+
+    ! Create CVode memory
+    self%cvode_mem = FCVodeCreate(CV_BDF)
+    if (.not. c_associated(self%cvode_mem)) then
+      err = "CVODE setup error."
+      return
+    end if
+
+    ! Set self pointer
+    user_data = c_loc(self)
+    ierr = FCVodeSetUserData(self%cvode_mem, user_data)
+    if (ierr /= 0) then
+      err = "CVODE setup error."
+      return
+    end if
+
+    ierr = FCVodeInit(self%cvode_mem, c_funloc(SundialsCVode_RhsFn), t0_c, self%sunvec_y)
+    if (ierr /= 0) then
+      err = "CVODE setup error."
+      return
+    end if
+
+    ierr = FCVodeSVtolerances(self%cvode_mem, rtol_c, self%abstol_nvec)
+    if (ierr /= 0) then
+      err = "CVODE setup error."
+      return
+    end if
+
+    ! If dense
+    self%sunmat = FSUNDenseMatrix(neq_c, neq_c)
+    self%sunlin = FSUNLinSol_Dense(self%sunvec_y, self%sunmat)
+    ! If banded
+    ! self%sunmat => FSUNBandMatrix(neqs_long, mu, ml)
+    ! self%sunlin => FSUNLinSol_Band(self%sunvec_y, self%sunmat)
+
+    ierr = FCVodeSetLinearSolver(self%cvode_mem, self%sunlin, self%sunmat)
+    if (ierr /= 0) then
+      err = "CVODE setup error."
+      return
+    end if
+
+    ierr = FCVodeSetJacFn(self%cvode_mem, c_funloc(SundialsCVode_JacFn))
+    if (ierr /= 0) then
+      err = "CVODE setup error."
+      return
+    end if
+
+    !~~ Bunch of optional stuff ~~!
+
+    ! ierr = FCVodeSetMaxNumSteps(wrk%sun%cvode_mem, mxsteps_)
+    ! if (ierr /= 0) then
+    !   err = "CVODE setup error."
+    !   return
+    ! end if
+    
+    ! ierr = FCVodeSetInitStep(wrk%sun%cvode_mem, var%initial_dt)
+    ! if (ierr /= 0) then
+    !   err = "CVODE setup error."
+    !   return
+    ! end if
+
+    ! ierr = FCVodeSetMaxStep(wrk%sun%cvode_mem, var%max_dt)
+    ! if (ierr /= 0) then
+    !   err = "CVODE setup error."
+    !   return
+    ! end if
+
+    ! ierr = FCVodeSetMaxErrTestFails(wrk%sun%cvode_mem, var%max_err_test_failures)
+    ! if (ierr /= 0) then
+    !   err = "CVODE setup error."
+    !   return
+    ! end if
+    
+    ! ierr = FCVodeSetMaxOrd(wrk%sun%cvode_mem, var%max_order)
+    ! if (ierr /= 0) then
+    !   err = "CVODE setup error."
+    !   return
+    ! end if
+
+    ! ierr = FCVodeSetErrHandlerFn(wrk%sun%cvode_mem, c_funloc(ErrHandlerFn_evo), c_null_ptr)
+    ! if (ierr /= 0) then
+    !   err = "CVODE setup error."
+    !   return
+    ! end if
+
+
+  end subroutine
+
+  subroutine SundialsCVode_integrate(self, tout, tret, itask, err)
+    use fcvode_mod, only: CV_ONE_STEP, FCVode, FCVodeGetNumSteps
+    class(SundialsCVode), intent(inout) :: self
+    real(dp), intent(in) :: tout
+    real(dp), intent(out) :: tret
+    integer, intent(in) :: itask
+    character(:), allocatable, intent(out) :: err
+
+    real(c_double) :: tout_c, tret_c(1)
+    integer(c_int) :: itask_c, ierr_c
+
+    tout_c = tout
+    itask_c = itask
+
+    ierr_c = FCVode(self%cvode_mem, tout_c, self%sunvec_y, tret_c, itask_c)
+    if (ierr_c /= 0) then
+      err = "CVODE step failed"
+      return
+    endif
+    tret = tret_c(1)
+
+  end subroutine
+
+  subroutine SundialsCVode_finalize(self, err)
+    use iso_c_binding, only: c_associated, c_null_ptr, c_int
+    use fcvode_mod, only: FCVodeFree
+    use fsundials_nvector_mod, only: FN_VDestroy
+    use fsundials_matrix_mod, only: FSUNMatDestroy
+    use fsundials_linearsolver_mod, only: FSUNLinSolFree
+    class(SundialsCVode), intent(inout) :: self
+    character(:), allocatable, intent(out) :: err
+
+    integer(c_int) :: ierr
+
+    if (allocated(self%yvec)) then
+      deallocate(self%yvec)
+    endif
+    if (associated(self%sunvec_y)) then
+      call FN_VDestroy(self%sunvec_y)
+      nullify(self%sunvec_y)
+    endif
+
+    if (allocated(self%abstol)) then
+      deallocate(self%abstol)
+    endif
+    if (associated(self%abstol_nvec)) then
+      call FN_VDestroy(self%abstol_nvec)
+      nullify(self%abstol_nvec)
+    endif
+
+    if (c_associated(self%cvode_mem)) then
+      call FCVodeFree(self%cvode_mem)
+      self%cvode_mem = c_null_ptr
+    endif
+
+    if (associated(self%sunlin)) then
+      ierr = FSUNLinSolFree(self%sunlin)
+      if (ierr /= 0) then
+        err = "Sundials failed to deallocated linear solver"
+      end if
+      nullify(self%sunlin)
+    endif
+
+    if (associated(self%sunmat)) then
+      call FSUNMatDestroy(self%sunmat)
+      nullify(self%sunmat)
+    endif
+
+  end subroutine
+
+  subroutine SundialsCVode_final(self)
+    type(SundialsCVode), intent(inout) :: self
+    character(:), allocatable :: err
+    call SundialsCVode_finalize(self, err)
+  end subroutine
+
+  function SundialsCVode_RhsFn(tn, sunvec_y, sunvec_f, user_data) result(ierr) bind(c, name='SundialsCVode_RhsFn')
+    use, intrinsic :: iso_c_binding
+    use fcvode_mod
+    use fsundials_nvector_mod
+    real(c_double), value :: tn
+    type(N_Vector) :: sunvec_y
+    type(N_Vector) :: sunvec_f
+    type(c_ptr), value :: user_data
+    integer(c_int) :: ierr
+    
+    real(c_double), pointer :: yvec(:)
+    real(c_double), pointer :: fvec(:)
+    type(SundialsCVode), pointer :: self
+
+    call c_f_pointer(user_data, self)
+    yvec(1:self%neq) => FN_VGetArrayPointer(sunvec_y)
+    fvec(1:self%neq) => FN_VGetArrayPointer(sunvec_f)
+    ierr = self%f(tn, yvec, fvec)
+    
+  end function
+
+  function SundialsCVode_JacFn(tn, sunvec_y, sunvec_f, sunmat_J, user_data, tmp1, tmp2, tmp3) &
+                               result(ierr) bind(C,name='SundialsCVode_JacFn')
+    use, intrinsic :: iso_c_binding
+    use fsundials_nvector_mod
+    use fnvector_serial_mod
+    use fsunmatrix_dense_mod
+    use fsundials_matrix_mod
+    real(c_double), value :: tn        ! current time
+    type(N_Vector) :: sunvec_y  ! solution N_Vector
+    type(N_Vector) :: sunvec_f
+    type(SUNMatrix) :: sunmat_J  ! rhs N_Vector
+    type(c_ptr), value :: user_data ! user-defined data
+    type(N_Vector) :: tmp1, tmp2, tmp3
+    integer(c_int) :: ierr
+  
+    ! pointers to data in SUNDIALS vectors
+    real(c_double), pointer :: yvec(:)
+    real(c_double), pointer :: jac(:,:)
+    real(c_double), pointer :: jac_data(:)
+    integer(c_long) :: nrows, ncols
+    type(SundialsCVode), pointer :: self
+    
+    call c_f_pointer(user_data, self)
+    yvec(1:self%neq) => FN_VGetArrayPointer(sunvec_y)
+    jac_data => FSUNDenseMatrix_Data(sunmat_J)
+    nrows = FSUNDenseMatrix_Rows(sunmat_J)
+    ncols = FSUNDenseMatrix_Columns(sunmat_J)
+    call c_f_pointer(c_loc(jac_data(1)), jac, [nrows, ncols])
+    ierr = self%jac(tn, yvec, jac)
+  end function
+  
 end module
