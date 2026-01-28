@@ -97,7 +97,7 @@ module clima_adiabat
     real(dp), allocatable :: lapse_rate(:) !! The true lapse rate (dlnT/dlnP)
     real(dp), allocatable :: lapse_rate_intended(:) !! The computed lapse rate (dlnT/dlnP)
     !> Maximum |deltaT| (K) allowed in the convective classification step.
-    real(dp) :: convective_newton_max_deltaT = 20.0_dp !! K
+    real(dp) :: convective_newton_max_deltaT = 50.0_dp !! K
     ! Hysteresis parameters for updating convective mask in RCE.
     ! A radiative layer becomes convective only if superadiabaticity exceeds
     ! `max(convective_hysteresis_min, convective_hysteresis_frac_on*|lapse_rate_intended|)`.
@@ -108,7 +108,7 @@ module clima_adiabat
     real(dp) :: convective_hysteresis_min = 1.0e-3_dp
     !> Boundary-motion limiter for convective mask updates. If < 0, no limiter
     !> is applied.
-    integer :: convective_max_boundary_shift = 1
+    integer :: convective_max_boundary_shift = -1
     !> If true, shrink convective tops when a strong inversion exists just above.
     logical :: prevent_overconvection = .true.
 

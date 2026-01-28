@@ -807,17 +807,17 @@ contains
           endif
         endif
 
-        ! allow contraction inside the zone based on candidate (only within shift)
-        if (.not.no_convection_to_radiation) then
-          if (shift < (r-l+1)) then
-            if (.not.any(convecting_with_below_candidate(l:l+shift))) then
-              self%convecting_with_below(l:l+shift) = .false.
-            endif
-            if (.not.any(convecting_with_below_candidate(r-shift:r))) then
-              self%convecting_with_below(r-shift:r) = .false.
+          ! allow contraction inside the zone based on candidate (only within shift)
+          if (.not.no_convection_to_radiation) then
+            if (shift < (r-l+1)) then
+              if (.not.any(convecting_with_below_candidate(l:l+shift-1))) then
+                self%convecting_with_below(l:l+shift-1) = .false.
+              endif
+              if (.not.any(convecting_with_below_candidate(r-shift+1:r))) then
+                self%convecting_with_below(r-shift+1:r) = .false.
+              endif
             endif
           endif
-        endif
       else
         i = i + 1
       endif
