@@ -3,7 +3,7 @@ module clima_useful
   use minpack_module, only: fcn_hybrj
   use h5fortran, only: hdf5_file
 
-  use, intrinsic :: iso_c_binding, only: c_double, c_int, c_long, c_ptr, c_null_ptr
+  use, intrinsic :: iso_c_binding, only: c_double, c_int, c_long, c_ptr, c_null_ptr, c_associated
   use fsundials_nvector_mod, only: N_Vector
   use fsundials_matrix_mod, only: SUNMatrix
   use fsundials_linearsolver_mod, only: SUNLinearSolver
@@ -34,6 +34,7 @@ module clima_useful
     procedure :: finalize => SundialsCVode_finalize
     procedure :: initialize => SundialsCVode_initialize
     procedure :: integrate => SundialsCVode_integrate
+    procedure :: steadystate => SundialsCVode_steadystate
     final :: SundialsCVode_final
   end type
 
@@ -429,6 +430,77 @@ contains
       return
     endif
     tret = tret_c(1)
+
+  end subroutine
+
+  subroutine SundialsCVode_steadystate(self, tmax, ftol, xtol, max_steps, err)
+    use fcvode_mod, only: CV_ONE_STEP, FCVode, FCVodeGetCurrentTime
+    class(SundialsCVode), intent(inout) :: self
+    real(dp), intent(in) :: tmax
+    real(dp), intent(in), optional :: ftol
+    real(dp), intent(in), optional :: xtol
+    integer, intent(in), optional :: max_steps
+    character(:), allocatable, intent(out) :: err
+
+    real(dp), allocatable :: fvec(:)
+    real(dp), allocatable :: yprev(:)
+    real(dp) :: ftol_, xtol_, norm_f, norm_y, norm_dy
+    real(c_double) :: tcur_c(1), tout_c, tret_c(1)
+    integer :: step, max_steps_
+    integer(c_int) :: ierr_c
+
+    if (.not. associated(self%f)) then
+      err = "CVODE steadystate error: RHS function not set."
+      return
+    end if
+    if (.not. c_associated(self%cvode_mem)) then
+      err = "CVODE steadystate error: solver not initialized."
+      return
+    end if
+
+    ftol_ = 1.0e-8_dp
+    if (present(ftol)) ftol_ = ftol
+    xtol_ = 1.0e-8_dp
+    if (present(xtol)) xtol_ = xtol
+    max_steps_ = 500
+    if (present(max_steps)) max_steps_ = max_steps
+
+    allocate(fvec(self%neq))
+    allocate(yprev(self%neq))
+
+    ierr_c = FCVodeGetCurrentTime(self%cvode_mem, tcur_c)
+    if (ierr_c /= 0) then
+      err = "CVODE steadystate error: failed to get current time."
+      return
+    end if
+
+    do step = 1, max_steps_
+      if (tcur_c(1) >= tmax) exit
+
+      yprev = self%yvec
+      tout_c = min(real(tcur_c(1) + 1.0_dp, c_double), real(tmax, c_double))
+      ierr_c = FCVode(self%cvode_mem, tout_c, self%sunvec_y, tret_c, CV_ONE_STEP)
+      if (ierr_c /= 0) then
+        err = "CVODE steadystate step failed."
+        return
+      end if
+      tcur_c(1) = tret_c(1)
+
+      ierr_c = self%f(tcur_c(1), self%yvec, fvec)
+      if (ierr_c < 0) then
+        err = "CVODE steadystate error: RHS function failed."
+        return
+      end if
+
+      norm_f = maxval(abs(fvec))
+      norm_y = maxval(abs(self%yvec))
+      norm_dy = maxval(abs(self%yvec - yprev))
+
+      if (norm_f <= ftol_) return
+      if (norm_dy <= xtol_*(xtol_ + norm_y)) return
+    end do
+
+    err = "CVODE steadystate did not converge."
 
   end subroutine
 
