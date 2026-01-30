@@ -171,6 +171,7 @@ contains
       stop 1
     endif
 
+    c%convective_max_boundary_shift = 1
     c%P_top = 1.0e2_dp
     c%T_trop = 200.0_dp
     P_i_surf = [270.0_dp, 400e-6_dp, 1.0_dp, 1.0e-10_dp, 1.0e-10_dp, 1.0e-10_dp, 1.0e-10_dp]
