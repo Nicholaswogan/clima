@@ -293,6 +293,10 @@ contains
     P(:) = 10.0_dp**P(:)
     P(1) = d%P_surf
     P(2*nz+1) = P_top
+    if (minval(P(1:2*nz) - P(2:2*nz+1)) <= 10.0_dp*spacing(P(1))) then
+      err = 'make_profile: pressure grid spacing too fine (P_top too close to P_surf)'
+      return
+    endif
 
     ! If convecting with below, we don't know the temp.
     ! We set it to negative as a place holder
@@ -450,13 +454,14 @@ contains
         elseif (d%stopping_reason == ReachedRoot) then; block
           real(dp) :: f_dry
           logical :: super_saturated
+          logical :: switched_other
           ! A root was hit. We restart integration
           Pn = d%P_root ! root pressure
           u = d%u_root ! root altitude
 
           ! Get T at the root
           if (d%in_convecting_region) then
-            T_root = u(2)
+            T_root = dop%contd8(2, Pn)
           else
             call d%T%evaluate(log10(Pn), T_root)
           endif
@@ -471,6 +476,34 @@ contains
             d%sp_type(d%ind_root) = DrySpeciesType
           endif
           call update_f_i_dry(d, Pn, d%f_i_cur)
+
+          ! Check for other roots detected in this step that may be missed after switching.
+          call root_fcn(d, Pn, T_root, d%gout)
+          switched_other = .false.
+          do i = 1,d%sp%ng
+            if (.not.d%root_found(i)) cycle
+            if (i == d%ind_root) cycle
+
+            if (d%sp_type(i) == CondensingSpeciesType) then
+              ! If mixing ratio would increase with decreasing pressure, force dry.
+              if (d%gout(i) < 0.0_dp) then
+                d%sp_type(i) = DrySpeciesType
+                switched_other = .true.
+              endif
+            elseif (d%sp_type(i) == DrySpeciesType) then
+              ! If supersaturated, force condensing.
+              if (d%gout(i) > 0.0_dp) then
+                d%sp_type(i) = CondensingSpeciesType
+                switched_other = .true.
+              endif
+            endif
+          enddo
+          if (switched_other) then
+            call update_f_i_dry(d, Pn, d%f_i_cur)
+          endif
+
+          d%root_found(:) = .false.
+          d%P_roots(:) = 0.0_dp
           d%stopping_reason = ReachedPtop
 
           ! Ensure we make progress away from the root. It is possible (especially with noisy
@@ -478,7 +511,11 @@ contains
           ! which can lead to an excessive number of restarts. Nudge the restart pressure toward
           ! Ptop by a few ulps and recompute the state from the previous segment's dense output.
           if (Pn > Ptop) then
-            Pn = max(Ptop, Pn - 10.0_dp*spacing(Pn))
+            if (d%j <= size(d%P)) then
+              Pn = max(Ptop, max(Pn - 10*spacing(Pn), d%P(d%j)))
+            else
+              Pn = max(Ptop, Pn - 10.0_dp*spacing(Pn))
+            endif
             if (d%in_convecting_region) then
               u = [dop%contd8(1, Pn), dop%contd8(2, Pn)]
             else
