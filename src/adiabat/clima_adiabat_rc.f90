@@ -511,10 +511,11 @@ contains
           ! which can lead to an excessive number of restarts. Nudge the restart pressure toward
           ! Ptop by a few ulps and recompute the state from the previous segment's dense output.
           if (Pn > Ptop) then
+            Pn = Pn - 3.0_dp*spacing(Pn)
             if (d%j <= size(d%P)) then
-              Pn = max(Ptop, max(Pn - 10*spacing(Pn), d%P(d%j)))
+              Pn = max(Pn, Ptop + 3.0_dp*spacing(Ptop), d%P(d%j) + 3.0_dp*spacing(d%P(d%j)))
             else
-              Pn = max(Ptop, Pn - 10.0_dp*spacing(Pn))
+              Pn = max(Pn, Ptop + 3.0_dp*spacing(Ptop))
             endif
             if (d%in_convecting_region) then
               u = [dop%contd8(1, Pn), dop%contd8(2, Pn)]
