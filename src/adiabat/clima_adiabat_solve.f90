@@ -592,7 +592,7 @@ contains
     logical, allocatable :: convecting_with_below_candidate(:)
     integer :: i, ierr
     integer :: bt
-    real(dp) :: alpha, alpha_lim
+    real(dp) :: alpha
     character(:), allocatable :: err_trial
     logical :: got_perturb
     real(dp) :: thresh_on, thresh_off
@@ -623,14 +623,7 @@ contains
 
     ! Trial Newton step (used only for convective classification). Safeguard the step
     ! size so `make_profile_rc` does not see invalid temperature profiles.
-    if (self%convective_newton_max_deltaT > 0.0_dp) then
-      alpha_lim = self%convective_newton_max_deltaT/max(1.0_dp, maxval(abs(deltaT)))
-      alpha = min(1.0_dp, alpha_lim)
-    else
-      alpha = 1.0_dp
-    endif
-    alpha = max(0.0_dp, alpha)
-
+    alpha = min(max(0.0_dp, self%convective_newton_step_size), 1.0_dp)
     got_perturb = .false.
     do bt = 1,20
       T_perturb = deltaT*alpha + T_in
@@ -713,20 +706,21 @@ contains
       i = 1
       do while (i <= self%nz)
         if (self%convecting_with_below(i)) then
-          l = i
+          ! We are in a convecting zone
+          l = i ! The bottom of a convecting zone
           do while (i <= self%nz)
-            if (self%convecting_with_below(i)) then
-              i = i + 1
-            else
-              exit
-            endif
+            if (.not. self%convecting_with_below(i)) exit
+            i = i + 1
           enddo
-          r = i - 1
-          if (r < self%nz) then
-            if (self%lapse_rate(r+1) < -max(self%convective_hysteresis_min, &
-                self%convective_hysteresis_frac_off*abs(self%lapse_rate_intended(r+1)))) then
-              self%convecting_with_below(r) = .false.
-            endif
+          r = i - 1 ! The top of a convecting zone
+          if (r >= self%nz) exit ! guard against bounds error
+
+          thresh_off = max(self%convective_hysteresis_min, &
+                        self%convective_hysteresis_frac_off*abs(self%lapse_rate_intended(r+1)))
+          if (self%lapse_rate(r+1) < -thresh_off) then
+            ! If inversion just above convecting zone, then we shrink the top
+            ! of the convecting zone
+            self%convecting_with_below(r) = .false.
           endif
         else
           i = i + 1
@@ -744,11 +738,8 @@ contains
         if (convecting_with_below_save(i)) then
           n_zones_prev = n_zones_prev + 1
           do while (i <= self%nz)
-            if (convecting_with_below_save(i)) then
-              i = i + 1
-            else
-              exit
-            endif
+            if (.not. convecting_with_below_save(i)) exit
+            i = i + 1
           enddo
         else
           i = i + 1
@@ -773,7 +764,7 @@ contains
     logical, intent(in) :: convecting_with_below_candidate(:)
     real(dp), intent(in) :: difference(:)
     logical, intent(in) :: no_convection_to_radiation
-    integer :: i, l, r, len, shift
+    integer :: i, l, r, length, shift
 
     if (self%convective_max_boundary_shift < 0) then
       ! No limiter: adopt candidate mask directly.
@@ -791,19 +782,16 @@ contains
     do while (i <= self%nz)
       if (convecting_with_below_save(i)) then
         ! existing convective zone in previous mask
-        l = i
-          do while (i <= self%nz)
-            if (convecting_with_below_save(i)) then
-              i = i + 1
-            else
-              exit
-            endif
-          enddo
-        r = i - 1
+        l = i ! lower edge of convective zone
+        do while (i <= self%nz)
+          if (.not. convecting_with_below_save(i)) exit
+          i = i + 1
+        enddo
+        r = i - 1 ! upper edge of convective zone
 
         ! candidate expansion limited by shift
         if (convecting_with_below_candidate(l)) then
-          ! left boundary can move down by <= shift
+          ! lower boundary can move down by <= shift
           if (l - shift >= 1) then
             if (any(convecting_with_below_candidate(l-shift:l-1))) then
               self%convecting_with_below(l-shift:l-1) = .true.
@@ -811,7 +799,7 @@ contains
           endif
         endif
         if (convecting_with_below_candidate(r)) then
-          ! right boundary can move up by <= shift
+          ! upper boundary can move up by <= shift
           if (r + shift <= self%nz) then
             if (any(convecting_with_below_candidate(r+1:r+shift))) then
               self%convecting_with_below(r+1:r+shift) = .true.
@@ -848,17 +836,13 @@ contains
           endif
         enddo
         r = i - 1
-        len = r - l + 1
+        length = r - l + 1
 
         ! require sufficiently strong instability within the candidate island
         if (maxval(difference(l:r)) > max(self%convective_hysteresis_min, &
             self%convective_hysteresis_frac_on*maxval(abs(self%lapse_rate_intended(l:r))))) then
           ! cap nucleation size to 2*shift per iteration
-          if (len <= 2*shift) then
-            self%convecting_with_below(l:r) = .true.
-          else
-            self%convecting_with_below(l:l+2*shift-1) = .true.
-          endif
+          self%convecting_with_below(l:min(r, l+2*shift-1)) = .true.
         endif
       else
         i = i + 1

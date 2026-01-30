@@ -792,14 +792,14 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_lapse_rate_intended_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
-  property convective_newton_max_deltaT:
-    "float. Maximum |deltaT| (K) allowed in the convective classification step."
+  property convective_newton_step_size:
+    "float. Fraction of the Newton step used in convective classification (0..1)."
     def __get__(self):
       cdef double val
-      wa_pxd.adiabatclimate_convective_newton_max_deltat_get(self._ptr, &val)
+      wa_pxd.adiabatclimate_convective_newton_step_size_get(self._ptr, &val)
       return val
     def __set__(self, double val):
-      wa_pxd.adiabatclimate_convective_newton_max_deltat_set(self._ptr, &val)
+      wa_pxd.adiabatclimate_convective_newton_step_size_set(self._ptr, &val)
   
   property convective_max_boundary_shift:
     "int. Boundary-motion limiter for convective mask updates. If < 0, no limiter is applied."
