@@ -22,9 +22,8 @@ module clima_types
     character(s_str_len), allocatable :: k_distributions(:)
     logical, allocatable :: cia_bool
     character(s_str_len), allocatable :: cia(:)
-    character(s_str_len), allocatable :: rayleigh(:)
     logical, allocatable :: rayleigh_bool
-    character(s_str_len), allocatable :: absorption_xs(:)
+    character(s_str_len), allocatable :: rayleigh(:)
     logical, allocatable :: photolysis_bool
     character(s_str_len), allocatable :: photolysis_xs(:)
     character(:), allocatable :: water_continuum
@@ -55,9 +54,8 @@ module clima_types
     character(:), allocatable :: wavelength_bins_file
     character(s_str_len), allocatable :: gases(:)
     character(s_str_len), allocatable :: particles(:)
-    type(SettingsOpacity), allocatable :: sol
-    type(SettingsOpacity), allocatable :: ir
-    
+    type(SettingsOpacity), allocatable :: op
+
   end type
   
   interface

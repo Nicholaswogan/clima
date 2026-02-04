@@ -790,24 +790,10 @@ contains
 
     endif
     
-    ! solar
-    tmp_dict => op_prop%get_dictionary("solar", required=.false., error=io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (associated(tmp_dict)) then
-      if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-      call unpack_settingsopacity(tmp_dict, filename, s%sol, err)
-      if (allocated(err)) return
-    endif
-    
-    ! ir
-    tmp_dict => op_prop%get_dictionary("ir", required=.false., error=io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (associated(tmp_dict)) then
-      if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-      call unpack_settingsopacity(tmp_dict, filename, s%ir, err)
-      if (allocated(err)) return
-    endif
-    
+    ! Optical properties
+    call unpack_settingsopacity(op_prop, filename, s%op, err)
+    if (allocated(err)) return
+
   end subroutine
   
   subroutine unpack_settingsopacity(op_dict, filename, op, err)
@@ -840,8 +826,6 @@ contains
       if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
       op%k_method = trim(op%k_method)
       if (op%k_method == "RandomOverlapResortRebin") then
-        ! do nothing
-      elseif (op%k_method == "RandomOverlap") then
         ! do nothing
       elseif (op%k_method == "AdaptiveEquivalentExtinction") then
         ! do nothing
@@ -921,19 +905,6 @@ contains
         err = '"'//trim(node%path)//'" must be a list or a scalar.'
         return
       end select
-    endif
-    
-    ! absorption-xs
-    tmp => opacities%get_list("absorption-xs", required=.false., error=io_err)
-    if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
-    if (associated(tmp)) then
-      call unpack_string_list(filename, tmp, op%absorption_xs, err)
-      if (allocated(err)) return
-      ind = check_for_duplicates(op%absorption_xs)
-      if (ind /= 0) then
-        err = '"'//trim(op%absorption_xs(ind))//'" is a duplicate in '//trim(tmp%path)
-        return
-      endif
     endif
     
     ! photolysis-xs

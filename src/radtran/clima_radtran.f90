@@ -159,11 +159,11 @@ contains
     call zenith_angles_and_weights(num_zenith_angles, rad%zenith_u, rad%zenith_weights)
     rad%zenith_u = cos(rad%zenith_u*pi/180.0_dp)
 
-    if (.not. allocated(s%ir)) then
-      err = '"'//s%filename//'/optical-properties/ir" does not exist.'
+    if (.not. allocated(s%op)) then
+      err = '"'//s%filename//'/optical-properties" does not contain opacity information.'
       return
     endif
-    rad%op = OpticalProperties(datadir, species_names, particle_names, s%ir, err)
+    rad%op = OpticalProperties(datadir, species_names, particle_names, s%op, err)
     if (allocated(err)) return
     rad%opw = OpticalPropertiesWork(rad%op, rad%nz)
     rad%opr = OpticalPropertiesResult(rad%op, rad%nz)

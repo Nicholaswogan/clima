@@ -13,26 +13,23 @@ planet:
   # photon-scale-factor: 0.4286 # Mars
   # photon-scale-factor: 1.913 # Venus
   
-# This dictionary sets all optical properties. Separate optical properties
-# are set for IR vs. solar wavelengths
+# This dictionary sets all optical properties.
 optical-properties:
-  ir:
-    # `k-method` is the method for mixing k-distributions. Options are
-    #
-    # k-method: RandomOverlap
-    # k-method: RandomOverlapResortRebin
-    # k-method: AdaptiveEquivalentExtinction
-    # 
-    # These methods are explained in Amundsen et al. (2017) (DOI: 10.1051/0004-6361/201629322).
-    k-method: RandomOverlapResortRebin
+  # `k-method` is the method for mixing k-distributions. Options are
+  #
+  # k-method: RandomOverlap
+  # k-method: RandomOverlapResortRebin
+  # k-method: AdaptiveEquivalentExtinction
+  # 
+  # These methods are explained in Amundsen et al. (2017) (DOI: 10.1051/0004-6361/201629322).
+  k-method: RandomOverlapResortRebin
 
-    # Here you specify opacites. You can see avaliable opacities by looking in
-    # `clima/data/` folder. `CIA`, `rayleigh`, `photolysis-xs` and `water-continuum`
-    # are optional. If you omit these keys then these opacities will not be included.
-    # `k-distributions` is the only required key. The simplest way to set opacities
-    # is to just to turn them `on`, as shown below, which will use all available 
-    # opacities
-    opacities: {k-distributions: on, CIA: on, rayleigh: on}
-  solar:
-    k-method: RandomOverlapResortRebin
-    opacities: {k-distributions: on, CIA: on, rayleigh: on}
+  # Here you specify opacites. You can see avaliable opacities by looking in
+  # `clima/data/` folder. `CIA`, `rayleigh`, `photolysis-xs` and `water-continuum`
+  # are optional. If you omit these keys then these opacities will not be included.
+  # `k-distributions` is the only required key. The simplest way to set opacities
+  # is to just to turn them `on`, as shown below, which will use all available 
+  # opacities
+  opacities: {k-distributions: true, CIA: true, rayleigh: true, photolysis-xs: true,
+    water-continuum: MT_CKD}
+

@@ -10,17 +10,6 @@ planet:
   photon-scale-factor: 0.4286 # Mars
   
 optical-properties:
-  ir:
-    k-method: RandomOverlapResortRebin
-    opacities:
-      k-distributions: [H2O, CO2, CH4]
-      CIA: [CH4-CH4, CO2-CH4, CO2-CO2, CO2-H2, H2-CH4, H2-H2, N2-H2, N2-N2]
-      rayleigh: true
-      water-continuum: MT_CKD
-  solar:
-    k-method: RandomOverlapResortRebin
-    opacities:
-      k-distributions: [H2O, CO2, CH4]
-      CIA: [CH4-CH4, CO2-CH4, CO2-CO2, CO2-H2, H2-CH4, H2-H2, N2-H2, N2-N2]
-      rayleigh: true  
-      water-continuum: MT_CKD
+  k-method: RandomOverlapResortRebin
+  opacities: {k-distributions: true, CIA: true, rayleigh: true, photolysis-xs: true,
+    water-continuum: MT_CKD}

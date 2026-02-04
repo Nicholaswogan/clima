@@ -8,9 +8,6 @@ planet:
   surface-albedo: 0.3
 
 optical-properties:
-  ir:
-    k-method: AdaptiveEquivalentExtinction
-    opacities: {k-distributions: on, CIA: on, rayleigh: on, photolysis-xs: on}
-  solar:
-    k-method: AdaptiveEquivalentExtinction
-    opacities: {k-distributions: on, CIA: on, rayleigh: on, photolysis-xs: on}
+  k-method: RandomOverlapResortRebin
+  opacities: {k-distributions: true, CIA: true, rayleigh: true, photolysis-xs: true,
+    water-continuum: MT_CKD}
