@@ -181,16 +181,16 @@ cdef class Radtran:
       rad_pxd.radtran_photon_scale_factor_set(self._ptr, &val)
 
   property ir:
-    "The OpticalProperties for longwave radiative transfer"
+    "The RTChannel for longwave radiative transfer"
     def __get__(self):
-      var = OpticalProperties()
+      var = RTChannel()
       rad_pxd.radtran_ir_get(self._ptr, &var._ptr)
       return var
 
   property sol:
-    "The OpticalProperties for shortwave radiative transfer"
+    "The RTChannel for shortwave radiative transfer"
     def __get__(self):
-      var = OpticalProperties()
+      var = RTChannel()
       rad_pxd.radtran_sol_get(self._ptr, &var._ptr)
       return var
 

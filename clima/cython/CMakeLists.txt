@@ -8,7 +8,7 @@ endif()
 add_library(_clima MODULE ${_clima})
 set(_clima_deps
   futils.pyx
-  OpticalProperties.pyx
+  RTChannel.pyx
   ClimaRadtranWrk.pyx
   Radtran.pyx
   AdiabatClimate.pyx

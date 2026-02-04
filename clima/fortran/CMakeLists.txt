@@ -4,7 +4,7 @@ add_library(clima_c_api
 )
 set(clima_c_api_deps
   ${CMAKE_CURRENT_SOURCE_DIR}/futils.f90
-  ${CMAKE_CURRENT_SOURCE_DIR}/OpticalProperties.f90
+  ${CMAKE_CURRENT_SOURCE_DIR}/RTChannel.f90
   ${CMAKE_CURRENT_SOURCE_DIR}/ClimaRadtranWrk.f90
   ${CMAKE_CURRENT_SOURCE_DIR}/Radtran.f90
   ${CMAKE_CURRENT_SOURCE_DIR}/AdiabatClimate.f90

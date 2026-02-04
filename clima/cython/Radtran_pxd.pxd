@@ -1,4 +1,4 @@
-cimport OpticalProperties_pxd as op_pxd
+cimport RTChannel_pxd as rtc_pxd
 cimport ClimaRadtranWrk_pxd as rwrk_pxd
 
 cdef extern from *:
@@ -43,9 +43,9 @@ cdef extern void radtran_surface_emissivity_set(Radtran *ptr, int *dim1, double 
 cdef extern void radtran_photon_scale_factor_get(Radtran *ptr, double *val)
 cdef extern void radtran_photon_scale_factor_set(Radtran *ptr, double *val)
 
-cdef extern void radtran_ir_get(Radtran *ptr, op_pxd.OpticalProperties **ptr1);
+cdef extern void radtran_ir_get(Radtran *ptr, rtc_pxd.RTChannel **ptr1);
 
-cdef extern void radtran_sol_get(Radtran *ptr, op_pxd.OpticalProperties **ptr1);
+cdef extern void radtran_sol_get(Radtran *ptr, rtc_pxd.RTChannel **ptr1);
 
 cdef extern void radtran_wrk_ir_get(Radtran *ptr, rwrk_pxd.ClimaRadtranWrk **ptr1);
 
