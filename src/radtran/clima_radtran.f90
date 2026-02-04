@@ -260,19 +260,19 @@ contains
       opr=self%opr, &
       rw=self%rw, &
       surface_emissivity=self%surface_emissivity, &
-      surface_albedo=self%surface_albedo, 
-      diurnal_fac=0.0_dp, 
+      surface_albedo=self%surface_albedo, &
+      diurnal_fac=0.0_dp, &
       photons_sol=[0.0_dp], &
-      zenith_u=[0.0_dp], 
+      zenith_u=[0.0_dp], &
       zenith_weights=[1.0_dp], &
       T_surface=T_surface, &
       T=T, &
-      wrk_ir%fup_a, &
-      wrk_ir%fdn_a, &
-      wrk_ir%fup_n, &
-      wrk_ir%fdn_n, &
-      wrk_ir%amean, &
-      wrk_ir%tau_band &
+      fup_a=wrk_ir%fup_a, &
+      fdn_a=wrk_ir%fdn_a, &
+      fup_n=wrk_ir%fup_n, &
+      fdn_n=wrk_ir%fdn_n, &
+      amean=wrk_ir%amean, &
+      tau_band=wrk_ir%tau_band &
     )
 
     ! If we don't want to compute solar RT, then we compute f_total and return
@@ -288,19 +288,19 @@ contains
       opr=self%opr, &
       rw=self%rw, &
       surface_emissivity=self%surface_emissivity, &
-      surface_albedo=self%surface_albedo, 
-      diurnal_fac=self%diurnal_fac, 
+      surface_albedo=self%surface_albedo, &
+      diurnal_fac=self%diurnal_fac, &
       photons_sol=self%photons_sol*self%photon_scale_factor, &
-      zenith_u=self%zenith_u, 
+      zenith_u=self%zenith_u, &
       zenith_weights=self%zenith_weights, &
       T_surface=T_surface, &
       T=T, &
-      wrk_sol%fup_a, &
-      wrk_sol%fdn_a, &
-      wrk_sol%fup_n, &
-      wrk_sol%fdn_n, &
-      wrk_sol%amean, &
-      wrk_sol%tau_band &
+      fup_a=wrk_sol%fup_a, &
+      fdn_a=wrk_sol%fdn_a, &
+      fup_n=wrk_sol%fup_n, &
+      fdn_n=wrk_sol%fdn_n, &
+      amean=wrk_sol%amean, &
+      tau_band=wrk_sol%tau_band &
     )
 
     ! Total flux
@@ -308,7 +308,8 @@ contains
 
   end subroutine
 
-  subroutine Radtran_TOA_fluxes(self, T_surface, T, P, densities, dz, pdensities, radii, compute_solar, ISR, OLR, err)
+  subroutine Radtran_TOA_fluxes(self, T_surface, T, P, densities, dz, pdensities, radii, &
+      compute_solar, compute_opacity, ISR, OLR, err)
     use clima_radtran_radiate, only: radiate
     class(Radtran), target, intent(inout) :: self
     real(dp), intent(in) :: T_surface
@@ -319,10 +320,11 @@ contains
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
     real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:) !! (nz,np)
     logical, optional, intent(in) :: compute_solar
+    logical, optional, intent(in) :: compute_opacity
     real(dp), intent(out) :: ISR, OLR
     character(:), allocatable, intent(out) :: err
       
-    call self%radiate(T_surface, T, P, densities, dz, pdensities, radii, compute_solar, err)
+    call self%radiate(T_surface, T, P, densities, dz, pdensities, radii, compute_solar, compute_opacity, err)
     if (allocated(err)) return
     
     ISR = (self%wrk_sol%fdn_n(self%nz+1) - self%wrk_sol%fup_n(self%nz+1)) ! Incoming short wave
@@ -384,20 +386,7 @@ contains
     out = out//line
 
     out = out//new_line('(a)')
-    line = '  '
-    line = line//'ir:'
-    out = out//line
-
-    out = out//new_line('(a)')
-    out = out//self%ir%opacities2yaml()
-
-    out = out//new_line('(a)')
-    line = '  '
-    line = line//'solar:'
-    out = out//line
-
-    out = out//new_line('(a)')
-    out = out//self%sol%opacities2yaml()
+    out = out//self%op%opacities2yaml()
 
   end function
 
@@ -502,10 +491,7 @@ contains
     real(dp), intent(in) :: g0(:,:) !! (size(P),size(wv)), Asymetry parameter
     character(:), allocatable, intent(out) :: err
 
-    call self%ir%set_custom_optical_properties(wv, P, dtau_dz, w0, g0, err)
-    if (allocated(err)) return
-
-    call self%sol%set_custom_optical_properties(wv, P, dtau_dz, w0, g0, err)
+    call self%op%set_custom_optical_properties(wv, P, dtau_dz, w0, g0, err)
     if (allocated(err)) return
 
   end subroutine
@@ -513,8 +499,7 @@ contains
   !> Unsets custom optical properties set with `set_custom_optical_properties`.
   subroutine Radtran_unset_custom_optical_properties(self)
     class(Radtran), intent(inout) :: self
-    call self%ir%unset_custom_optical_properties()
-    call self%sol%unset_custom_optical_properties()
+    call self%op%unset_custom_optical_properties()
   end subroutine
   
 end module

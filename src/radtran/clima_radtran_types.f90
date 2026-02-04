@@ -93,31 +93,6 @@ module clima_radtran_types
     real(dp), allocatable :: wbin_e(:) ! (nbin+1)
   end type
   
-  enum, bind(c)
-    enumerator :: SolarChannel, IRChannel
-  end enum
-
-  type :: RTChannel
-    integer :: channel_type
-    integer :: ind_start, ind_end
-    integer :: nw
-    real(dp), allocatable :: wavl(:)
-    real(dp), allocatable :: freq(:)
-  end type
-  interface
-    module function create_RTChannel(datadir, channel_type, wavelength_bins_file, op, err) result(rtc)
-      character(*), intent(in) :: datadir
-      integer, intent(in) :: channel_type
-      character(:), allocatable, intent(in) :: wavelength_bins_file
-      type(OpticalProperties), intent(in) :: op
-      character(:), allocatable, intent(out) :: err
-      type(RTChannel) :: rtc
-    end function
-  end interface
-  interface RTChannel
-    module procedure :: create_RTChannel
-  end interface
-  
   type :: OpticalProperties
     integer :: nw
     real(dp), allocatable :: wavl(:)
@@ -280,6 +255,31 @@ module clima_radtran_types
     module procedure :: create_OpticalPropertiesResult
   end interface
 
+  enum, bind(c)
+    enumerator :: SolarChannel, IRChannel
+  end enum
+
+  type :: RTChannel
+    integer :: channel_type
+    integer :: ind_start, ind_end
+    integer :: nw
+    real(dp), allocatable :: wavl(:)
+    real(dp), allocatable :: freq(:)
+  end type
+  interface
+    module function create_RTChannel(datadir, channel_type, wavelength_bins_file, op, err) result(rtc)
+      character(*), intent(in) :: datadir
+      integer, intent(in) :: channel_type
+      character(:), allocatable, intent(in) :: wavelength_bins_file
+      type(OpticalProperties), intent(in) :: op
+      character(:), allocatable, intent(out) :: err
+      type(RTChannel) :: rtc
+    end function
+  end interface
+  interface RTChannel
+    module procedure :: create_RTChannel
+  end interface
+
   type :: RadiateBinWork
     real(dp), allocatable :: bplanck(:) ! (nz+1)
     ! All (nz+1) below
@@ -334,18 +334,18 @@ contains
 
     out = ''
 
-    line = '    '
+    line = '  '
     line = line//'k-method: '//self%kset%k_method_name
     out = out//line
 
     out = out//new_line('(a)')
-    line = '    '
+    line = '  '
     line = line//'opacities:'
     out = out//line
 
     if (allocated(self%k)) then
       out = out//new_line('(a)')
-      line = '      '
+      line = '    '
       line = line//'k-distributions: ['
       do i = 1,self%nk
         line = line//trim(self%species_names(self%k(i)%sp_ind))
@@ -359,7 +359,7 @@ contains
 
     if (allocated(self%cia)) then
       out = out//new_line('(a)')
-      line = '      '
+      line = '    '
       line = line//'CIA: ['
       do i = 1,self%ncia
         line = line//trim(self%species_names(self%cia(i)%sp_ind(1)))// &
@@ -374,7 +374,7 @@ contains
 
     if (allocated(self%ray)) then
       out = out//new_line('(a)')
-      line = '      '
+      line = '    '
       line = line//'rayleigh: ['
       do i = 1,self%nray
         line = line//trim(self%species_names(self%ray(i)%sp_ind(1)))
@@ -388,7 +388,7 @@ contains
 
     if (allocated(self%pxs)) then
       out = out//new_line('(a)')
-      line = '      '
+      line = '    '
       line = line//'photolysis-xs: ['
       do i = 1,self%npxs
         line = line//trim(self%species_names(self%pxs(i)%sp_ind(1)))
@@ -402,14 +402,14 @@ contains
 
     if (allocated(self%cont)) then
       out = out//new_line('(a)')
-      line = '      '
+      line = '    '
       line = line//'water-continuum: '//self%cont%model
       out = out//line
     endif
 
     if (allocated(self%part)) then
       out = out//new_line('(a)')
-      line = '      '
+      line = '    '
       line = line//'particle-xs: ['
       do i = 1,self%npart
         line = line//'{name: '//trim(self%particle_names(self%part(i)%p_ind))
@@ -571,6 +571,8 @@ contains
   end subroutine
 
   subroutine OpticalProperties_compute_opacity(self, P, T, densities, dz, pdensities, radii, opw, res, err)
+    use clima_const, only: pi
+    use clima_eqns, only: ten2power
     class(OpticalProperties), intent(inout) :: self
 
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
@@ -581,7 +583,7 @@ contains
     real(dp), optional, intent(in) :: pdensities(:,:) !! (nz,np) particles/cm3
     real(dp), optional, intent(in) :: radii(:,:) !! (nz,np) cm
     class(OpticalPropertiesWork), target, intent(inout) :: opw !! Work space
-    class(OpticalPropertiesResult), intent(out) :: res !! Result
+    class(OpticalPropertiesResult), intent(inout) :: res !! Result
     character(:), allocatable, intent(out) :: err
 
     integer :: nz, ng
@@ -735,9 +737,9 @@ contains
         wrk%gt(n) = min(wrk%gt(n), max_gt)
       enddo
 
-      if (op%kset%k_method == k_RandomOverlapResortRebin) then
+      if (self%kset%k_method == k_RandomOverlapResortRebin) then
         call k_rorr(self, l, opw, res)
-      elseif (op%kset%k_method == k_AdaptiveEquivalentExtinction) then
+      elseif (self%kset%k_method == k_AdaptiveEquivalentExtinction) then
         ! Will implement eventually
         opw%ierrs(l) = 1
       else
@@ -757,10 +759,13 @@ contains
   end subroutine
 
   subroutine k_rorr(op, l, opw, res)
+    use futils_mrgrnk, only: mrgrnk
+    use futils, only: rebin
+    use clima_eqns, only: weights_to_bins
     type(OpticalProperties), target, intent(in) :: op
     integer, intent(in) :: l
     type(OpticalPropertiesWork), target, intent(inout) :: opw
-    type(OpticalPropertiesResult), intent(out) :: res
+    type(OpticalPropertiesResult), intent(inout) :: res
 
     type(OpacityBinWork), pointer :: wrk
     type(Ksettings), pointer :: kset
@@ -768,6 +773,7 @@ contains
     real(dp), pointer :: tau_k1(:)
     real(dp), pointer :: tau_xy(:,:)
     real(dp), pointer :: tau_xy1(:)
+    real(dp), pointer :: tau_xy2(:)
     real(dp), pointer :: wxy1(:)
     real(dp), pointer :: wxy_e(:)
     integer, pointer :: inds(:)
@@ -839,8 +845,8 @@ contains
       ! total = gas scattering + continumm opacities + particle absorption + k-coeff + custom opacity
       wrk%tau(:) = wrk%tausg(:) + wrk%taua(:) + wrk%taup(:) + wrk%taua_1(:) + wrk%tauc(:)
       do j = 1,nz
-        if (rz%tau(j) <= tau_min) then
-          rz%w0(j) = 0.0_dp
+        if (wrk%tau(j) <= tau_min) then
+          wrk%w0(j) = 0.0_dp
         else
           wrk%w0(j) = min(max_w0,(wrk%tausg(j) + wrk%tausp(j) + wrk%tausc(j))/wrk%tau(j))
         endif
