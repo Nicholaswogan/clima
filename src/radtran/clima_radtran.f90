@@ -1,6 +1,7 @@
 module clima_radtran
   use clima_const, only: dp, s_str_len
-  use clima_radtran_types, only: OpticalProperties, RadiateXSWrk, RadiateZWrk
+  use clima_radtran_types, only: OpticalProperties, OpticalPropertiesWork, OpticalPropertiesResult
+  use clima_radtran_types, only: RTChannel, RadiateWork
   implicit none
   private
 
@@ -8,10 +9,6 @@ module clima_radtran
   public :: Radtran ! IR and solar radiative transfer
   
   type :: ClimaRadtranWrk
-    
-    ! work arrays
-    type(RadiateXSWrk) :: rx
-    type(RadiateZWrk) :: rz
     
     !> (nz+1,nw) mW/m2/Hz in each wavelength bin
     !> at the edges of the vertical grid
@@ -43,8 +40,13 @@ module clima_radtran
     integer :: nz
   
     !!! Optical properties !!!
-    type(OpticalProperties) :: ir
-    type(OpticalProperties) :: sol
+    type(OpticalProperties) :: op
+    type(OpticalPropertiesWork) :: opw
+    type(OpticalPropertiesResult) :: opr
+
+    type(RTChannel) :: ir
+    type(RTChannel) :: sol
+    type(RadiateWork) :: rw
     
     real(dp) :: diurnal_fac = 0.5_dp
     real(dp), allocatable :: zenith_u(:) !! cosine of the zenith angle in radians
@@ -120,8 +122,7 @@ contains
   
   function create_Radtran_2(species_names, particle_names, s, star_f, &
                             num_zenith_angles, surface_albedo, nz, datadir, err) result(rad)
-    use clima_radtran_types, only: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties, &
-                                   read_stellar_flux
+    use clima_radtran_types, only: SolarChannel, IRChannel, read_stellar_flux
     use clima_types, only: ClimaSettings
     use clima_eqns, only: zenith_angles_and_weights
     use clima_const, only: pi
@@ -157,20 +158,21 @@ contains
     allocate(rad%zenith_weights(num_zenith_angles))
     call zenith_angles_and_weights(num_zenith_angles, rad%zenith_u, rad%zenith_weights)
     rad%zenith_u = cos(rad%zenith_u*pi/180.0_dp)
-    
+
     if (.not. allocated(s%ir)) then
       err = '"'//s%filename//'/optical-properties/ir" does not exist.'
       return
     endif
-    rad%ir = OpticalProperties(datadir, IROpticalProperties, species_names, particle_names, s%ir, s%wavelength_bins_file, err)
+    rad%op = OpticalProperties(datadir, species_names, particle_names, s%ir, err)
     if (allocated(err)) return
-
-    if (.not. allocated(s%sol)) then
-      err = '"'//s%filename//'/optical-properties/solar" does not exist.'
-      return
-    endif
-    rad%sol = OpticalProperties(datadir, SolarOpticalProperties, species_names, particle_names, s%sol, s%wavelength_bins_file, err)
+    rad%opw = OpticalPropertiesWork(rad%op, rad%nz)
+    rad%opr = OpticalPropertiesResult(rad%op, rad%nz)
+    
+    rad%ir = RTChannel(datadir, IRChannel, s%wavelength_bins_file, rad%op, err)
     if (allocated(err)) return
+    rad%sol = RTChannel(datadir, SolarChannel, s%wavelength_bins_file, rad%op, err)
+    if (allocated(err)) return
+    rad%rw = RadiateWork(rad%op%nw, rad%nz)
 
     allocate(rad%surface_albedo(rad%sol%nw))
     rad%surface_albedo(:) = surface_albedo
@@ -190,8 +192,6 @@ contains
     if (allocated(err)) return
 
     ! IR work arrays
-    rad%wrk_ir%rx = RadiateXSWrk(rad%ir, nz)
-    rad%wrk_ir%rz = RadiateZWrk(nz,rad%ir%npart)
     allocate(rad%wrk_ir%fup_a(nz+1, rad%ir%nw))
     allocate(rad%wrk_ir%fdn_a(nz+1, rad%ir%nw))
     allocate(rad%wrk_ir%fup_n(nz+1))
@@ -201,8 +201,6 @@ contains
     allocate(rad%wrk_ir%tau_band(nz,rad%ir%nw))
 
     ! Solar work arrays
-    rad%wrk_sol%rx = RadiateXSWrk(rad%sol, nz)
-    rad%wrk_sol%rz = RadiateZWrk(nz,rad%sol%npart)
     allocate(rad%wrk_sol%fup_a(nz+1, rad%sol%nw))
     allocate(rad%wrk_sol%fdn_a(nz+1, rad%sol%nw))
     allocate(rad%wrk_sol%fup_n(nz+1))
@@ -215,9 +213,8 @@ contains
 
   end function
 
-  subroutine Radtran_radiate(self, T_surface, T, P, densities, dz, pdensities, radii, compute_solar, err)
+  subroutine Radtran_radiate(self, T_surface, T, P, densities, dz, pdensities, radii, compute_solar, compute_opacity, err)
     use clima_radtran_radiate, only: radiate
-    use clima_const, only: pi
     class(Radtran), target, intent(inout) :: self
     real(dp), intent(in) :: T_surface
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
@@ -226,11 +223,11 @@ contains
                                            !! molecule in each layer (molcules/cm3)
     real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:)
     logical, optional, intent(in) :: compute_solar
+    logical, optional, intent(in) :: compute_opacity
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
     character(:), allocatable, intent(out) :: err
 
-    integer :: ierr
-    logical :: compute_solar_
+    logical :: compute_solar_, compute_opacity_
 
     type(ClimaRadtranWrk), pointer :: wrk_ir
     type(ClimaRadtranWrk), pointer :: wrk_sol
@@ -245,37 +242,68 @@ contains
     if (present(compute_solar)) then
       compute_solar_ = compute_solar
     endif
+    compute_opacity_ = .true.
+    if (present(compute_opacity)) then
+      compute_opacity_ = compute_opacity
+    endif
+
+    if (compute_opacity_) then
+      ! First compute opacity
+      call self%op%compute_opacity(P, T, densities, dz, pdensities, radii, self%opw, self%opr, err)
+      if (allocated(err)) return
+    endif
 
     ! IR radiative transfer                                     
-    ierr = radiate(self%ir, &
-                   self%surface_emissivity, &
-                   self%surface_albedo, 0.0_dp, [0.0_dp], &
-                   [0.0_dp], [1.0_dp], &
-                   P, T_surface, T, densities, dz, &
-                   pdensities, radii, &
-                   wrk_ir%rx, wrk_ir%rz, &
-                   wrk_ir%fup_a, wrk_ir%fdn_a, wrk_ir%fup_n, wrk_ir%fdn_n, wrk_ir%amean, wrk_ir%tau_band)
-    if (ierr /= 0) then
-      err = 'Input particle radii are outside the data range.'
+    call radiate( &
+      rtc=self%ir, &
+      op=self%op, &
+      opr=self%opr, &
+      rw=self%rw, &
+      surface_emissivity=self%surface_emissivity, &
+      surface_albedo=self%surface_albedo, 
+      diurnal_fac=0.0_dp, 
+      photons_sol=[0.0_dp], &
+      zenith_u=[0.0_dp], 
+      zenith_weights=[1.0_dp], &
+      T_surface=T_surface, &
+      T=T, &
+      wrk_ir%fup_a, &
+      wrk_ir%fdn_a, &
+      wrk_ir%fup_n, &
+      wrk_ir%fdn_n, &
+      wrk_ir%amean, &
+      wrk_ir%tau_band &
+    )
+
+    ! If we don't want to compute solar RT, then we compute f_total and return
+    if (.not.compute_solar_) then
+      self%f_total = (wrk_sol%fdn_n - wrk_sol%fup_n) + (wrk_ir%fdn_n - wrk_ir%fup_n)
       return
     endif
-    if (compute_solar_) then
-    ! Solar radiative transfer
-    ierr = radiate(self%sol, &
-                   self%surface_emissivity, &
-                   self%surface_albedo, self%diurnal_fac, self%photons_sol*self%photon_scale_factor, &
-                   self%zenith_u, self%zenith_weights, &
-                   P, T_surface, T, densities, dz, &
-                   pdensities, radii, &
-                   wrk_sol%rx, wrk_sol%rz, &
-                   wrk_sol%fup_a, wrk_sol%fdn_a, wrk_sol%fup_n, wrk_sol%fdn_n, wrk_sol%amean, wrk_sol%tau_band)
-    if (ierr /= 0) then
-      err = 'Input particle radii are outside the data range.'
-      return
-    endif
-    endif
-    ! Total flux at edges of layers (ergs/(cm2 s) which is the same as mW/m2).
-    ! Index 1 is bottom. Index nz+1 is top edge of top layer.
+
+    ! Solar radiative transfer                                    
+    call radiate( &
+      rtc=self%sol, &
+      op=self%op, &
+      opr=self%opr, &
+      rw=self%rw, &
+      surface_emissivity=self%surface_emissivity, &
+      surface_albedo=self%surface_albedo, 
+      diurnal_fac=self%diurnal_fac, 
+      photons_sol=self%photons_sol*self%photon_scale_factor, &
+      zenith_u=self%zenith_u, 
+      zenith_weights=self%zenith_weights, &
+      T_surface=T_surface, &
+      T=T, &
+      wrk_sol%fup_a, &
+      wrk_sol%fdn_a, &
+      wrk_sol%fup_n, &
+      wrk_sol%fdn_n, &
+      wrk_sol%amean, &
+      wrk_sol%tau_band &
+    )
+
+    ! Total flux
     self%f_total = (wrk_sol%fdn_n - wrk_sol%fup_n) + (wrk_ir%fdn_n - wrk_ir%fup_n)
 
   end subroutine

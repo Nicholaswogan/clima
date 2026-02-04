@@ -6,6 +6,10 @@ module clima_radtran_types
   implicit none
   public
 
+  real(dp), parameter :: max_w0 = 0.99999_dp
+  real(dp), parameter :: max_gt = 0.999999_dp
+  real(dp), parameter :: tau_min = 1.0e-20_dp
+
   !!!!!!!!!!!!!!!!!!!!!!!!!!!
   !!! Optical Properties  !!!
   !!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -74,7 +78,7 @@ module clima_radtran_types
   
   ! integer :: k_method 
   enum, bind(c)
-    enumerator :: K_RandomOverlap, k_RandomOverlapResortRebin, k_AdaptiveEquivalentExtinction
+    enumerator :: k_RandomOverlapResortRebin, k_AdaptiveEquivalentExtinction
   end enum
   
   type :: Ksettings
@@ -84,16 +88,37 @@ module clima_radtran_types
     ! if k_method == k_RandomOverlapResortRebin
     ! then these are the weights we are re-binning to.
     integer :: nbin = -1
+    real(dp), allocatable :: wxy(:) ! (nbin*nbin)
     real(dp), allocatable :: wbin(:) ! (nbin)
     real(dp), allocatable :: wbin_e(:) ! (nbin+1)
   end type
   
   enum, bind(c)
-    enumerator :: FarUVOpticalProperties, SolarOpticalProperties, IROpticalProperties
+    enumerator :: SolarChannel, IRChannel
   end enum
+
+  type :: RTChannel
+    integer :: channel_type
+    integer :: ind_start, ind_end
+    integer :: nw
+    real(dp), allocatable :: wavl(:)
+    real(dp), allocatable :: freq(:)
+  end type
+  interface
+    module function create_RTChannel(datadir, channel_type, wavelength_bins_file, op, err) result(rtc)
+      character(*), intent(in) :: datadir
+      integer, intent(in) :: channel_type
+      character(:), allocatable, intent(in) :: wavelength_bins_file
+      type(OpticalProperties), intent(in) :: op
+      character(:), allocatable, intent(out) :: err
+      type(RTChannel) :: rtc
+    end function
+  end interface
+  interface RTChannel
+    module procedure :: create_RTChannel
+  end interface
   
   type :: OpticalProperties
-    integer :: op_type
     integer :: nw
     real(dp), allocatable :: wavl(:)
     real(dp), allocatable :: freq(:)
@@ -103,7 +128,6 @@ module clima_radtran_types
     character(s_str_len), allocatable :: particle_names(:)
     
     ! K-distributions (e.g. H2O)
-    integer :: ngauss_max = -1
     integer :: nk
     type(Ksettings) :: kset
     type(Ktable), allocatable :: k(:)
@@ -134,22 +158,20 @@ module clima_radtran_types
     type(linear_interp_1d), private, allocatable :: g0_interp(:) ! nw
 
   contains
+    procedure :: compute_opacity => OpticalProperties_compute_opacity
     procedure :: opacities2yaml => OpticalProperties_opacities2yaml
     procedure :: set_custom_optical_properties => OpticalProperties_set_custom_optical_properties
     procedure :: unset_custom_optical_properties => OpticalProperties_unset_custom_optical_properties
     procedure :: custom_optical_properties => OpticalProperties_custom_optical_properties
   end type
-  
   interface
-    module function create_OpticalProperties(datadir, optype, species_names, &
-                                             particle_names, sop, wavelength_bins_file, err) result(op)
+    module function create_OpticalProperties(datadir, species_names, &
+                                             particle_names, sop, err) result(op)
       use clima_types, only: SettingsOpacity
       character(*), intent(in) :: datadir
-      integer, intent(in) :: optype
       character(*), intent(in) :: species_names(:)
       character(*), intent(in) :: particle_names(:)
       type(SettingsOpacity), intent(in) :: sop
-      character(:), allocatable, intent(in) :: wavelength_bins_file
       character(:), allocatable, intent(out) :: err
       type(OpticalProperties) :: op
     end function
@@ -165,26 +187,39 @@ module clima_radtran_types
     real(dp), allocatable :: k(:,:) ! (nz, ngauss)
   end type
   
-  type :: RadiateXSWrk
+  type :: OpacityBinWork
+
+    ! Results of interpolation
     type(Kcoefficients), allocatable :: ks(:)
     real(dp), allocatable :: cia(:,:)
-    real(dp), allocatable :: axs(:,:)
     real(dp), allocatable :: pxs(:,:)
     real(dp), allocatable :: H2O(:), foreign(:)
+    real(dp), allocatable :: w0p(:,:)
+    real(dp), allocatable :: qextp(:,:)
+    real(dp), allocatable :: gtp(:,:)
 
-    ! logical :: interpolated_particles = .false.
-    real(dp), allocatable :: w0(:,:)
-    real(dp), allocatable :: qext(:,:)
-    real(dp), allocatable :: gt(:,:)
+    ! Intermediate opacities
+    real(dp), allocatable :: tausg(:) ! Rayleigh scattering tau
+    real(dp), allocatable :: taua(:) ! Continuum absorption tau
+    real(dp), allocatable :: tauc(:), tausc(:), w0c(:), g0c(:) ! Custom
+    real(dp), allocatable :: tausp(:)
+    real(dp), allocatable :: tausp_1(:,:)
+    real(dp), allocatable :: taup(:)
+    real(dp), allocatable :: taua_1(:)
+    real(dp), allocatable :: tau(:)
+    real(dp), allocatable :: w0(:)
+    real(dp), allocatable :: gt(:)
     
     ! work arrays that are needed only if
     ! k_method == k_RandomOverlapResortRebin
     real(dp), allocatable :: tau_k(:,:) ! (nz,nbin)
-    real(dp), allocatable :: tau_xy(:,:) ! (nz,nbin*ngauss_max)
-    real(dp), allocatable :: wxy(:) ! (nbin*ngauss_max)
-    real(dp), allocatable :: wxy1(:) ! (nbin*ngauss_max)
-    real(dp), allocatable :: wxy_e(:) ! (nbin*ngauss_max+1)
-    integer, allocatable :: inds(:) ! (nbin*ngauss_max)
+    real(dp), allocatable :: tau_k1(:) ! (nbin)
+    real(dp), allocatable :: tau_xy(:,:) ! (nz,nbin*nbin)
+    real(dp), allocatable :: tau_xy1(:) ! (nbin*nbin)
+    real(dp), allocatable :: tau_xy2(:) ! (nbin*nbin)
+    real(dp), allocatable :: wxy1(:) ! (nbin*nbin)
+    real(dp), allocatable :: wxy_e(:) ! (nbin*nbin+1)
+    integer, allocatable :: inds(:) ! (nbin*nbin)
     ! end work arrays that are needed for k_RandomOverlapResortRebin
 
     ! work arrays that are only needed for if 
@@ -193,55 +228,87 @@ module clima_radtran_types
     real(dp), allocatable :: tau_grey_sum(:) ! (nz)
     integer, allocatable :: ind_major(:) ! (nz)
   end type
-  
   interface
-    module function create_RadiateXSWrk(op, nz) result(rw)
+    module function create_OpacityBinWork(op, nz) result(wrk)
       type(OpticalProperties), target, intent(in) :: op
       integer, intent(in) :: nz
-      type(RadiateXSWrk) :: rw
+      type(OpacityBinWork) :: wrk
     end function
   end interface
-  interface RadiateXSWrk
-    module procedure :: create_RadiateXSWrk
+  interface OpacityBinWork
+    module procedure :: create_OpacityBinWork
   end interface
-  
-  type :: RadiateZWrk
-    real(dp), allocatable :: tausg(:)
-    real(dp), allocatable :: taua(:)
-    real(dp), allocatable :: taua_1(:)
 
-    real(dp), allocatable :: tausp(:)
-    real(dp), allocatable :: tausp_1(:,:)
-    real(dp), allocatable :: taup(:)
+  type :: OpticalPropertiesWork
+    ! Indicates errors (if /= 0, then error)
+    integer, allocatable :: ierrs(:) ! (nw)
 
-    real(dp), allocatable :: tauc(:), tausc(:), w0c(:), g0c(:)
+    ! Pressures and columns
+    real(dp), allocatable :: log10P(:) ! (nz)
+    real(dp), allocatable :: log10P_cgs(:) ! (nz)
+    real(dp), allocatable :: cols(:,:) ! (nz,ng)
+    real(dp), allocatable :: foreign_col(:) ! (nz)
 
-    real(dp), allocatable :: tau(:)
-    real(dp), allocatable :: w0(:)
-    real(dp), allocatable :: gt(:)
-
-    real(dp), allocatable :: tau_band(:) !! band optical thickness.
-  
-    real(dp), allocatable :: amean(:)
-    real(dp), allocatable :: amean1(:)
-    real(dp), allocatable :: amean2(:)
-    real(dp), allocatable :: fup1(:)
-    real(dp), allocatable :: fdn1(:)
-    real(dp), allocatable :: fup2(:)
-    real(dp), allocatable :: fdn2(:)
-    real(dp), allocatable :: fup(:)
-    real(dp), allocatable :: fdn(:)
-    real(dp), allocatable :: bplanck(:)
+    ! Work space for each wavelength bin
+    type(OpacityBinWork), allocatable :: bins(:)
   end type
-  
   interface
-    module function create_RadiateZWrk(nz, npart) result(rz)
-      integer, intent(in) :: nz, npart
-      type(RadiateZWrk) :: rz
+    module function create_OpticalPropertiesWork(op, nz) result(opw)
+      type(OpticalProperties), target, intent(in) :: op
+      integer, intent(in) :: nz
+      type(OpticalPropertiesWork) :: opw
     end function
   end interface
-  interface RadiateZWrk
-    module procedure :: create_RadiateZWrk
+  interface OpticalPropertiesWork
+    module procedure :: create_OpticalPropertiesWork
+  end interface
+
+  type :: OpticalPropertiesResult
+    real(dp), allocatable :: tau(:,:,:) ! (nz, ngauss, nw)
+    real(dp), allocatable :: tau_band(:,:) ! (nz, nw)
+    real(dp), allocatable :: w0(:,:,:) ! (nz, ngauss, nw)
+    real(dp), allocatable :: g(:,:) ! (nz,nw)
+  end type
+  interface
+    module function create_OpticalPropertiesResult(op, nz) result(res)
+      type(OpticalProperties), target, intent(in) :: op
+      integer, intent(in) :: nz
+      type(OpticalPropertiesResult) :: res
+    end function
+  end interface
+  interface OpticalPropertiesResult
+    module procedure :: create_OpticalPropertiesResult
+  end interface
+
+  type :: RadiateBinWork
+    real(dp), allocatable :: bplanck(:) ! (nz+1)
+    ! All (nz+1) below
+    real(dp), allocatable :: fup0(:), fup1(:), fup2(:)
+    real(dp), allocatable :: fdn0(:), fdn1(:), fdn2(:)
+    real(dp), allocatable :: amean0(:), amean1(:), amean2(:)
+  endtype
+  interface
+    module function create_RadiateBinWork(nz) result(rbw)
+      integer, intent(in) :: nz
+      type(RadiateBinWork) :: rbw
+    end function
+  end interface
+  interface RadiateBinWork
+    module procedure :: create_RadiateBinWork
+  end interface
+
+  type :: RadiateWork
+    type(RadiateBinWork), allocatable :: rbw(:) ! nw
+  end type
+  interface
+    module function create_RadiateWork(nw, nz) result(rw)
+      integer, intent(in) :: nw
+      integer, intent(in) :: nz
+      type(RadiateWork) :: rw
+    end function
+  end interface
+  interface RadiateWork
+    module procedure :: create_RadiateWork
   end interface
   
   ! for reading the stellar flux
@@ -476,6 +543,7 @@ contains
 
   !> Interpolates the custom optical properties
   subroutine OpticalProperties_custom_optical_properties(self, log10P, dz, l, tau, w0, g0)
+    use clima_eqns, only: ten2power
     class(OpticalProperties), intent(inout) :: self
     real(dp), intent(in) :: log10P(:) !! Pressure in dynes/cm^2
     real(dp), intent(in) :: dz(:) !! Layer thickness in cm
@@ -501,5 +569,373 @@ contains
     enddo
 
   end subroutine
+
+  subroutine OpticalProperties_compute_opacity(self, P, T, densities, dz, pdensities, radii, opw, res, err)
+    class(OpticalProperties), intent(inout) :: self
+
+    real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
+    real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
+    real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
+                                           !! molecule in each layer (molcules/cm3)
+    real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
+    real(dp), optional, intent(in) :: pdensities(:,:) !! (nz,np) particles/cm3
+    real(dp), optional, intent(in) :: radii(:,:) !! (nz,np) cm
+    class(OpticalPropertiesWork), target, intent(inout) :: opw !! Work space
+    class(OpticalPropertiesResult), intent(out) :: res !! Result
+    character(:), allocatable, intent(out) :: err
+
+    integer :: nz, ng
+    integer :: l
+
+    ! Ensure
+    if (self%nk == 0) then
+      err = 'There are no k-distributions, yet there must be some to compute total opacity.'
+      return
+    endif
+
+    ! Pre-compute log10P and columns.
+    block
+    integer :: i, j
+      nz = size(dz)
+      ng = size(densities, 2)
+      opw%log10P = log10(P)
+      opw%log10P_cgs = log10(P*1.0e6_dp)
+      do i = 1,ng
+        opw%cols(:,i) = densities(:,i)*dz(:)
+      enddo
+      if (allocated(self%cont)) then
+        do j = 1,nz
+          opw%foreign_col(j) = 0.0_dp
+          do i = 1,ng
+            if (i /= self%cont%LH2O) then
+              opw%foreign_col(j) = opw%foreign_col(j) + opw%cols(j,i)
+            endif
+          enddo
+        enddo
+      endif
+    end block
+
+    ! Zero out error indicator
+    opw%ierrs = 0
+
+    !$omp parallel private(l)
+    !$omp do
+    do l = 1,self%nw; block
+      integer :: i, j, k, n, jj, ierr
+      real(dp) :: TT, log10PP, taup_1
+      type(OpacityBinWork), pointer :: wrk
+
+      ! Get work space for a given bin
+      wrk => opw%bins(l)
+
+      ! Interpolate k-distributions
+      do i = 1,self%nk
+        do k = 1,self%k(i)%ngauss
+          do j = 1,nz
+            TT = min(max(T(j), self%k(i)%T_min), self%k(i)%T_max)
+            log10PP = min(max(opw%log10P(j), self%k(i)%log10P_min), self%k(i)%log10P_max)
+            call self%k(i)%log10k(k,l)%evaluate(log10PP, TT, wrk%ks(i)%k(j,k))
+            wrk%ks(i)%k(j,k) = ten2power(wrk%ks(i)%k(j,k))
+          enddo
+        enddo
+      enddo
+
+      ! Interpolate CIA
+      do i = 1,self%ncia
+        call interpolate_Xsection(self%cia(i), l, T, wrk%cia(:,i))
+      enddo
+
+      ! Interpolate photolysis
+      do i = 1,self%npxs
+        call interpolate_Xsection(self%pxs(i), l, T, wrk%pxs(:,i))
+      enddo
+
+      ! Interpolate water continuum
+      if (allocated(self%cont)) then
+        call interpolate_WaterContinuum(self%cont, l, T, wrk%H2O, wrk%foreign)
+      endif
+
+      ! Interpolate particles
+      do i = 1,self%npart
+        call interpolate_Particle(self%part(i), l, radii, wrk%w0p(:,i), wrk%qextp(:,i), wrk%gtp(:,i), ierr)
+        opw%ierrs(l) = opw%ierrs(l) + ierr
+      enddo
+
+      ! Rayleigh scattering
+      wrk%tausg(:) = 0.0_dp
+      do i = 1,self%nray
+        j = self%ray(i)%sp_ind(1)
+        do k = 1,nz
+          n = nz+1-k
+          wrk%tausg(n) = wrk%tausg(n) + self%ray(i)%xs_0d(l)*opw%cols(k,j)
+        enddo
+      enddo
+      
+      ! CIA
+      wrk%taua(:) = 0.0_dp
+      do i = 1,self%ncia
+        j = self%cia(i)%sp_ind(1)
+        jj = self%cia(i)%sp_ind(2)
+        do k = 1,nz
+          n = nz+1-k
+          wrk%taua(n) = wrk%taua(n) + wrk%cia(k,i)*densities(k,j)*densities(k,jj)*dz(k)
+        enddo
+      enddo
+      
+      ! Photolysis/Absorption
+      do i = 1,self%npxs
+        j = self%pxs(i)%sp_ind(1)
+        do k = 1,nz
+          n = nz+1-k
+          wrk%taua(n) = wrk%taua(n) + wrk%pxs(k,i)*opw%cols(k,j)
+        enddo
+      enddo
+
+      ! Continuum absorption
+      if (allocated(self%cont)) then
+        do k = 1,nz
+          n = nz+1-k
+          wrk%taua(n) = wrk%taua(n) &
+                       + wrk%H2O(k)*densities(k,self%cont%LH2O)*opw%cols(k,self%cont%LH2O) &
+                       + wrk%foreign(k)*densities(k,self%cont%LH2O)*opw%foreign_col(k)
+        enddo
+      endif
+
+      ! Custom opacity
+      call self%custom_optical_properties(opw%log10P_cgs, dz, l, wrk%tauc, wrk%w0c, wrk%g0c)
+      wrk%tauc = wrk%tauc(nz:1:-1)
+      wrk%w0c = wrk%w0c(nz:1:-1)
+      wrk%g0c = wrk%g0c(nz:1:-1)
+      wrk%tausc = wrk%w0c*wrk%tauc
+
+      ! Particles
+      wrk%tausp(:) = 0.0_dp
+      wrk%taup(:) = 0.0_dp
+      do i = 1,self%npart
+        j = self%part(i)%p_ind
+        do k = 1,nz
+          n = nz+1-k
+          taup_1 = wrk%qextp(k,i)*pi*radii(k,j)**2.0_dp*pdensities(k,j)*dz(k)
+          wrk%taup(n) = wrk%taup(n) + taup_1
+          wrk%tausp_1(n,i) = wrk%w0p(k,i)*taup_1
+          wrk%tausp(n) = wrk%tausp(n) + wrk%tausp_1(n,i)
+        enddo
+      enddo
+
+      wrk%gt(:) = 0.0_dp
+      do i = 1,self%npart
+        do k = 1,nz
+          n = nz+1-k
+          wrk%gt(n) = wrk%gt(n) + wrk%gtp(k,i)*wrk%tausp_1(n,i)/max(tau_min, (wrk%tausp(n) + wrk%tausg(n) + wrk%tausc(n)))
+        enddo
+      enddo
+      wrk%gt = wrk%gt + wrk%g0c*wrk%tausc/max(tau_min, (wrk%tausp + wrk%tausg + wrk%tausc))
+      do k = 1,nz
+        n = nz+1-k
+        wrk%gt(n) = min(wrk%gt(n), max_gt)
+      enddo
+
+      if (op%kset%k_method == k_RandomOverlapResortRebin) then
+        call k_rorr(self, l, opw, res)
+      elseif (op%kset%k_method == k_AdaptiveEquivalentExtinction) then
+        ! Will implement eventually
+        opw%ierrs(l) = 1
+      else
+        ! This should never happen
+        opw%ierrs(l) = 1
+      endif
+
+    end block; enddo
+    !$omp enddo
+    !$omp end parallel
+
+    if (any(opw%ierrs /= 0)) then
+      err = 'There was a problem'
+      return
+    endif
+
+  end subroutine
+
+  subroutine k_rorr(op, l, opw, res)
+    type(OpticalProperties), target, intent(in) :: op
+    integer, intent(in) :: l
+    type(OpticalPropertiesWork), target, intent(inout) :: opw
+    type(OpticalPropertiesResult), intent(out) :: res
+
+    type(OpacityBinWork), pointer :: wrk
+    type(Ksettings), pointer :: kset
+    real(dp), pointer :: tau_k(:,:)
+    real(dp), pointer :: tau_k1(:)
+    real(dp), pointer :: tau_xy(:,:)
+    real(dp), pointer :: tau_xy1(:)
+    real(dp), pointer :: wxy1(:)
+    real(dp), pointer :: wxy_e(:)
+    integer, pointer :: inds(:)
+
+    integer :: i, j, jj, j2, j1, k, n
+    integer :: nz, ngauss
+
+    kset => op%kset
+    wrk => opw%bins(l)
+    tau_k => wrk%tau_k
+    tau_k1 => wrk%tau_k1
+    tau_xy => wrk%tau_xy
+    tau_xy1 => wrk%tau_xy1
+    tau_xy2 => wrk%tau_xy2
+    wxy1 => wrk%wxy1
+    wxy_e => wrk%wxy_e
+    inds => wrk%inds
+    nz = size(opw%cols, 1)
+
+    ! First k-distribution
+    j1 = op%k(1)%sp_ind
+    do i = 1,kset%nbin
+      tau_k(:,i) = wrk%ks(1)%k(:,i)*opw%cols(:,j1) ! cm^2/molecule * molecules/cm^2
+    enddo
+
+    ! Mix rest of k-coeff species with the first species
+    ngauss = kset%nbin
+    do jj = 2,op%nk
+      j2 = op%k(jj)%sp_ind
+
+      do i = 1,ngauss
+        do j = 1,ngauss
+          tau_xy(:,j + (i-1)*ngauss) = tau_k(:,i) + wrk%ks(jj)%k(:,j)*opw%cols(:,j2)
+        enddo
+      enddo
+
+      do i = 1,nz
+        ! Sort tau_xy and the weights
+        do j = 1,size(tau_xy,2)
+          tau_xy1(j) = tau_xy(i,j)
+        enddo
+        call mrgrnk(tau_xy1, inds)
+        do j = 1,size(inds)
+          tau_xy2(j) = tau_xy1(inds(j))
+          wxy1(j) = kset%wxy(inds(j))
+        enddo
+        ! Rebin to smaller grid
+        call weights_to_bins(wxy1, wxy_e)
+        call rebin(wxy_e, tau_xy2, kset%wbin_e, tau_k1)
+        do j = 1,size(tau_k1)
+          tau_k(i,j) = tau_k1(j)
+        enddo
+      enddo
+
+    enddo
+
+    res%tau_band(:,l) = 0.0_dp
+    do i = 1,kset%nbin
+
+      ! tau_k(:,i) is optical depth of ith mixed k-coeff.
+      ! tau_k(1,i) is lowest level. Need to reorder so that
+      ! first element in array is top of the atmosphere.
+      do k = 1,nz
+        n = nz+1-k
+        wrk%taua_1(n) = tau_k(k,i)
+      enddo
+
+      ! Sum all optical depths
+      ! total = gas scattering + continumm opacities + particle absorption + k-coeff + custom opacity
+      wrk%tau(:) = wrk%tausg(:) + wrk%taua(:) + wrk%taup(:) + wrk%taua_1(:) + wrk%tauc(:)
+      do j = 1,nz
+        if (rz%tau(j) <= tau_min) then
+          rz%w0(j) = 0.0_dp
+        else
+          wrk%w0(j) = min(max_w0,(wrk%tausg(j) + wrk%tausp(j) + wrk%tausc(j))/wrk%tau(j))
+        endif
+      enddo
+
+      ! Save results
+      res%tau(:,i,l) = wrk%tau
+      res%tau_band(:,l) = res%tau_band(:,l) + wrk%tau*kset%wbin(i)
+      res%w0(:,i,l) = wrk%w0
+
+    enddo
+
+    ! Asymmetry parameter
+    res%g(:,l) = wrk%gt
+    
+  end subroutine
+
+  subroutine interpolate_Xsection(xs, l, T, res)
+    use clima_eqns, only: ten2power
+    type(Xsection), intent(inout) :: xs
+    integer, intent(in) :: l
+    real(dp), intent(in) :: T(:)
+    real(dp), intent(out) :: res(:)
+    
+    integer :: j
+    real(dp) :: val, TT
+
+    if (xs%dim == 0) then
+      do j = 1,size(T)
+        res(j) = xs%xs_0d(l)
+      enddo
+    elseif (xs%dim == 1) then
+      do j = 1,size(T)
+        TT = min(max(T(j), xs%T_min), xs%T_max)
+
+        call xs%log10_xs_1d(l)%evaluate(TT, val)
+        res(j) = ten2power(val)
+      enddo
+    endif
+    
+  end subroutine
   
+  subroutine interpolate_WaterContinuum(cont, l, T, H2O, foreign)
+    use clima_eqns, only: ten2power
+    
+    type(WaterContinuum), intent(inout) :: cont
+    integer, intent(in) :: l
+    real(dp), intent(in) :: T(:)
+    real(dp), intent(out) :: H2O(:)
+    real(dp), intent(out) :: foreign(:)
+    
+    integer :: j
+    real(dp) :: val, TT
+    
+    do j = 1,size(T)
+
+      TT = min(max(T(j), cont%T_min), cont%T_max)
+      
+      call cont%log10_xs_H2O(l)%evaluate(TT, val)
+      H2O(j) = ten2power(val)
+      
+      call cont%log10_xs_foreign(l)%evaluate(TT, val)
+      foreign(j) = ten2power(val)
+    enddo
+    
+  end subroutine
+
+  subroutine interpolate_Particle(part, l, radii, w0, qext, gt, ierr)
+    type(ParticleXsection), intent(inout) :: part
+    integer, intent(in) :: l
+    real(dp), intent(in) :: radii(:,:)
+    real(dp), intent(out) :: w0(:)
+    real(dp), intent(out) :: qext(:)
+    real(dp), intent(out) :: gt(:)
+    integer, intent(out) :: ierr
+
+    integer :: j
+    real(dp) :: rp
+
+    ierr = 0
+
+    do j = 1,size(radii,1)
+      rp = radii(j,part%p_ind)
+
+      ! Error indication if radius is outside bounds
+      if (rp < part%r_min .or. rp > part%r_max) then
+        rp = min(max(rp, part%r_min), part%r_max)
+        ierr = 1
+      endif
+
+      call part%w0(l)%evaluate(rp, w0(j))
+      call part%qext(l)%evaluate(rp, qext(j))
+      call part%gt(l)%evaluate(rp, gt(j))
+    enddo
+
+  end subroutine
+
 end module

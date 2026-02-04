@@ -77,124 +77,204 @@ contains
 
   end subroutine
   
-  module function create_RadiateXSWrk(op, nz) result(rw)
+  module function create_OpacityBinWork(op, nz) result(wrk)
 
     type(OpticalProperties), target, intent(in) :: op
     integer, intent(in) :: nz
-    type(RadiateXSWrk) :: rw
+    type(OpacityBinWork) :: wrk
     
     type(Ksettings), pointer :: kset
     
     integer :: i
     
-    allocate(rw%ks(op%nk))
+    allocate(wrk%ks(op%nk))
     do i = 1,op%nk
-      allocate(rw%ks(i)%k(nz,op%k(i)%ngauss))
+      allocate(wrk%ks(i)%k(nz,op%k(i)%ngauss))
     enddo
-    allocate(rw%cia(nz,op%ncia))
-    allocate(rw%axs(nz,op%naxs))
-    allocate(rw%pxs(nz,op%npxs))
-    allocate(rw%H2O(nz))
-    allocate(rw%foreign(nz))
-    allocate(rw%w0(nz,op%npart))
-    allocate(rw%qext(nz,op%npart))
-    allocate(rw%gt(nz,op%npart))
+    allocate(wrk%cia(nz,op%ncia))
+    allocate(wrk%pxs(nz,op%npxs))
+    allocate(wrk%H2O(nz))
+    allocate(wrk%foreign(nz))
+    allocate(wrk%w0p(nz,op%npart))
+    allocate(wrk%qextp(nz,op%npart))
+    allocate(wrk%gtp(nz,op%npart))
+
+    allocate(wrk%tausg(nz))
+    allocate(wrk%taua(nz))
+    allocate(wrk%tauc(nz),wrk%tausc(nz),wrk%w0c(nz),wrk%g0c(nz))
+    allocate(wrk%tausp(nz))
+    allocate(wrk%tausp_1(nz,op%npart))
+    allocate(wrk%taup(nz))
+    allocate(wrk%taua_1(nz))
+    allocate(wrk%tau(nz))
+    allocate(wrk%w0(nz))
+    allocate(wrk%gt(nz))
     
     ! if there are k-distributions
     ! then we need to allocate some work arrays
     kset => op%kset
     if (op%nk /= 0) then
-      if (kset%k_method == K_RandomOverlap) then
-        ! no need to allocate anything
-      elseif (kset%k_method == K_RandomOverlapResortRebin) then
-        allocate(rw%tau_k(nz,kset%nbin))
-        allocate(rw%tau_xy(nz,kset%nbin*op%ngauss_max))
-        allocate(rw%wxy(kset%nbin*op%ngauss_max))
-        allocate(rw%wxy1(kset%nbin*op%ngauss_max))
-        allocate(rw%wxy_e(kset%nbin*op%ngauss_max+1))
-        allocate(rw%inds(kset%nbin*op%ngauss_max))
+      if (kset%k_method == K_RandomOverlapResortRebin) then
+        allocate(wrk%tau_k(nz,kset%nbin))
+        allocate(wrk%tau_k1(kset%nbin))
+        allocate(wrk%tau_xy(nz,kset%nbin*kset%nbin))
+        allocate(wrk%tau_xy1(kset%nbin*kset%nbin))
+        allocate(wrk%tau_xy2(kset%nbin*kset%nbin))
+        allocate(wrk%wxy1(kset%nbin*kset%nbin))
+        allocate(wrk%wxy_e(kset%nbin*kset%nbin+1))
+        allocate(wrk%inds(kset%nbin*kset%nbin))
       elseif (kset%k_method == k_AdaptiveEquivalentExtinction) then
-        allocate(rw%tau_grey(nz,op%nk))
-        allocate(rw%tau_grey_sum(nz))
-        allocate(rw%ind_major(nz))
+        allocate(wrk%tau_grey(nz,op%nk))
+        allocate(wrk%tau_grey_sum(nz))
+        allocate(wrk%ind_major(nz))
       endif
     endif
     
   end function  
   
-  module function create_RadiateZWrk(nz, npart) result(rz)
-    integer, intent(in) :: nz, npart
-    
-    type(RadiateZWrk) :: rz
-  
-    allocate(rz%tausg(nz))
-    allocate(rz%taua(nz))
-    allocate(rz%taua_1(nz))
+  module function create_OpticalPropertiesWork(op, nz) result(opw)
+    type(OpticalProperties), target, intent(in) :: op
+    integer, intent(in) :: nz
+    type(OpticalPropertiesWork) :: opw
+    integer :: i
 
-    allocate(rz%tausp(nz))
-    allocate(rz%tausp_1(nz,npart))
-    allocate(rz%taup(nz))
+    allocate(opw%ierrs(op%nw))
+    allocate(opw%log10P(nz))
+    allocate(opw%log10P_cgs(nz))
+    allocate(opw%cols(nz,size(op%species_names)))
+    allocate(opw%foreign_col(nz))
 
-    allocate(rz%tauc(nz),rz%tausc(nz),rz%w0c(nz),rz%g0c(nz))
+    allocate(opw%bins(op%nw))
+    do i = 1,op%nw
+      opw%bins(i) = OpacityBinWork(op, nz)
+    enddo
 
-    allocate(rz%tau(nz))
-    allocate(rz%w0(nz))
-    allocate(rz%gt(nz))
+  end function
 
-    allocate(rz%tau_band(nz))
+  module function create_OpticalPropertiesResult(op, nz) result(res)
+    type(OpticalProperties), target, intent(in) :: op
+    integer, intent(in) :: nz
+    type(OpticalPropertiesResult) :: res
+    integer :: ngauss
 
-    allocate(rz%amean(nz+1))
-    allocate(rz%amean1(nz+1))
-    allocate(rz%amean2(nz+1))
-    allocate(rz%fup1(nz+1))
-    allocate(rz%fdn1(nz+1))
-    allocate(rz%fup2(nz+1))
-    allocate(rz%fdn2(nz+1))
-    allocate(rz%fup(nz+1))
-    allocate(rz%fdn(nz+1))
-    allocate(rz%bplanck(nz+1))
+    ngauss = op%kset%nbin
+
+    allocate(res%tau(nz,ngauss,op%nw))
+    allocate(res%tau_band(nz,op%nw))
+    allocate(res%w0(nz,ngauss,op%nw))
+    allocate(res%g(nz,op%nw))
+  end function
+
+  module function create_RadiateBinWork(nz) result(rbw)
+    integer, intent(in) :: nz
+    type(RadiateBinWork) :: rbw
+
+    allocate(rbw%bplanck(nz+1))
+    allocate(rbw%fup0(nz+1), rbw%fup1(nz+1), rbw%fup2(nz+1))
+    allocate(rbw%fdn0(nz+1), rbw%fdn1(nz+1), rbw%fdn2(nz+1))
+    allocate(rbw%amean0(nz+1), rbw%amean1(nz+1), rbw%amean2(nz+1))
+  end function
+
+  module function create_RadiateWork(nw, nz) result(rw)
+    integer, intent(in) :: nw
+    integer, intent(in) :: nz
+    type(RadiateWork) :: rw
+    integer :: i
+
+    allocate(rw%rbw(nw))
+    do i = 1,nw
+      rw%rbw(i) = RadiateBinWork(nz)
+    enddo
   end function
   
-  function create_Ksettings(sop) result(kset)
+  function create_Ksettings(k, sop) result(kset)
     use clima_types, only: SettingsOpacity
     use clima_eqns, only: weights_to_bins
     use futils, only: gauss_legendre
-    
+    type(Ktable), intent(in) :: k
     type(SettingsOpacity), intent(in) :: sop
     type(Ksettings) :: kset
+
+    integer :: i, j
 
     kset%k_method_name = sop%k_method
     
     ! method for mixing k-distributions.
     if (sop%k_method == "RandomOverlapResortRebin") then
       kset%k_method = k_RandomOverlapResortRebin
-      ! We will hard code the bins to be something reasonable
-      kset%nbin = 8
-      allocate(kset%wbin_e(kset%nbin+1))
+      kset%nbin = size(k%weights)
       allocate(kset%wbin(kset%nbin))
-      kset%wbin(:) = [0.16523105_dp, 0.30976894_dp, 0.30976894_dp, &
-                      0.16523105_dp, 0.00869637_dp, 0.01630363_dp, &
-                      0.01630363_dp, 0.00869637_dp]
-      call weights_to_bins(kset%wbin, kset%wbin_e)
-    elseif (sop%k_method == "RandomOverlap") then
-      kset%k_method = k_RandomOverlap
+      allocate(kset%wxy(kset%nbin*kset%nbin))
+      allocate(kset%wbin_e(kset%nbin+1))
+      kset%wbin = k%weights
+      kset%wbin_e = k%weight_e
+      do i = 1,kset%nbin
+        do j = 1,kset%nbin
+          kset%wxy(j + (i-1)*kset%nbin) = kset%wbin(i)*kset%wbin(j)        
+        enddo
+      enddo
     elseif (sop%k_method == "AdaptiveEquivalentExtinction") then
       kset%k_method = k_AdaptiveEquivalentExtinction
     endif
     
   end function
+
+  module function create_RTChannel(datadir, channel_type, wavelength_bins_file, op, err) result(rtc)
+    use futils, only: is_close
+    use clima_const, only: c_light
+    character(*), intent(in) :: datadir
+    integer, intent(in) :: channel_type
+    character(:), allocatable, intent(in) :: wavelength_bins_file
+    type(OpticalProperties), intent(in) :: op
+    character(:), allocatable, intent(out) :: err
+    type(RTChannel) :: rtc
+
+    integer :: ind1, ind2
+    character(:), allocatable :: filename
+
+    ! Get wavelength bin edges
+    rtc%channel_type = channel_type
+    if (allocated(wavelength_bins_file)) then
+      filename = wavelength_bins_file ! custom bins file, specified in settings
+    else
+      filename = datadir//"/kdistributions/bins.h5" ! default
+    endif
+    call read_wavl(filename, channel_type, rtc%wavl, err)
+    if (allocated(err)) return
+
+    ! Get indicies
+    ind1 = minloc(abs(rtc%wavl(1) - op%wavl), 1)
+    ind2 = minloc(abs(rtc%wavl(size(rtc%wavl)) - op%wavl), 1)
+    if (size(rtc%wavl) /= size(op%wavl(ind1:ind2))) then
+      err = 'The wavelength bins "'//trim(filename)//'" are not compatible with '// &
+            'the k-distribution wavelength bins.'
+      return
+    endif
+    if (.not. all(is_close(rtc%wavl, op%wavl(ind1:ind2), tol=1.0e-7_dp))) then
+      err = 'The wavelength bins "'//trim(filename)//'" are not compatible with '// &
+            'the k-distribution wavelength bins.'
+      return
+    endif
+
+    ! Fill in nw and freq
+    rtc%nw = size(rtc%wavl) - 1
+    allocate(rtc%freq(size(rtc%wavl)))
+    rtc%freq = c_light/(rtc%wavl*1.0e-9_dp)
+    rtc%ind_start = ind1
+    rtc%ind_end = ind2 - 1
+
+  end function
   
-  module function create_OpticalProperties(datadir, optype, species_names, &
-                                           particle_names, sop, wavelength_bins_file, err) result(op)
+  module function create_OpticalProperties(datadir, species_names, &
+                                           particle_names, sop, err) result(op)
     use fortran_yaml_c, only: YamlFile
+    use futils, only: is_close
     use clima_const, only: c_light, s_str_len
     use clima_types, only: SettingsOpacity
     character(*), intent(in) :: datadir
-    integer, intent(in) :: optype
     character(*), intent(in) :: species_names(:)
     character(*), intent(in) :: particle_names(:)
     type(SettingsOpacity), intent(in) :: sop
-    character(:), allocatable, intent(in) :: wavelength_bins_file
     character(:), allocatable, intent(out) :: err
     
     type(OpticalProperties) :: op
@@ -205,20 +285,7 @@ contains
     type(type_key_value_pair), pointer :: pair
     character(s_str_len), allocatable :: tmp_str_list(:), cia_list(:)
     logical :: tmp_bool, file_exists
-    
-    op%op_type = optype
-    ! get the bins
-    if (allocated(wavelength_bins_file)) then
-      filename = wavelength_bins_file ! custom bins file, specified in settings
-    else
-      filename = datadir//"/kdistributions/bins.h5" ! default
-    endif
-    call read_wavl(filename, op%op_type, op%wavl, err)
-    if (allocated(err)) return 
-    
-    op%nw = size(op%wavl) - 1
-    allocate(op%freq(size(op%wavl)))
-    op%freq = c_light/(op%wavl*1.0e-9_dp)
+    real(dp), allocatable :: wavl_save(:)
 
     allocate(op%species_names(size(species_names)))
     op%species_names = species_names
@@ -270,9 +337,6 @@ contains
         tmp_str_list = sop%k_distributions
       endif
       
-      ! k distributions settings
-      op%kset = create_Ksettings(sop)
-      
       allocate(op%k(op%nk))
       
       do i = 1,op%nk
@@ -283,31 +347,42 @@ contains
                 '"k-distributions" is not in the list of species.'
           return
         endif
-        op%k(i) = create_Ktable(filename, ind1, optype, op%wavl, err)
+        op%k(i) = create_Ktable(filename, ind1, wavl_save, err)
         if (allocated(err)) return
+        
+        if (i == 1) then
+          op%wavl = wavl_save
+          op%nw = size(op%wavl) - 1
+          allocate(op%freq(size(op%wavl)))
+          op%freq = c_light/(op%wavl*1.0e-9_dp)
+        elseif (i > 1) then
+          if (size(wavl_save) /= size(op%wavl)) then
+            err = 'Species "'//trim(tmp_str_list(i))//'" has wavelength bins that do not match '// &
+                  'the wavelength bins for other species'
+            return
+          endif
+          if (.not. all(is_close(op%wavl, wavl_save, tol=1.0e-7_dp))) then
+            err = 'Species "'//trim(tmp_str_list(i))//'" has wavelength bins that do not match '// &
+                  'the wavelength bins for other species'
+            return
+          endif
+        endif
       enddo
       
-      ! find maximum number of gauss points
-      op%ngauss_max = 0
-      do i = 1,op%nk
-        op%ngauss_max = max(op%ngauss_max,op%k(i)%ngauss)
+
+      ! we must check that all k-coeff have the same
+      ! number k-bins and the same weights
+      do i = 2,op%nk
+        if (op%k(1)%ngauss /= op%k(i)%ngauss) then
+          err = 'All k-coeff bin weights must match.'
+          return
+        endif
+
+        if (.not.all(is_close(op%k(1)%weights, op%k(i)%weights, tol=1.0e-12_dp))) then
+          err = 'All k-coeff bin weights must match.'
+          return
+        endif
       enddo
-
-      if (op%kset%k_method == k_AdaptiveEquivalentExtinction) then
-        ! we must check that all k-coeff have the same
-        ! number k-bins and the same weights
-        do i = 2,op%nk
-          if (op%k(1)%ngauss /= op%k(i)%ngauss) then
-            err = 'For k-method "AdaptiveEquivalentExtinction", all k-coeff bin weights must match.'
-            return
-          endif
-
-          if (.not.all(op%k(1)%weights(:) == op%k(i)%weights(:))) then
-            err = 'For k-method "AdaptiveEquivalentExtinction", all k-coeff bin weights must match.'
-            return
-          endif
-        enddo
-      endif
       
     else
       op%nk = 0
@@ -317,6 +392,9 @@ contains
       err = "You must specify at least one k-distribution in the settings file."
       return
     endif
+
+    ! k distributions settings
+    op%kset = create_Ksettings(op%k(1), sop)
     
     !!!!!!!!!!!
     !!! CIA !!!
@@ -380,7 +458,7 @@ contains
         
         j = index(cia_list(i), "-")
         if (j == 0) then
-          err = 'missing "-" in CIA species "'//trim(sop%cia(i))//'"'
+          err = 'missing "-" in CIA species "'//trim(cia_list(i))//'"'
           return
         endif
         ind1 = findloc(species_names, trim(cia_list(i)(1:j-1)), 1)
@@ -459,7 +537,7 @@ contains
       do i = 1,op%nray
         ind1 = findloc(species_names, trim(tmp_str_list(i)), 1)
         if (ind1 == 0) then
-          err = 'Species "'//trim(sop%rayleigh(i))//'" in optical property '// &
+          err = 'Species "'//trim(tmp_str_list(i))//'" in optical property '// &
                 '"rayleigh" is not in the list of species.'
           return
         endif
@@ -471,16 +549,6 @@ contains
       call file%finalize()
     endblock; else
       op%nray = 0
-    endif
-
-    !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    !!! Absorption Xsections !!!
-    !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    if (allocated(sop%absorption_xs)) then
-      err = "sop%absorption_xs not implemented"
-      return
-    else
-      op%naxs = 0
     endif
     
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -525,7 +593,7 @@ contains
       do i = 1,op%npxs
         ind1 = findloc(species_names, trim(tmp_str_list(i)), 1)
         if (ind1 == 0) then
-          err = 'Species "'//trim(sop%rayleigh(i))//'" in optical property '// &
+          err = 'Species "'//trim(tmp_str_list(i))//'" in optical property '// &
                 '"photolysis-xs" is not in the list of species.'
           return
         endif
@@ -588,24 +656,25 @@ contains
     
   end function
   
-  subroutine read_wavl(filename, optype, wavl, err)
+  subroutine read_wavl(filename, channel_type, wavl, err)
     use h5fortran
     
     character(*), intent(in) :: filename
-    integer, intent(in) :: optype
-    real(dp), allocatable :: wavl(:)
+    integer, intent(in) :: channel_type
+    real(dp), allocatable, intent(out) :: wavl(:)
     character(:), allocatable :: err
     
     type(hdf5_file) :: h
     integer(HSIZE_T), allocatable :: dims(:)
-    character(:), allocatable :: optype_str
+    character(:), allocatable :: channel_type_str
     
-    if (optype == FarUVOpticalProperties) then
-      optype_str = "uv_wavl"
-    elseif (optype == SolarOpticalProperties) then
-      optype_str = "sol_wavl"
-    elseif (optype == IROpticalProperties) then
-      optype_str = "ir_wavl"
+    if (channel_type == SolarChannel) then
+      channel_type_str = "sol_wavl"
+    elseif (channel_type == IRChannel) then
+      channel_type_str = "ir_wavl"
+    else
+      err = 'read_wavl received an invalid channel_type'
+      return
     endif
     
     if (.not. is_hdf5(filename)) then
@@ -615,14 +684,14 @@ contains
     
     call h%open(filename,'r')
     
-    call check_h5_dataset(h, optype_str, 1, H5T_FLOAT_F, filename//"/"//optype_str, err)
+    call check_h5_dataset(h, channel_type_str, 1, H5T_FLOAT_F, filename//"/"//channel_type_str, err)
     if (allocated(err)) then
       call h%close()
       return
     endif
-    call h%shape(optype_str, dims)
+    call h%shape(channel_type_str, dims)
     allocate(wavl(dims(1)))
-    call h%read(optype_str, wavl)
+    call h%read(channel_type_str, wavl)
     wavl = wavl*1.0e3_dp ! convert to nm
 
     call h%close()
@@ -1160,15 +1229,14 @@ contains
 
   end subroutine
   
-  function create_Ktable(filename, sp_ind, optype, wavl, err) result(k)
+  function create_Ktable(filename, sp_ind, wavl, err) result(k)
     use h5fortran
     use futils, only: is_close
     use clima_eqns, only: weights_to_bins
     
     character(*), intent(in) :: filename
     integer, intent(in) :: sp_ind
-    integer, intent(in) :: optype
-    real(dp), intent(in) :: wavl(:)
+    real(dp), allocatable, intent(out) :: wavl(:)
     character(:), allocatable, intent(out) :: err
     
     type(Ktable) :: k
@@ -1178,7 +1246,7 @@ contains
     real(dp), allocatable :: wavl_f(:)
     real(dp), allocatable :: log10k(:,:,:,:)
     character(:), allocatable :: read_err
-    integer :: i, j, iflag, ind1, ind2
+    integer :: i, j, iflag
 
     if (.not. is_hdf5(filename)) then
       err = 'Failed to read "'//filename//'".'
@@ -1235,21 +1303,8 @@ contains
     allocate(wavl_f(dims(1)))
     call h%read("wavelengths", wavl_f)
     wavl_f = wavl_f*1.0e3_dp
-    ind1 = minloc(abs(wavl(1)-wavl_f), 1)
-    ind2 = minloc(abs(wavl(size(wavl))-wavl_f), 1)
+    wavl = wavl_f
     k%nwav = size(wavl) - 1
-    
-    if (size(wavl_f) < size(wavl)) then
-      call h%close()
-      err = filename//": there not enough wavlength bins."
-      return
-    endif
-
-    if (.not. all(is_close(wavl, wavl_f(ind1:ind2), tol=1.0e-7_dp))) then
-      call h%close()
-      err = filename//": wavelengths does not match input wavelength bins."
-      return
-    endif
 
     ! coefficients
     call check_h5_dataset(h, "log10k", 4, H5T_FLOAT_F, filename, err)
@@ -1267,7 +1322,7 @@ contains
     allocate(k%log10k(k%ngauss,k%nwav))
     do i = 1,k%nwav
       do j = 1,k%ngauss
-        call k%log10k(j,i)%initialize(k%log10P, k%temp, log10k(j,:,:,ind1-1+i), iflag)
+        call k%log10k(j,i)%initialize(k%log10P, k%temp, log10k(j,:,:,i), iflag)
         if (iflag /= 0) then
           if (allocated(read_err)) deallocate(read_err)
           allocate(character(3)::read_err)
@@ -1380,4 +1435,3 @@ contains
   end function
   
 end submodule
-
