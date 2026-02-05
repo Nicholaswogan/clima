@@ -752,7 +752,7 @@ contains
     !$omp end parallel
 
     if (any(opw%ierrs /= 0)) then
-      err = 'There was a problem'
+      err = 'Opacity computation failed in one or more wavelength bins.'
       return
     endif
 

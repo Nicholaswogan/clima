@@ -199,10 +199,13 @@ contains
 
     kset%k_method_name = sop%k_method
     
+    ! Number of gauss bins should always be valid, even for methods
+    ! that are currently unimplemented, so downstream allocations remain safe.
+    kset%nbin = size(k%weights)
+
     ! method for mixing k-distributions.
     if (sop%k_method == "RandomOverlapResortRebin") then
       kset%k_method = k_RandomOverlapResortRebin
-      kset%nbin = size(k%weights)
       allocate(kset%wbin(kset%nbin))
       allocate(kset%wxy(kset%nbin*kset%nbin))
       allocate(kset%wbin_e(kset%nbin+1))
