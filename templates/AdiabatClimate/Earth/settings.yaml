@@ -15,13 +15,7 @@ planet:
   
 # This dictionary sets all optical properties.
 optical-properties:
-  # `k-method` is the method for mixing k-distributions. Options are
-  #
-  # k-method: RandomOverlap
-  # k-method: RandomOverlapResortRebin
-  # k-method: AdaptiveEquivalentExtinction
-  # 
-  # These methods are explained in Amundsen et al. (2017) (DOI: 10.1051/0004-6361/201629322).
+  # `k-method` is the method for mixing k-distributions. The only option is RandomOverlapResortRebin
   k-method: RandomOverlapResortRebin
 
   # Here you specify opacites. You can see avaliable opacities by looking in

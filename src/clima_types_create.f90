@@ -827,8 +827,6 @@ contains
       op%k_method = trim(op%k_method)
       if (op%k_method == "RandomOverlapResortRebin") then
         ! do nothing
-      elseif (op%k_method == "AdaptiveEquivalentExtinction") then
-        ! do nothing
       else 
         err = 'k-method "'//op%k_method//'" in "'//filename//'" is not an option.'
         return
