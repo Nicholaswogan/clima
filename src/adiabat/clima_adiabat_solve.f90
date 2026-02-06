@@ -291,7 +291,8 @@ contains
       endif
       
       ! Check for convergence
-      if (all(convecting_with_below_save(:,i) .eqv. self%convecting_with_below)) then
+      if (all(convecting_with_below_save(:,i) .eqv. self%convecting_with_below) .or. &
+          oscillating_convective_mask(convecting_with_below_save, self%convecting_with_below)) then
         ! Convective zones did not change between iterations, so converged
         converged = .true.
       endif
@@ -340,11 +341,30 @@ contains
       endif
 
       if (iflag_ == 0 .and. self%verbose) then
-        print"(3x,'step =',i3,3x,'njev =',i3,3x,'||y|| = ',es8.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
-              mv%nfev, mv%njev, sum(fvec_**2.0_dp), maxval(x_), minval(x_)
+        print"(3x,'step =',i3,3x,'njev =',i3,3x,'max|F| = ',es9.2,3x,'rms|F| = ',es9.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
+              mv%nfev, mv%njev, maxval(abs(fvec_))*1.0e-3_dp, &
+              sqrt(sum(fvec_**2.0_dp)/real(size(fvec_), dp))*1.0e-3_dp, maxval(x_), minval(x_)
       endif
 
     end subroutine
+
+  end function
+
+  !> Detects a 2-cycle oscillation in the convective mask across recent iterations.
+  function oscillating_convective_mask(convecting_with_below_save, convecting_with_below) result(res)
+    logical, intent(in) :: convecting_with_below_save(:,:)
+    logical, intent(in) :: convecting_with_below(:)
+    logical :: res
+    integer :: i
+
+    res = .false.
+    i = size(convecting_with_below_save,2)
+    if (i < 3) return
+
+    if (all(convecting_with_below_save(:,i-1) .eqv. convecting_with_below) .and. &
+        all(convecting_with_below_save(:,i-2) .eqv. convecting_with_below_save(:,i))) then
+      res = .true.
+    endif
 
   end function
 
