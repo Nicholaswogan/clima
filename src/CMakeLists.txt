@@ -16,7 +16,6 @@ set(BASE_SOURCES
   clima_const.f90
   clima_useful.f90
   clima_eqns.f90
-  clima_eqns_water.f90
   clima_types.f90
   clima_types_create.f90
 )
@@ -37,16 +36,9 @@ set(ADIABAT_SOURCES
   adiabat/clima_adiabat.f90
 )
 
-set(CLIMATE_SOURCES
-  climate/clima_climate.f90
-  climate/clima_climate_rhs.f90
-  climate/clima_climate_integrate.f90
-)
-
 add_library(clima 
   ${BASE_SOURCES}
   ${RADIATE_SOURCES}
-  ${CLIMATE_SOURCES}
   ${ADIABAT_SOURCES}
   ${outFiles}
   clima.f90

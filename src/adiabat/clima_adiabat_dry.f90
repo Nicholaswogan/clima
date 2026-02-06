@@ -274,7 +274,7 @@ contains
 
   subroutine dry_adiabat(d, P, lapse_rate, err)
     use clima_eqns, only: heat_capacity_eval
-    use clima_eqns_water, only: Rgas_cgs => Rgas
+    use clima_const, only: Rgas_cgs => Rgas
     type(AdiabatDryProfileData), intent(inout) :: d
     real(dp), intent(in) :: P
     real(dp), intent(out) :: lapse_rate
@@ -323,7 +323,7 @@ contains
 
   subroutine right_hand_side(d, P, u, du)
     use clima_eqns, only: gravity
-    use clima_eqns_water, only: Rgas_cgs => Rgas
+    use clima_const, only: Rgas_cgs => Rgas
     type(AdiabatDryProfileData), intent(inout) :: d
     real(dp), intent(in) :: P
     real(dp), intent(in) :: u(:)

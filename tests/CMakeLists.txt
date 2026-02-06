@@ -14,7 +14,7 @@ if (NOT EXISTS "${CMAKE_SOURCE_DIR}/data")
   )
 endif()
 
-set(CLIMA_TESTS test_radtran test_climate test_adiabat)
+set(CLIMA_TESTS test_radtran test_adiabat)
 
 if (BUILD_EXECUTABLES)
   foreach(CLIMA_TEST ${CLIMA_TESTS})

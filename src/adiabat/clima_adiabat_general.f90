@@ -731,7 +731,7 @@ contains
 
   subroutine right_hand_side(d, P, u, du)
     use clima_eqns, only: heat_capacity_eval, gravity
-    use clima_eqns_water, only: Rgas_cgs => Rgas
+    use clima_const, only: Rgas_cgs => Rgas
     type(AdiabatProfileData), intent(inout) :: d
     real(dp), intent(in) :: P
     real(dp), intent(in) :: u(:)

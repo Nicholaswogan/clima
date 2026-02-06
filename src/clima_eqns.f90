@@ -53,14 +53,6 @@ contains
     
   end subroutine
   
-  subroutine bins_to_weights(bins, weights)
-    real(dp), intent(in) :: bins(:)
-    real(dp), intent(out) :: weights(:)
-    
-    weights = bins(2:) - bins(:size(bins)-1)
-    
-  end subroutine
-  
   function planck_fcn(nu, T) result(B)
     use clima_const, only: c_light, k_boltz => k_boltz_si, plank
     real(dp), intent(in) :: nu ! (1/s) 
@@ -122,42 +114,6 @@ contains
   
   end subroutine
   
-  function eddy_for_heat(l, g, T, dTdz, adiabat) result(Kh)
-    real(dp), intent(in) :: l, g, T, dTdz, adiabat
-    
-    real(dp) :: Kh
-    
-    real(dp) :: eta, a1, a2
-    
-    eta = 0.1_dp*abs(adiabat)
-    
-    if (dTdz < -adiabat-eta) then
-      Kh = l**2.0_dp*sqrt(-(g/T)*(dTdz + adiabat))
-    elseif (-adiabat-eta < dTdz .and. dTdz < -adiabat) then
-      a1 = - adiabat - eta
-      a2 = - adiabat
-      Kh = (l**2.0_dp*sqrt(-(g/T)*(dTdz + adiabat)))* &
-            smoother(dTdz, a1, a2, -2.0_dp)
-    elseif (-adiabat < dTdz) then
-      Kh = 0.0_dp
-    endif
-
-  end function
-  
-  pure function smoother(x, a1, a2, beta) result(res)
-    real(dp), intent(in) :: x
-    real(dp), intent(in) :: a1
-    real(dp), intent(in) :: a2
-    real(dp), intent(in) :: beta
-    
-    real(dp) :: res
-    real(dp) :: y
-    
-    y = (1.0_dp/(a2-a1))*(x-a1)
-    res = 1.0_dp/(1.0_dp + (y/(1.0_dp-y))**(-beta))
-    
-  end function
-  
   ! coppied from Photochem
   pure subroutine vertical_grid(bottom, top, nz, z, dz)
     real(dp), intent(in) :: bottom, top
@@ -173,21 +129,6 @@ contains
     enddo
   end subroutine
   
-  pure subroutine gravity_z(radius, mass, nz, z, grav)
-    use clima_const, only: G_grav
-    real(dp), intent(in) :: radius, mass ! radius in cm, mass in grams
-    integer, intent(in) :: nz
-    real(dp), intent(in) :: z(nz) ! cm
-    real(dp), intent(out) :: grav(nz) ! cm/s2
-  
-    integer :: i
-  
-    do i = 1, nz              
-      grav(i) = gravity(radius, mass, z(i))
-    enddo 
-  
-  end subroutine
-  
   pure function gravity(radius, mass, z) result(grav)
     use clima_const, only: G_grav
     real(dp), intent(in) :: radius, mass ! radius in cm, mass in grams
@@ -199,33 +140,6 @@ contains
     grav = grav*1.0e2_dp ! convert to cgs
     
   end function
-  
-  pure subroutine press_and_den(nz, T, grav, Psurf, dz, &
-                                mubar, pressure, density)
-    use clima_const, only: k_boltz, N_avo
-  
-    integer, intent(in) :: nz
-    real(dp), intent(in) :: T(nz), grav(nz)
-    real(dp), intent(in) :: Psurf, dz(nz), mubar(nz)
-  
-    real(dp), intent(out) :: pressure(nz)
-    real(dp), intent(out) :: density(nz)
-  
-    real(dp) :: T_temp
-    integer :: i
-  
-    ! first layer
-    T_temp = T(1)
-    pressure(1) = Psurf * exp(-((mubar(1) * grav(1))/(N_avo * k_boltz * T_temp)) * 0.5e0_dp * dz(1))
-    density(1) = pressure(1)/(k_boltz * T(1))
-    ! other layers
-    do i = 2,nz
-      T_temp = (T(i) + T(i-1))/2.0_dp
-      pressure(i) = pressure(i-1) * exp(-((mubar(i) * grav(i))/(N_avo * k_boltz * T_temp))* dz(i))
-      density(i) = pressure(i)/(k_boltz * T(i))
-    enddo
-  
-  end subroutine
   
   pure function rayleigh_vardavas(A, B, Delta, lambda) result(sigray)
     real(dp), intent(in) :: A, B, Delta, lambda

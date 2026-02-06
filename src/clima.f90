@@ -13,8 +13,6 @@ module clima
   use clima_radtran, only: Radtran
 
   ! Adiabatic climate model
-  use clima_adiabat, only: AdiabatClimate 
-
-  ! Complicated climate model (experimental)
-  use clima_climate, only: Climate 
+  use clima_adiabat, only: AdiabatClimate
+  
 end module
