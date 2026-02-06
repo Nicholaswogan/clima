@@ -291,9 +291,11 @@ contains
       endif
       
       ! Check for convergence
-      if (all(convecting_with_below_save(:,i) .eqv. self%convecting_with_below) .or. &
-          oscillating_convective_mask(convecting_with_below_save, self%convecting_with_below)) then
+      if (all(convecting_with_below_save(:,i) .eqv. self%convecting_with_below)) then
         ! Convective zones did not change between iterations, so converged
+        converged = .true.
+      elseif (oscillating_convective_mask(convecting_with_below_save, self%convecting_with_below) .and. &
+          i >= self%max_rc_iters_convection) then
         converged = .true.
       endif
       if (converged) then
