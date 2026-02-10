@@ -190,6 +190,8 @@ contains
     real(dp), allocatable :: T_in(:), x_init(:), dFdt(:)
     real(dp) :: perturbation
     integer :: i, j, k
+    logical :: minpack_custom_converged
+    integer, parameter :: minpack_iflag_converged = -77
 
     if (.not.self%double_radiative_grid) then
       err = 'AdiabatClimate must be initialized with "double_radiative_grid" set to True '// &
@@ -241,7 +243,7 @@ contains
       mv = MinpackHybrj(fcn, size(self%inds_Tx))
       if (allocated(dFdt)) deallocate(dFdt)
       allocate(dFdt(size(self%inds_Tx)))
-      mv%xtol = self%xtol_rc
+      mv%xtol = 1.0e-12_dp
       mv%nprint = 1
 
       block
@@ -250,11 +252,13 @@ contains
         call solver%initialize(x_init, f_ptc, jac_ptc, PTC_JAC_DENSE)
         call solver%set_custom_convergence(convergence_ptc)
         call solver%solve()
-        x_init = solver%x
+        mv%x = solver%x
+        mv%fvec = solver%fvec
       endblock
 
       k = 0
       do
+        exit
         if (mod(k,2) == 0) then
           perturbation = real(k,dp)*1.0_dp
         else
@@ -265,12 +269,13 @@ contains
           print'(3x,"Perturbation = ",f7.1)',perturbation
         endif
 
+        minpack_custom_converged = .false.
         mv%x = x_init + perturbation
         call mv%hybrj()
-        if (mv%info == 1) then
+        if (minpack_custom_converged) then
           exit
         else
-          if (mv%info < 0) deallocate(err)
+          if (allocated(err)) deallocate(err)
         endif
 
         if (k > 6) then
@@ -326,72 +331,63 @@ contains
 
   contains
 
-    subroutine convergence_ptc(solver, converged_, ierr)
+    subroutine convergence_ptc(solver_, converged_, ierr_)
       use clima_ptc, only: PTCSolver
-      class(PTCSolver), intent(in) :: solver
+      class(PTCSolver), intent(in) :: solver_
       logical, intent(out) :: converged_
-      integer, intent(out) :: ierr
-      real(dp) :: max_flux_imbalance_wm2, characteristic_flux
+      integer, intent(out) :: ierr_
 
-      ierr = 0
-      converged_ = .false.
-
-      ! Characteristic flux scale of the atmosphere in W/m^2.
-      characteristic_flux = abs(self%rad%bolometric_flux()/4.0_dp + self%surface_heat_flow*1.0e-3_dp)
-      characteristic_flux = max(characteristic_flux, 1.0e-6_dp)
-
-      ! Maximum flux imbalance in W/m^2      
-      max_flux_imbalance_wm2 = maxval(abs(dFdt))*1.0e-3_dp
-
-      ! Converged if energy is conserved.
-      converged_ = max_flux_imbalance_wm2/characteristic_flux < 1.0e-5_dp
+      ierr_ = 0
+      converged_ = custom_flux_converged(self, dFdt)
 
     end subroutine
 
-    subroutine f_ptc(solver, u, udot, ierr)
+    subroutine f_ptc(solver_, u_, udot_, ierr_)
       use clima_ptc, only: PTCSolver, wp
-      class(PTCSolver), intent(in) :: solver
-      real(wp), intent(in) :: u(:)
-      real(wp), intent(out) :: udot(:)
-      integer, intent(out) :: ierr
+      class(PTCSolver), intent(in) :: solver_
+      real(wp), intent(in) :: u_(:)
+      real(wp), intent(out) :: udot_(:)
+      integer, intent(out) :: ierr_
+      real(dp) :: max_flux_imbalance_wm2_, max_flux_ratio_
 
-      ierr = 0
+      ierr_ = 0
       if (allocated(err)) then
-        ierr = 1
+        ierr_ = 1
         return
       endif
 
-      call AdiabatClimate_objective(self, P_i_surf, u, dFdt, udot, err)
+      call AdiabatClimate_objective(self, P_i_surf, u_, dFdt, udot_, err)
       if (allocated(err)) then
-        ierr = 1
+        ierr_ = 1
         return
       endif
 
       if (self%verbose) then
-        print"(3x,'ptc step =',i4,3x,'dt =',es10.3,3x,'max|F| = ',es9.2,3x,'rms|F| = ',es9.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
-              solver%steps, solver%dt, &
-              maxval(abs(dFdt))*1.0e-3_wp, sqrt(sum(dFdt**2.0_wp)/real(size(dFdt), wp))*1.0e-3_wp, &
-              maxval(u), minval(u)
+        call get_flux_metrics(self, dFdt, max_flux_imbalance_wm2_, max_flux_ratio_)
+        print"(3x,'ptc step =',i4,3x,'dt =',es10.3,3x,'max|F| = ',es9.2,3x,'max|F/F0| = ',es9.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
+              solver_%steps, solver_%dt, &
+              max_flux_imbalance_wm2_, max_flux_ratio_, &
+              maxval(u_), minval(u_)
       endif
 
     end subroutine
 
-    subroutine jac_ptc(solver, u, jac, ierr)
+    subroutine jac_ptc(solver_, u_, jac_, ierr_)
       use clima_ptc, only: PTCSolver, wp
-      class(PTCSolver), intent(in) :: solver
-      real(wp), intent(in) :: u(:)
-      real(wp), intent(out) :: jac(:, :)
-      integer, intent(out) :: ierr
+      class(PTCSolver), intent(in) :: solver_
+      real(wp), intent(in) :: u_(:)
+      real(wp), intent(out) :: jac_(:, :)
+      integer, intent(out) :: ierr_
 
-      ierr = 0
+      ierr_ = 0
       if (allocated(err)) then
-        ierr = 1
+        ierr_ = 1
         return
       endif
 
-      call AdiabatClimate_jacobian(self, P_i_surf, u, jac, err)
+      call AdiabatClimate_jacobian(self, P_i_surf, u_, jac_, err)
       if (allocated(err)) then
-        ierr = 1
+        ierr_ = 1
         return
       endif
 
@@ -405,6 +401,7 @@ contains
       real(dp), dimension(n_), intent(inout) :: fvec_
       real(dp), dimension(ldfjac_, n_), intent(inout) :: fjac_
       integer, intent(inout) :: iflag_
+      real(dp) :: max_flux_imbalance_wm2_, max_flux_ratio_
 
       if (allocated(err)) return
 
@@ -413,6 +410,11 @@ contains
         call AdiabatClimate_objective(self, P_i_surf, x_, dFdt, fvec_, err)
         if (allocated(err)) then
           iflag_ = -1
+          return
+        endif
+        if (custom_flux_converged(self, dFdt)) then
+          minpack_custom_converged = .true.
+          iflag_ = minpack_iflag_converged
           return
         endif
       elseif (iflag_ == 2) then
@@ -425,12 +427,42 @@ contains
       endif
 
       if (iflag_ == 0 .and. self%verbose) then
-        print"(3x,'step =',i3,3x,'njev =',i3,3x,'max|F| = ',es9.2,3x,'rms|F| = ',es9.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
-              mv%nfev, mv%njev, maxval(abs(dFdt))*1.0e-3_dp, &
-              sqrt(sum(dFdt**2.0_dp)/real(size(dFdt), dp))*1.0e-3_dp, maxval(x_), minval(x_)
+        call get_flux_metrics(self, dFdt, max_flux_imbalance_wm2_, max_flux_ratio_)
+
+        print"(3x,'step =',i3,3x,'njev =',i3,3x,'max|F| = ',es9.2,3x,'max|F/F0| = ',es9.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
+              mv%nfev, mv%njev, max_flux_imbalance_wm2_, &
+              max_flux_ratio_, maxval(x_), minval(x_)
       endif
 
     end subroutine
+
+  end function
+
+  subroutine get_flux_metrics(self, dFdt, max_flux_imbalance_wm2, max_flux_ratio)
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: dFdt(:)
+    real(dp), intent(out) :: max_flux_imbalance_wm2, max_flux_ratio
+    real(dp) :: characteristic_flux_wm2
+
+    ! Characteristic flux scale of the atmosphere in W/m^2.
+    characteristic_flux_wm2 = abs(self%rad%bolometric_flux()/4.0_dp + self%surface_heat_flow*1.0e-3_dp)
+    characteristic_flux_wm2 = max(characteristic_flux_wm2, 1.0e-6_dp)
+
+    ! Maximum flux imbalance in W/m^2.
+    max_flux_imbalance_wm2 = maxval(abs(dFdt))*1.0e-3_dp
+    max_flux_ratio = max_flux_imbalance_wm2/characteristic_flux_wm2
+
+  end subroutine
+
+  function custom_flux_converged(self, dFdt) result(converged_)
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: dFdt(:)
+    logical :: converged_
+    real(dp) :: max_flux_imbalance_wm2, max_flux_ratio
+
+    ! Converged if energy is conserved.
+    call get_flux_metrics(self, dFdt, max_flux_imbalance_wm2, max_flux_ratio)
+    converged_ = max_flux_ratio < self%xtol_rc
 
   end function
 
