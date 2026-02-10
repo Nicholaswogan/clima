@@ -19,6 +19,7 @@ set(BASE_SOURCES
   clima_eqns_water.f90
   clima_types.f90
   clima_types_create.f90
+  clima_ptc.f90
 )
 
 set(RADIATE_SOURCES
