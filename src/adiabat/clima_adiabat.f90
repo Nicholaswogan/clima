@@ -10,6 +10,11 @@ module clima_adiabat
   private
 
   public :: AdiabatClimate
+  public :: RCE_SOLVE_HYBRJ_ONLY, RCE_SOLVE_PTC_THEN_HYBRJ, RCE_SOLVE_HYBRJ_THEN_PTC_THEN_HYBRJ
+
+  integer, parameter :: RCE_SOLVE_HYBRJ_ONLY = 1
+  integer, parameter :: RCE_SOLVE_PTC_THEN_HYBRJ = 2
+  integer, parameter :: RCE_SOLVE_HYBRJ_THEN_PTC_THEN_HYBRJ = 3
 
   type :: AdiabatClimate
 
@@ -132,6 +137,11 @@ module clima_adiabat
     !> If False, then the jacobian calculation in RCE does not recompute
     !> solar radiative transfer.
     logical :: compute_solar_in_jac = .false.
+    !> Strategy for nonlinear solve inside each RCE outer iteration.
+    !> 1 = HYBRJ only.
+    !> 2 = PTC then HYBRJ tighten if no convergence.
+    !> 3 = HYBRJ first, then fallback to PTC then HYBRJ tighten if no convergence.
+    integer :: rce_solve_strategy = RCE_SOLVE_HYBRJ_THEN_PTC_THEN_HYBRJ
     logical :: verbose = .true. !! verbosity
     
     ! State of the atmosphere

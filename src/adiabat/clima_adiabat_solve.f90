@@ -187,10 +187,11 @@ contains
     type(MinpackHybrj) :: mv
     logical, allocatable :: convecting_with_below_save(:,:)
     real(dp), allocatable :: difference(:)
-    real(dp), allocatable :: T_in(:), x_init(:), dFdt(:)
+    real(dp), allocatable :: T_in(:), x_init(:), dFdt(:), x_stage(:), x_sol(:), f_sol(:)
     real(dp) :: perturbation
     integer :: i, j, k
     logical :: minpack_custom_converged
+    logical :: solver_ok
     integer, parameter :: minpack_iflag_converged = -77
 
     if (.not.self%double_radiative_grid) then
@@ -233,6 +234,8 @@ contains
         print"(1x,'Iteration =',i3)", i
       endif
 
+      if (allocated(dFdt)) deallocate(dFdt)
+      allocate(dFdt(size(self%inds_Tx)))
       if (allocated(x_init)) deallocate(x_init)
       allocate(x_init(size(self%inds_Tx)))
       x_init(1) = self%T_surf
@@ -240,60 +243,61 @@ contains
         x_init(k) = self%T(self%inds_Tx(k)-1)
       enddo
 
-      mv = MinpackHybrj(fcn, size(self%inds_Tx))
-      if (allocated(dFdt)) deallocate(dFdt)
-      allocate(dFdt(size(self%inds_Tx)))
-      mv%xtol = 1.0e-12_dp
-      mv%nprint = 1
+      if (allocated(x_stage)) deallocate(x_stage)
+      allocate(x_stage(size(self%inds_Tx)))
+      if (allocated(x_sol)) deallocate(x_sol)
+      allocate(x_sol(size(self%inds_Tx)))
+      if (allocated(f_sol)) deallocate(f_sol)
+      allocate(f_sol(size(self%inds_Tx)))
 
-      block
-        use clima_ptc, only: PTCSolver, PTC_JAC_DENSE, PTC_CONVERGED_USER
-        type(PTCSolver) :: solver
-        call solver%initialize(x_init, f_ptc, jac_ptc, PTC_JAC_DENSE, max_steps=300)
-        call solver%set_custom_convergence(convergence_ptc)
-        call solver%solve()
-        if (solver%reason /= PTC_CONVERGED_USER)then
-          ! print*,solver%reason
-          ! err = 'Failure'
-          ! return
-        endif
-        mv%x = solver%x
-        x_init = solver%x
-        mv%fvec = solver%fvec
-      endblock
-
-      k = 0
-      do
-        ! exit
-        if (mod(k,2) == 0) then
-          perturbation = real(k,dp)*1.0_dp
-        else
-          perturbation = -real(k,dp)*1.0_dp
-        endif
-
-        if (self%verbose .and. k > 0) then
-          print'(3x,"Perturbation = ",f7.1)',perturbation
-        endif
-
-        minpack_custom_converged = .false.
-        mv%x = x_init + perturbation
-        call mv%hybrj()
-        if (minpack_custom_converged) then
-          exit
-        else
-          if (allocated(err)) deallocate(err)
-        endif
-
-        if (k > 6) then
-          err = 'hybrj root solve failed in RCE.'
+      select case (self%rce_solve_strategy)
+      case (RCE_SOLVE_HYBRJ_ONLY)
+        call run_hybrj(x_init, x_sol, f_sol, solver_ok)
+        if (.not. solver_ok) then
+          err = 'hybrj root solve failed in RCE (HYBRJ_ONLY).'
           return
         endif
 
-        k = k + 1
-      enddo
+      case (RCE_SOLVE_PTC_THEN_HYBRJ)
+        call run_ptc(x_init, x_stage, f_sol, solver_ok)
+        if (solver_ok) then
+          ! If converged, then we are good
+          x_sol = x_stage
+        else
+          ! If not converged, we tighten with hybrd
+          call run_hybrj(x_stage, x_sol, f_sol, solver_ok)
+        endif
+        if (.not. solver_ok) then
+          err = 'hybrj root solve failed in RCE (PTC_THEN_HYBRJ).'
+          return
+        endif
+
+      case (RCE_SOLVE_HYBRJ_THEN_PTC_THEN_HYBRJ)
+        call run_hybrj(x_init, x_stage, f_sol, solver_ok)
+        if (solver_ok) then
+          x_sol = x_stage
+        else
+          call run_ptc(x_init, x_stage, f_sol, solver_ok)
+          if (solver_ok) then
+            ! If converged, then we are good
+            x_sol = x_stage
+          else
+            ! If not converged, we tighten with hybrd
+            call run_hybrj(x_stage, x_sol, f_sol, solver_ok)
+          endif
+        endif
+        if (.not. solver_ok) then
+          err = 'hybrj root solve failed in RCE (HYBRJ_THEN_PTC_THEN_HYBRJ).'
+          return
+        endif
+
+      case default
+        err = 'Invalid rce_solve_strategy.'
+        return
+      end select
 
       ! Update all variables to the current root
-      call AdiabatClimate_objective(self, P_i_surf, mv%x, dFdt, mv%fvec, err)
+      call AdiabatClimate_objective(self, P_i_surf, x_sol, dFdt, f_sol, err)
       if (allocated(err)) return
 
       ! Save the current convective zones
@@ -332,7 +336,7 @@ contains
     ! Return all information to what is was prior to checking for the root
     call AdiabatClimate_set_convecting_zones(self, convecting_with_below_save(:,j), err)
     if (allocated(err)) return
-    call AdiabatClimate_objective(self, P_i_surf, mv%x, dFdt, mv%fvec, err)
+    call AdiabatClimate_objective(self, P_i_surf, x_sol, dFdt, f_sol, err)
     if (allocated(err)) return
 
   contains
@@ -346,6 +350,64 @@ contains
       ierr_ = 0
       converged_ = custom_flux_converged(self, dFdt)
 
+    end subroutine
+
+    subroutine run_ptc(x_seed, x_out, f_out, ok)
+      use clima_ptc, only: PTCSolver, PTC_JAC_DENSE, PTC_CONVERGED_USER
+      real(dp), intent(in) :: x_seed(:)
+      real(dp), intent(out) :: x_out(:)
+      real(dp), intent(out) :: f_out(:)
+      logical, intent(out) :: ok
+      type(PTCSolver) :: solver
+
+      call solver%initialize(x_seed, f_ptc, jac_ptc, PTC_JAC_DENSE, max_steps=300)
+      call solver%set_custom_convergence(convergence_ptc)
+      call solver%solve()
+      x_out = solver%x
+      f_out = solver%fvec
+      ok = (solver%reason == PTC_CONVERGED_USER)
+    end subroutine
+
+    subroutine run_hybrj(x_seed, x_out, f_out, ok)
+      real(dp), intent(in) :: x_seed(:)
+      real(dp), intent(out) :: x_out(:), f_out(:)
+      logical, intent(out) :: ok
+
+      mv = MinpackHybrj(fcn, size(self%inds_Tx))
+      mv%xtol = 1.0e-12_dp
+      mv%nprint = 1
+
+      k = 0
+      do
+        if (mod(k,2) == 0) then
+          perturbation = real(k,dp)*1.0_dp
+        else
+          perturbation = -real(k,dp)*1.0_dp
+        endif
+
+        if (self%verbose .and. k > 0) then
+          print'(3x,"Perturbation = ",f7.1)',perturbation
+        endif
+
+        minpack_custom_converged = .false.
+        mv%x = x_seed + perturbation
+        call mv%hybrj()
+        if (minpack_custom_converged) then
+          x_out = mv%x
+          f_out = mv%fvec
+          ok = .true.
+          return
+        else
+          if (allocated(err)) deallocate(err)
+        endif
+
+        if (k > 2) then
+          ok = .false.
+          return
+        endif
+
+        k = k + 1
+      enddo
     end subroutine
 
     subroutine f_ptc(solver_, u_, udot_, ierr_)
@@ -370,7 +432,7 @@ contains
 
       if (self%verbose) then
         call get_flux_metrics(self, dFdt, max_flux_imbalance_wm2_, max_flux_ratio_)
-        print"(3x,'ptc step =',i4,3x,'dt =',es10.3,3x,'max|F| = ',es9.2,3x,'max|F/F0| = ',es9.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
+        print"(3x,'step =',i4,3x,'dt   =',es10.3,3x,'max|F| = ',es9.2,3x,'max|F/F0| = ',es9.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
               solver_%steps, solver_%dt, &
               max_flux_imbalance_wm2_, max_flux_ratio_, &
               maxval(u_), minval(u_)
@@ -435,7 +497,7 @@ contains
       if (iflag_ == 0 .and. self%verbose) then
         call get_flux_metrics(self, dFdt, max_flux_imbalance_wm2_, max_flux_ratio_)
 
-        print"(3x,'step =',i3,3x,'njev =',i3,3x,'max|F| = ',es9.2,3x,'max|F/F0| = ',es9.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
+        print"(3x,'step =',i4,3x,'njev =',i10,3x,'max|F| = ',es9.2,3x,'max|F/F0| = ',es9.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
               mv%nfev, mv%njev, max_flux_imbalance_wm2_, &
               max_flux_ratio_, maxval(x_), minval(x_)
       endif
