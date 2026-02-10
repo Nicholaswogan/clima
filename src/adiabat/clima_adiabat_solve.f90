@@ -247,18 +247,24 @@ contains
       mv%nprint = 1
 
       block
-        use clima_ptc, only: PTCSolver, PTC_JAC_DENSE
+        use clima_ptc, only: PTCSolver, PTC_JAC_DENSE, PTC_CONVERGED_USER
         type(PTCSolver) :: solver
-        call solver%initialize(x_init, f_ptc, jac_ptc, PTC_JAC_DENSE)
+        call solver%initialize(x_init, f_ptc, jac_ptc, PTC_JAC_DENSE, max_steps=300)
         call solver%set_custom_convergence(convergence_ptc)
         call solver%solve()
+        if (solver%reason /= PTC_CONVERGED_USER)then
+          ! print*,solver%reason
+          ! err = 'Failure'
+          ! return
+        endif
         mv%x = solver%x
+        x_init = solver%x
         mv%fvec = solver%fvec
       endblock
 
       k = 0
       do
-        exit
+        ! exit
         if (mod(k,2) == 0) then
           perturbation = real(k,dp)*1.0_dp
         else

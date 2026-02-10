@@ -15,6 +15,7 @@ module clima_ptc
   integer, parameter, public :: PTC_DIVERGED_NOT_INITIALIZED     = -3
   integer, parameter, public :: PTC_DIVERGED_INVALID_INPUT       = -4
   integer, parameter, public :: PTC_DIVERGED_MAX_STEPS           = -5
+  integer, parameter, public :: PTC_DIVERGED_STAGNATION          = -6
 
   public :: PTCSolver, wp
 
@@ -54,6 +55,12 @@ module clima_ptc
     integer :: max_reject = 10  !! Maximum rejects allowed per `step()` before failure.
     integer :: max_steps = 10000  !! Maximum accepted steps allowed in `solve()`.
     integer :: reason = PTC_REASON_NONE  !! Solver state/reason code.
+    logical :: enable_stagnation_check = .true.  !! Enable generic residual-norm stagnation detection.
+    integer :: stagnation_warmup_steps = 10  !! Number of accepted steps before stagnation checks begin.
+    integer :: stagnation_window = 150  !! Accepted non-improving steps allowed before stagnation failure.
+    real(wp) :: stagnation_rel_improve_tol = 1.0e-3_wp  !! Relative improvement threshold counted as progress.
+    integer :: stagnation_count = 0  !! Counter of consecutive accepted non-improving steps.
+    real(wp) :: fnorm_best = huge(1.0_wp)  !! Best residual norm seen so far.
 
     logical :: initialized = .false.  !! True once arrays and callbacks are configured.
 
@@ -78,6 +85,7 @@ module clima_ptc
     procedure :: step => PTCSolver_step
     procedure :: solve => PTCSolver_solve
     procedure :: check_convergence => PTCSolver_check_convergence
+    procedure :: update_stagnation => PTCSolver_update_stagnation
 
     procedure :: set_verify_timestep => PTCSolver_set_verify_timestep
     procedure :: set_compute_timestep => PTCSolver_set_compute_timestep
@@ -178,7 +186,8 @@ contains
   !!
   !! Configures dense or banded Jacobian storage, sets PETSc-like defaults,
   !! and optionally applies user-provided tolerances and stepping controls.
-  subroutine PTCSolver_initialize(self, x0, f, jac, jacobian_type, dt0, dt0_guess_fac, kl, ku, fatol, frtol, dt_increment, dt_max, increment_dt_from_initial_dt, max_reject, max_steps)
+  subroutine PTCSolver_initialize(self, x0, f, jac, jacobian_type, dt0, dt0_guess_fac, kl, ku, fatol, frtol, dt_increment, dt_max, increment_dt_from_initial_dt, max_reject, max_steps, &
+      enable_stagnation_check, stagnation_warmup_steps, stagnation_window, stagnation_rel_improve_tol)
     class(PTCSolver), intent(inout) :: self  !! Solver object to initialize.
     real(wp), intent(in) :: x0(:)  !! Initial state guess.
     procedure(rhs_fcn) :: f  !! User residual callback.
@@ -190,6 +199,10 @@ contains
     integer, intent(in), optional :: ku  !! Number of super-diagonals for banded Jacobian mode.
     integer, intent(in), optional :: max_reject  !! Maximum rejections allowed per `step()` call.
     integer, intent(in), optional :: max_steps  !! Maximum accepted steps allowed in `solve()`.
+    logical, intent(in), optional :: enable_stagnation_check  !! Enable generic residual stagnation detection.
+    integer, intent(in), optional :: stagnation_warmup_steps  !! Accepted-step warmup before enabling stagnation checks.
+    integer, intent(in), optional :: stagnation_window  !! Consecutive non-improving accepted steps allowed.
+    real(wp), intent(in), optional :: stagnation_rel_improve_tol  !! Relative improvement threshold considered progress.
     real(wp), intent(in), optional :: fatol  !! Absolute residual-norm convergence tolerance.
     real(wp), intent(in), optional :: frtol  !! Relative residual-norm convergence tolerance.
     real(wp), intent(in), optional :: dt_increment  !! Default timestep growth factor.
@@ -217,6 +230,24 @@ contains
         return
       end if
     end if
+    if (present(stagnation_warmup_steps)) then
+      if (stagnation_warmup_steps < 0) then
+        self%reason = PTC_DIVERGED_INVALID_INPUT
+        return
+      end if
+    end if
+    if (present(stagnation_window)) then
+      if (stagnation_window <= 0) then
+        self%reason = PTC_DIVERGED_INVALID_INPUT
+        return
+      end if
+    end if
+    if (present(stagnation_rel_improve_tol)) then
+      if (stagnation_rel_improve_tol < 0.0_wp) then
+        self%reason = PTC_DIVERGED_INVALID_INPUT
+        return
+      end if
+    end if
 
     self%neq = size(x0)
     self%dt = 0.0_wp
@@ -233,6 +264,10 @@ contains
     if (present(increment_dt_from_initial_dt)) self%increment_dt_from_initial_dt = increment_dt_from_initial_dt
     if (present(max_reject)) self%max_reject = max_reject
     if (present(max_steps)) self%max_steps = max_steps
+    if (present(enable_stagnation_check)) self%enable_stagnation_check = enable_stagnation_check
+    if (present(stagnation_warmup_steps)) self%stagnation_warmup_steps = stagnation_warmup_steps
+    if (present(stagnation_window)) self%stagnation_window = stagnation_window
+    if (present(stagnation_rel_improve_tol)) self%stagnation_rel_improve_tol = stagnation_rel_improve_tol
 
     self%fnorm = -1.0_wp
     self%fnorm_initial = -1.0_wp
@@ -242,6 +277,8 @@ contains
     self%residual_old_valid = .false.
     self%jac_valid = .false.
     self%jac_old_valid = .false.
+    self%stagnation_count = 0
+    self%fnorm_best = huge(1.0_wp)
 
     allocate(self%x(self%neq), self%x_old(self%neq), self%fvec(self%neq), self%fvec_old(self%neq), self%step_vec(self%neq), self%rhs_mat(self%neq, 1), self%ipiv(self%neq))
     self%x = x0
@@ -436,6 +473,7 @@ contains
       self%dt = next_dt
       self%fnorm_previous = self%fnorm
       self%steps = self%steps + 1
+      call self%update_stagnation()
 
       call PTCSolver_check_convergence(self)
       return
@@ -469,6 +507,15 @@ contains
     logical :: converged
     integer :: ierr
 
+    if (self%enable_stagnation_check) then
+      if (self%steps >= self%stagnation_warmup_steps) then
+        if (self%stagnation_count >= self%stagnation_window) then
+          self%reason = PTC_DIVERGED_STAGNATION
+          return
+        end if
+      end if
+    end if
+
     if (associated(self%custom_convergence)) then
       call self%custom_convergence(self, converged, ierr)
       if (ierr /= 0) then
@@ -498,6 +545,30 @@ contains
 
     self%reason = PTC_REASON_NONE
   end subroutine PTCSolver_check_convergence
+
+  !> Update generic stagnation monitor using residual-norm progress.
+  subroutine PTCSolver_update_stagnation(self)
+    class(PTCSolver), intent(inout) :: self
+    real(wp) :: improve_factor
+
+    if (.not. self%enable_stagnation_check) return
+    if (self%steps < self%stagnation_warmup_steps) return
+    if (self%fnorm < 0.0_wp) return
+
+    if (self%fnorm_best == huge(1.0_wp)) then
+      self%fnorm_best = self%fnorm
+      self%stagnation_count = 0
+      return
+    end if
+
+    improve_factor = 1.0_wp - max(0.0_wp, self%stagnation_rel_improve_tol)
+    if (self%fnorm < self%fnorm_best*improve_factor) then
+      self%fnorm_best = self%fnorm
+      self%stagnation_count = 0
+    else
+      self%stagnation_count = self%stagnation_count + 1
+    end if
+  end subroutine PTCSolver_update_stagnation
 
   !> Compute residual vector and its 2-norm at a given state.
   subroutine PTCSolver_compute_residual(self, x, fvec, fnorm, ierr)
