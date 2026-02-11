@@ -208,6 +208,7 @@ contains
     T_in(2:) = T_guess(:)
     self%T_surf = T_surf_guess
     self%T(:) = T_guess(:)
+    self%prevent_overconvection_lock = 0
 
     ! setup the convecting zone
     if (present(convecting_with_below)) then
@@ -899,53 +900,53 @@ contains
 
     if (mode == 1) then
 
-    call AdiabatClimate_jacobian(self, P_i_surf, x_in, dTdt_dT, err)
-    if (allocated(err)) return
+      call AdiabatClimate_jacobian(self, P_i_surf, x_in, dTdt_dT, err)
+      if (allocated(err)) return
 
-    deltaT = -dTdt
-    call linear_solve(dTdt_dT, deltaT, ierr)
-    if (ierr /= 0) then
-      err = 'Linear solved failed in "update_convecting_zones"'
-      return
-    endif
-
-    ! Trial Newton step (used only for convective classification). Safeguard the step
-    ! size so `make_profile_rc` does not see invalid temperature profiles.
-    alpha = min(max(0.0_dp, self%convective_newton_step_size), 1.0_dp)
-    got_perturb = .false.
-    do bt = 1,20
-      T_perturb = deltaT*alpha + T_in
-
-      ! Ensure there are no invalid temperatures
-      if (minval(T_perturb) < 1.0_dp) then    
-        alpha = 0.5_dp*alpha
-        cycle
+      deltaT = -dTdt
+      call linear_solve(dTdt_dT, deltaT, ierr)
+      if (ierr /= 0) then
+        err = 'Linear solved failed in "update_convecting_zones"'
+        return
       endif
 
-      ! Try to get a perturbed T profile.
-      call self%make_profile_rc(P_i_surf, T_perturb, err_trial)
-      if (.not. allocated(err_trial)) then
-        lapse_rate_perturb = self%lapse_rate
-        got_perturb = .true.
-        exit
-      else
-        deallocate(err_trial)
-        alpha = 0.5_dp*alpha
+      ! Trial Newton step (used only for convective classification). Safeguard the step
+      ! size so `make_profile_rc` does not see invalid temperature profiles.
+      alpha = min(max(0.0_dp, self%convective_newton_step_size), 1.0_dp)
+      got_perturb = .false.
+      do bt = 1,20
+        T_perturb = deltaT*alpha + T_in
+
+        ! Ensure there are no invalid temperatures
+        if (minval(T_perturb) < 1.0_dp) then    
+          alpha = 0.5_dp*alpha
+          cycle
+        endif
+
+        ! Try to get a perturbed T profile.
+        call self%make_profile_rc(P_i_surf, T_perturb, err_trial)
+        if (.not. allocated(err_trial)) then
+          lapse_rate_perturb = self%lapse_rate
+          got_perturb = .true.
+          exit
+        else
+          deallocate(err_trial)
+          alpha = 0.5_dp*alpha
+        endif
+        
+        if (alpha < 1.0e-8_dp) exit
+      enddo
+
+      if (.not. got_perturb) then
+        err = 'Failed to update convecting zones.'
+        return
       endif
-      
-      if (alpha < 1.0e-8_dp) exit
-    enddo
 
-    if (.not. got_perturb) then
-      err = 'Failed to update convecting zones.'
-      return
-    endif
+      ! Re-update all variables at T_in, including self%lapse_rate_intended
+      call AdiabatClimate_objective(self, P_i_surf, x_in, dFdt, dTdt, err)
+      if (allocated(err)) return
 
-    ! Re-update all variables at T_in, including self%lapse_rate_intended
-    call AdiabatClimate_objective(self, P_i_surf, x_in, dFdt, dTdt, err)
-    if (allocated(err)) return
-
-    difference = lapse_rate_perturb - self%lapse_rate_intended
+      difference = lapse_rate_perturb - self%lapse_rate_intended
 
       do i = 1,self%nz
         thresh_on = max(self%convective_hysteresis_min, &
@@ -998,6 +999,11 @@ contains
 
     elseif (mode == 3) then
 
+      difference = self%lapse_rate - self%lapse_rate_intended
+      where (self%prevent_overconvection_lock > 0)
+        self%prevent_overconvection_lock = self%prevent_overconvection_lock - 1
+      end where
+
       i = 1
       do while (i <= self%nz)
         if (self%convecting_with_below(i)) then
@@ -1010,12 +1016,23 @@ contains
           r = i - 1 ! The top of a convecting zone
           if (r >= self%nz) exit ! guard against bounds error
 
+          thresh_on = max(self%convective_hysteresis_min, &
+                       self%convective_hysteresis_frac_on*abs(self%lapse_rate_intended(r+1)))
           thresh_off = max(self%convective_hysteresis_min, &
                         self%convective_hysteresis_frac_off*abs(self%lapse_rate_intended(r+1)))
-          if (self%lapse_rate(r+1) < -thresh_off) then
-            ! If inversion just above convecting zone, then we shrink the top
-            ! of the convecting zone
-            self%convecting_with_below(r) = .false.
+
+          if (difference(r+1) > thresh_on) then
+            ! Hard invariant for mode 3:
+            ! do not allow a superadiabatic first radiative layer above a convective top.
+            ! Promote the first radiative link above the current top.
+            self%convecting_with_below(r+1) = .true.
+            self%prevent_overconvection_lock(r+1) = 2
+          elseif (self%lapse_rate(r+1) < -thresh_off) then
+            if (self%prevent_overconvection_lock(r) == 0) then
+              ! If inversion just above convecting zone, then we shrink the top
+              ! of the convecting zone
+              self%convecting_with_below(r) = .false.
+            endif
           endif
         else
           i = i + 1

@@ -117,6 +117,10 @@ module clima_adiabat
     integer :: convective_max_boundary_shift = -1
     !> If true, shrink convective tops when a strong inversion exists just above.
     logical :: prevent_overconvection = .true.
+    !> Per-layer lockout counter used by prevent_overconvection polishing.
+    !> A positive value temporarily prevents immediate re-demotion of the same
+    !> convective top boundary to avoid ABAB oscillations.
+    integer, allocatable :: prevent_overconvection_lock(:)
 
     ! tolerances
     !> Relative tolerance of integration
@@ -334,6 +338,7 @@ contains
     allocate(c%super_saturated(c%nz))
     allocate(c%convecting_with_below(c%nz))
     allocate(c%lapse_rate(c%nz),c%lapse_rate_intended(c%nz))
+    allocate(c%prevent_overconvection_lock(c%nz))
 
     ! allocate ocean functions
     allocate(c%ocean_fcns(c%sp%ng))
