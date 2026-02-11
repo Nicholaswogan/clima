@@ -171,8 +171,6 @@ contains
 
   module function AdiabatClimate_RCE(self, P_i_surf, T_surf_guess, T_guess, convecting_with_below, &
     sp_custom, P_custom, mix_custom, err) result(converged)
-    use minpack_module, only: hybrd1
-    use clima_useful, only: MinpackHybrj, linear_solve
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
     real(dp), intent(in) :: T_surf_guess
@@ -184,15 +182,10 @@ contains
     character(:), allocatable, intent(out) :: err
     logical :: converged
 
-    type(MinpackHybrj) :: mv
     logical, allocatable :: convecting_with_below_save(:,:)
-    real(dp), allocatable :: difference(:)
     real(dp), allocatable :: T_in(:), x_init(:), dFdt(:), x_stage(:), x_sol(:), f_sol(:)
-    real(dp) :: perturbation
     integer :: i, j, k
-    logical :: minpack_custom_converged
     logical :: solver_ok
-    integer, parameter :: minpack_iflag_converged = -77
 
     if (.not.self%double_radiative_grid) then
       err = 'AdiabatClimate must be initialized with "double_radiative_grid" set to True '// &
@@ -208,7 +201,6 @@ contains
     if (allocated(err)) return
     
     allocate(convecting_with_below_save(self%nz,0))
-    allocate(difference(self%nz))
     allocate(T_in(self%nz+1))
 
     T_in(1) = T_surf_guess
@@ -234,8 +226,6 @@ contains
         print"(1x,'Iteration =',i3)", i
       endif
 
-      if (allocated(dFdt)) deallocate(dFdt)
-      allocate(dFdt(size(self%inds_Tx)))
       if (allocated(x_init)) deallocate(x_init)
       allocate(x_init(size(self%inds_Tx)))
       x_init(1) = self%T_surf
@@ -243,6 +233,8 @@ contains
         x_init(k) = self%T(self%inds_Tx(k)-1)
       enddo
 
+      if (allocated(dFdt)) deallocate(dFdt)
+      allocate(dFdt(size(self%inds_Tx)))
       if (allocated(x_stage)) deallocate(x_stage)
       allocate(x_stage(size(self%inds_Tx)))
       if (allocated(x_sol)) deallocate(x_sol)
@@ -252,20 +244,20 @@ contains
 
       select case (self%rce_solve_strategy)
       case (RCE_SOLVE_HYBRJ_ONLY)
-        call run_hybrj(x_init, x_sol, f_sol, solver_ok)
+        call run_hybrj(self, P_i_surf, x_init, x_sol, f_sol, dFdt, solver_ok)
         if (.not. solver_ok) then
           err = 'hybrj root solve failed in RCE (HYBRJ_ONLY).'
           return
         endif
 
       case (RCE_SOLVE_PTC_THEN_HYBRJ)
-        call run_ptc(x_init, x_stage, f_sol, solver_ok)
+        call run_ptc(self, P_i_surf, x_init, x_stage, f_sol, dFdt, solver_ok)
         if (solver_ok) then
           ! If converged, then we are good
           x_sol = x_stage
         else
           ! If not converged, we tighten with hybrd
-          call run_hybrj(x_stage, x_sol, f_sol, solver_ok)
+          call run_hybrj(self, P_i_surf, x_stage, x_sol, f_sol, dFdt, solver_ok)
         endif
         if (.not. solver_ok) then
           err = 'hybrj root solve failed in RCE (PTC_THEN_HYBRJ).'
@@ -273,17 +265,17 @@ contains
         endif
 
       case (RCE_SOLVE_HYBRJ_THEN_PTC_THEN_HYBRJ)
-        call run_hybrj(x_init, x_stage, f_sol, solver_ok)
+        call run_hybrj(self, P_i_surf, x_init, x_stage, f_sol, dFdt, solver_ok)
         if (solver_ok) then
           x_sol = x_stage
         else
-          call run_ptc(x_init, x_stage, f_sol, solver_ok)
+          call run_ptc(self, P_i_surf, x_init, x_stage, f_sol, dFdt, solver_ok)
           if (solver_ok) then
             ! If converged, then we are good
             x_sol = x_stage
           else
             ! If not converged, we tighten with hybrd
-            call run_hybrj(x_stage, x_sol, f_sol, solver_ok)
+            call run_hybrj(self, P_i_surf, x_stage, x_sol, f_sol, dFdt, solver_ok)
           endif
         endif
         if (.not. solver_ok) then
@@ -339,78 +331,126 @@ contains
     call AdiabatClimate_objective(self, P_i_surf, x_sol, dFdt, f_sol, err)
     if (allocated(err)) return
 
+  end function
+
+  subroutine run_hybrj(self, P_i_surf, x_seed, x_out, f_out, dFdt, ok)
+    use clima_useful, only: MinpackHybrj
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: P_i_surf(:)
+    real(dp), intent(in) :: x_seed(:)
+    real(dp), intent(out) :: x_out(:), f_out(:)
+    real(dp), intent(inout) :: dFdt(:)
+    logical, intent(out) :: ok
+
+    type(MinpackHybrj) :: mv
+    integer :: k
+    real(dp) :: perturbation
+    logical :: minpack_custom_converged
+    character(:), allocatable :: err
+
+    mv = MinpackHybrj(fcn, size(self%inds_Tx))
+    mv%xtol = 1.0e-12_dp
+    mv%nprint = 1
+    mv%maxfev = 100
+
+    k = 0
+    do
+      if (mod(k,2) == 0) then
+        perturbation = real(k,dp)*1.0_dp
+      else
+        perturbation = -real(k,dp)*1.0_dp
+      endif
+
+      if (self%verbose .and. k > 0) then
+        print'(3x,"Perturbation = ",f7.1)',perturbation
+      endif
+
+      minpack_custom_converged = .false.
+      mv%x = x_seed + perturbation
+      call mv%hybrj()
+      if (minpack_custom_converged) then
+        x_out = mv%x
+        f_out = mv%fvec
+        ok = .true.
+        return
+      endif
+
+      if (k > 2) then
+        ok = .false.
+        return
+      endif
+
+      k = k + 1
+    enddo
+    
   contains
 
-    subroutine convergence_ptc(solver_, converged_, ierr_)
-      use clima_ptc, only: PTCSolver
-      class(PTCSolver), intent(in) :: solver_
-      logical, intent(out) :: converged_
-      integer, intent(out) :: ierr_
+    subroutine fcn(n_, x_, fvec_, fjac_, ldfjac_, iflag_)
+      implicit none
+      integer, intent(in) :: n_
+      real(dp), dimension(n_), intent(in) :: x_
+      integer, intent(in) :: ldfjac_
+      real(dp), dimension(n_), intent(inout) :: fvec_
+      real(dp), dimension(ldfjac_, n_), intent(inout) :: fjac_
+      integer, intent(inout) :: iflag_
+      real(dp) :: max_flux_imbalance_wm2_, max_flux_ratio_
 
-      ierr_ = 0
-      converged_ = custom_flux_converged(self, dFdt)
-
-    end subroutine
-
-    subroutine run_ptc(x_seed, x_out, f_out, ok)
-      use clima_ptc, only: PTCSolver, PTC_JAC_DENSE, PTC_CONVERGED_USER
-      real(dp), intent(in) :: x_seed(:)
-      real(dp), intent(out) :: x_out(:)
-      real(dp), intent(out) :: f_out(:)
-      logical, intent(out) :: ok
-      type(PTCSolver) :: solver
-
-      call solver%initialize(x_seed, f_ptc, jac_ptc, PTC_JAC_DENSE, dt_increment=self%dt_increment, max_steps=300)
-      call solver%set_custom_convergence(convergence_ptc)
-      call solver%solve()
-      x_out = solver%x
-      f_out = solver%fvec
-      ok = (solver%reason == PTC_CONVERGED_USER)
-    end subroutine
-
-    subroutine run_hybrj(x_seed, x_out, f_out, ok)
-      real(dp), intent(in) :: x_seed(:)
-      real(dp), intent(out) :: x_out(:), f_out(:)
-      logical, intent(out) :: ok
-
-      mv = MinpackHybrj(fcn, size(self%inds_Tx))
-      mv%xtol = 1.0e-12_dp
-      mv%nprint = 1
-      mv%maxfev = 100
-
-      k = 0
-      do
-        if (mod(k,2) == 0) then
-          perturbation = real(k,dp)*1.0_dp
-        else
-          perturbation = -real(k,dp)*1.0_dp
-        endif
-
-        if (self%verbose .and. k > 0) then
-          print'(3x,"Perturbation = ",f7.1)',perturbation
-        endif
-
-        minpack_custom_converged = .false.
-        mv%x = x_seed + perturbation
-        call mv%hybrj()
-        if (minpack_custom_converged) then
-          x_out = mv%x
-          f_out = mv%fvec
-          ok = .true.
-          return
-        else
-          if (allocated(err)) deallocate(err)
-        endif
-
-        if (k > 2) then
-          ok = .false.
+      if (iflag_ == 1) then
+        ! Compute right-hand-side
+        call AdiabatClimate_objective(self, P_i_surf, x_, dFdt, fvec_, err)
+        if (allocated(err)) then
+          deallocate(err)
+          iflag_ = -1
           return
         endif
+        if (custom_flux_converged(self, dFdt)) then
+          minpack_custom_converged = .true.
+          iflag_ = -77
+          return
+        endif
+      elseif (iflag_ == 2) then
+        ! Compute jacobian
+        call AdiabatClimate_jacobian(self, P_i_surf, x_, fjac_, err)
+        if (allocated(err)) then
+          deallocate(err)
+          iflag_ = -1
+          return
+        endif
+      endif
 
-        k = k + 1
-      enddo
+      if (iflag_ == 0 .and. self%verbose) then
+        call get_flux_metrics(self, dFdt, max_flux_imbalance_wm2_, max_flux_ratio_)
+        print"(3x,'step =',i4,3x,'njev =',i10,3x,'max|F| = ',es9.2,3x,'max|F/F0| = ',es9.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
+              mv%nfev, mv%njev, max_flux_imbalance_wm2_, &
+              max_flux_ratio_, maxval(x_), minval(x_)
+      endif
+
     end subroutine
 
+  end subroutine
+
+  subroutine run_ptc(self, P_i_surf, x_seed, x_out, f_out, dFdt, ok)
+    use clima_ptc, only: PTCSolver, PTC_JAC_DENSE, PTC_CONVERGED_USER
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: P_i_surf(:)
+    real(dp), intent(in) :: x_seed(:)
+    real(dp), intent(out) :: x_out(:)
+    real(dp), intent(out) :: f_out(:)
+    real(dp), intent(inout) :: dFdt(:)
+    logical, intent(out) :: ok
+
+    type(PTCSolver) :: solver
+    character(:), allocatable :: err
+
+    call solver%initialize(x_seed, f_ptc, jac_ptc, PTC_JAC_DENSE, dt_increment=self%dt_increment, max_steps=300)
+    call solver%set_custom_convergence(convergence_ptc)
+    call solver%solve()
+    x_out = solver%x
+    f_out = solver%fvec
+    ok = (solver%reason == PTC_CONVERGED_USER)
+
+  contains
+    
     subroutine f_ptc(solver_, u_, udot_, ierr_)
       use clima_ptc, only: PTCSolver, wp
       class(PTCSolver), intent(in) :: solver_
@@ -420,13 +460,10 @@ contains
       real(dp) :: max_flux_imbalance_wm2_, max_flux_ratio_
 
       ierr_ = 0
-      if (allocated(err)) then
-        ierr_ = 1
-        return
-      endif
 
       call AdiabatClimate_objective(self, P_i_surf, u_, dFdt, udot_, err)
       if (allocated(err)) then
+        deallocate(err)
         ierr_ = 1
         return
       endif
@@ -450,62 +487,30 @@ contains
 
       ierr_ = 0
       if (allocated(err)) then
+        deallocate(err)
         ierr_ = 1
         return
       endif
 
       call AdiabatClimate_jacobian(self, P_i_surf, u_, jac_, err)
       if (allocated(err)) then
+        deallocate(err)
         ierr_ = 1
         return
       endif
 
     end subroutine
 
-    subroutine fcn(n_, x_, fvec_, fjac_, ldfjac_, iflag_)
-      implicit none
-      integer, intent(in) :: n_
-      real(dp), dimension(n_), intent(in) :: x_
-      integer, intent(in) :: ldfjac_
-      real(dp), dimension(n_), intent(inout) :: fvec_
-      real(dp), dimension(ldfjac_, n_), intent(inout) :: fjac_
-      integer, intent(inout) :: iflag_
-      real(dp) :: max_flux_imbalance_wm2_, max_flux_ratio_
-
-      if (allocated(err)) return
-
-      if (iflag_ == 1) then
-        ! Compute right-hand-side
-        call AdiabatClimate_objective(self, P_i_surf, x_, dFdt, fvec_, err)
-        if (allocated(err)) then
-          iflag_ = -1
-          return
-        endif
-        if (custom_flux_converged(self, dFdt)) then
-          minpack_custom_converged = .true.
-          iflag_ = minpack_iflag_converged
-          return
-        endif
-      elseif (iflag_ == 2) then
-        ! Compute jacobian
-        call AdiabatClimate_jacobian(self, P_i_surf, x_, fjac_, err)
-        if (allocated(err)) then
-          iflag_ = -1
-          return
-        endif
-      endif
-
-      if (iflag_ == 0 .and. self%verbose) then
-        call get_flux_metrics(self, dFdt, max_flux_imbalance_wm2_, max_flux_ratio_)
-
-        print"(3x,'step =',i4,3x,'njev =',i10,3x,'max|F| = ',es9.2,3x,'max|F/F0| = ',es9.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
-              mv%nfev, mv%njev, max_flux_imbalance_wm2_, &
-              max_flux_ratio_, maxval(x_), minval(x_)
-      endif
-
+    subroutine convergence_ptc(solver_, converged_, ierr_)
+      use clima_ptc, only: PTCSolver
+      class(PTCSolver), intent(in) :: solver_
+      logical, intent(out) :: converged_
+      integer, intent(out) :: ierr_
+      ierr_ = 0
+      converged_ = custom_flux_converged(self, dFdt)
     end subroutine
 
-  end function
+  end subroutine
 
   subroutine get_flux_metrics(self, dFdt, max_flux_imbalance_wm2, max_flux_ratio)
     class(AdiabatClimate), intent(inout) :: self
