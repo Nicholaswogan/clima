@@ -184,8 +184,9 @@ contains
 
     logical, allocatable :: convecting_with_below_save(:,:)
     real(dp), allocatable :: T_in(:), x_init(:), dFdt(:), x_stage(:), x_sol(:), f_sol(:)
-    integer :: i, j, k
-    logical :: solver_ok
+    integer :: i, j, k, mode_update
+    logical :: solver_ok, converged1
+    logical :: mask_changed
 
     if (.not.self%double_radiative_grid) then
       err = 'AdiabatClimate must be initialized with "double_radiative_grid" set to True '// &
@@ -214,10 +215,11 @@ contains
       if (allocated(err)) return
     else
       self%convecting_with_below = .false.
-      call AdiabatClimate_update_convecting_zones(self, P_i_surf, T_in, .false., err)
+      call AdiabatClimate_update_convecting_zones(self, P_i_surf, T_in, mode=1, err=err)
       if (allocated(err)) return
     endif
 
+    converged1 = .false.
     converged = .false.
     do i = 1,self%max_rc_iters
       j = i
@@ -294,27 +296,43 @@ contains
       ! Save the current convective zones
       convecting_with_below_save = reshape(convecting_with_below_save,shape=[self%nz,i],pad=self%convecting_with_below)
 
-      ! Update the convective zones
-      if (i < self%max_rc_iters_convection) then
-        ! Here, we permit 
-        ! - convective layers to become radiative
-        ! - radiative layers to become convective
-        call AdiabatClimate_update_convecting_zones(self, P_i_surf, [self%T_surf, self%T], .false., err)
-        if (allocated(err)) return
+      if (.not.converged1) then
+        if (i < self%max_rc_iters_convection) then
+          ! permit both convective<->radiative flips
+          mode_update = 1
+        else
+          ! permit only radiative->convective growth
+          mode_update = 2
+        endif
       else
-        ! Here, we only permit radiative layers to become convective
-        call AdiabatClimate_update_convecting_zones(self, P_i_surf, [self%T_surf, self%T], .true., err)
-        if (allocated(err)) return
+        ! final polish: trim over-convective tops only
+        mode_update = 3
       endif
-      
-      ! Check for convergence
-      if (all(convecting_with_below_save(:,i) .eqv. self%convecting_with_below)) then
-        ! Convective zones did not change between iterations, so converged
-        converged = .true.
-      elseif (oscillating_convective_mask(convecting_with_below_save, self%convecting_with_below) .and. &
-          i >= self%max_rc_iters_convection) then
-        converged = .true.
+
+      call AdiabatClimate_update_convecting_zones(self, P_i_surf, [self%T_surf, self%T], mode_update, err)
+      if (allocated(err)) return
+      mask_changed = .not. all(convecting_with_below_save(:,i) .eqv. self%convecting_with_below)
+
+      if (.not.converged1) then
+        if (.not.mask_changed) then
+          converged1 = .true.
+          if (.not.self%prevent_overconvection) then
+            converged = .true.
+          else
+            if (self%verbose) then
+              print'(1x,A)','Preventing overconvection'
+            endif
+            ! Transition directly into polish once stage-1/2 converges.
+            call AdiabatClimate_update_convecting_zones(self, P_i_surf, [self%T_surf, self%T], 3, err)
+            if (allocated(err)) return
+            mask_changed = .not. all(convecting_with_below_save(:,i) .eqv. self%convecting_with_below)
+            if (.not.mask_changed) converged = .true.
+          endif
+        endif
+      else
+        if (.not.mask_changed) converged = .true.
       endif
+
       if (converged) then
         if (self%verbose) then
           print'(1x,A)','CONVERGED'
@@ -581,24 +599,6 @@ contains
 
   end function
 
-  !> Detects a 2-cycle oscillation in the convective mask across recent iterations.
-  function oscillating_convective_mask(convecting_with_below_save, convecting_with_below) result(res)
-    logical, intent(in) :: convecting_with_below_save(:,:)
-    logical, intent(in) :: convecting_with_below(:)
-    logical :: res
-    integer :: i
-
-    res = .false.
-    i = size(convecting_with_below_save,2)
-    if (i < 3) return
-
-    if (all(convecting_with_below_save(:,i-1) .eqv. convecting_with_below) .and. &
-        all(convecting_with_below_save(:,i-2) .eqv. convecting_with_below_save(:,i))) then
-      res = .true.
-    endif
-
-  end function
-
   subroutine AdiabatClimate_objective(self, P_i_surf, x, dFdt, dTdt, err)
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
@@ -850,15 +850,15 @@ contains
   !> tends to a T profile unstable to convection, then the layer is convective. The
   !> routine specifically updates self%convecting_with_below, self%n_convecting_zones, 
   !> self%ind_conv_lower and self%ind_conv_upper. It also updates all atmosphere varibles.
-  subroutine AdiabatClimate_update_convecting_zones(self, P_i_surf, T_in, no_convection_to_radiation, err)
+  subroutine AdiabatClimate_update_convecting_zones(self, P_i_surf, T_in, mode, err)
     use clima_useful, only: linear_solve
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:)
     real(dp), intent(in) :: T_in(:)
-    logical, intent(in) :: no_convection_to_radiation
+    integer, intent(in) :: mode
     character(:), allocatable, intent(out) :: err
 
-    real(dp), allocatable :: dFdt(:), dTdt(:), dTdt_dT(:,:), deltaT(:), T_perturb(:)
+    real(dp), allocatable :: dFdt(:), dTdt(:), dTdt_dT(:,:), deltaT(:), T_perturb(:), x_in(:)
     real(dp), allocatable :: lapse_rate_perturb(:), difference(:)
     logical, allocatable :: convecting_with_below_save(:)
     logical, allocatable :: convecting_with_below_candidate(:)
@@ -871,20 +871,35 @@ contains
     integer :: n_flip_on, n_flip_off, n_zones_prev
     integer :: l, r
 
+    if (all(mode /= [1, 2, 3])) then
+      err = 'Invalid mode in AdiabatClimate_update_convecting_zones: expected 1, 2, or 3.'
+      return
+    endif
+
     ! work storage
-    allocate(dFdt(size(T_in)), dTdt(size(T_in)), dTdt_dT(size(T_in),size(T_in)))
     allocate(deltaT(size(T_in)),T_perturb(size(T_in)))
     allocate(lapse_rate_perturb(self%nz),difference(self%nz))
     allocate(convecting_with_below_candidate(self%nz))
 
     convecting_with_below_save = self%convecting_with_below
-    self%convecting_with_below = .false.
-    call AdiabatClimate_set_convecting_zones(self, self%convecting_with_below, err)
+    if (mode /= 3) then
+      self%convecting_with_below = .false.
+      call AdiabatClimate_set_convecting_zones(self, self%convecting_with_below, err)
+      if (allocated(err)) return
+    endif
+
+    allocate(x_in(size(self%inds_Tx)))
+    do i = 1,size(self%inds_Tx)
+      x_in(i) = T_in(self%inds_Tx(i))
+    enddo
+    allocate(dFdt(size(self%inds_Tx)), dTdt(size(self%inds_Tx)), dTdt_dT(size(self%inds_Tx),size(self%inds_Tx)))
+
+    call AdiabatClimate_objective(self, P_i_surf, x_in, dFdt, dTdt, err)
     if (allocated(err)) return
 
-    call AdiabatClimate_objective(self, P_i_surf, T_in, dFdt, dTdt, err)
-    if (allocated(err)) return
-    call AdiabatClimate_jacobian(self, P_i_surf, T_in, dTdt_dT, err)
+    if (mode == 1) then
+
+    call AdiabatClimate_jacobian(self, P_i_surf, x_in, dTdt_dT, err)
     if (allocated(err)) return
 
     deltaT = -dTdt
@@ -927,24 +942,11 @@ contains
     endif
 
     ! Re-update all variables at T_in, including self%lapse_rate_intended
-    call AdiabatClimate_objective(self, P_i_surf, T_in, dFdt, dTdt, err)
+    call AdiabatClimate_objective(self, P_i_surf, x_in, dFdt, dTdt, err)
     if (allocated(err)) return
 
     difference = lapse_rate_perturb - self%lapse_rate_intended
 
-    if (no_convection_to_radiation) then
-      self%convecting_with_below = convecting_with_below_save
-      do i = 1,self%nz
-        if (.not.self%convecting_with_below(i)) then
-          difference(i) = self%lapse_rate(i) - self%lapse_rate_intended(i)
-          thresh_on = max(self%convective_hysteresis_min, &
-                           self%convective_hysteresis_frac_on*abs(self%lapse_rate_intended(i)))
-          if (difference(i) > thresh_on) then
-            self%convecting_with_below(i) = .true.
-          endif
-        endif
-      enddo
-    else
       do i = 1,self%nz
         thresh_on = max(self%convective_hysteresis_min, &
                          self%convective_hysteresis_frac_on*abs(self%lapse_rate_intended(i)))
@@ -964,18 +966,38 @@ contains
           endif
         endif
       enddo
-    endif
 
-    ! Save hysteresis result as candidate mask for boundary limiting / nucleation.
-    convecting_with_below_candidate = self%convecting_with_below
+      ! Save hysteresis result as candidate mask for boundary limiting / nucleation.
+      convecting_with_below_candidate = self%convecting_with_below
 
-    ! Apply limiter to control mask changes (boundary motion and nucleation).
-    call AdiabatClimate_apply_convective_mask_limiter(self, convecting_with_below_save, &
-        convecting_with_below_candidate, difference, no_convection_to_radiation)
+      ! Apply limiter to control mask changes (boundary motion and nucleation).
+      call AdiabatClimate_apply_convective_mask_limiter(self, convecting_with_below_save, &
+          convecting_with_below_candidate, difference, .false.)
 
-    ! Post-limiter safeguard: if there is a strong inversion just above a convective
-    ! top, force that top layer to revert to radiative.
-    if (self%prevent_overconvection) then
+    elseif (mode == 2) then
+
+      difference = self%lapse_rate - self%lapse_rate_intended
+
+      self%convecting_with_below = convecting_with_below_save
+      do i = 1,self%nz
+        if (.not.self%convecting_with_below(i)) then
+          thresh_on = max(self%convective_hysteresis_min, &
+                           self%convective_hysteresis_frac_on*abs(self%lapse_rate_intended(i)))
+          if (difference(i) > thresh_on) then
+            self%convecting_with_below(i) = .true.
+          endif
+        endif
+      enddo
+
+      ! Save hysteresis result as candidate mask for boundary limiting / nucleation.
+      convecting_with_below_candidate = self%convecting_with_below
+
+      ! Apply limiter to control mask changes (boundary motion and nucleation).
+      call AdiabatClimate_apply_convective_mask_limiter(self, convecting_with_below_save, &
+          convecting_with_below_candidate, difference, .true.)
+
+    elseif (mode == 3) then
+
       i = 1
       do while (i <= self%nz)
         if (self%convecting_with_below(i)) then
@@ -999,6 +1021,7 @@ contains
           i = i + 1
         endif
       enddo
+
     endif
 
     call AdiabatClimate_set_convecting_zones(self, self%convecting_with_below, err)
