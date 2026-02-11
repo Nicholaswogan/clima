@@ -360,7 +360,7 @@ contains
       logical, intent(out) :: ok
       type(PTCSolver) :: solver
 
-      call solver%initialize(x_seed, f_ptc, jac_ptc, PTC_JAC_DENSE, max_steps=300)
+      call solver%initialize(x_seed, f_ptc, jac_ptc, PTC_JAC_DENSE, dt_increment=self%dt_increment, max_steps=300)
       call solver%set_custom_convergence(convergence_ptc)
       call solver%solve()
       x_out = solver%x
@@ -376,6 +376,7 @@ contains
       mv = MinpackHybrj(fcn, size(self%inds_Tx))
       mv%xtol = 1.0e-12_dp
       mv%nprint = 1
+      mv%maxfev = 100
 
       k = 0
       do

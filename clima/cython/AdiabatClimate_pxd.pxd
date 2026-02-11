@@ -172,6 +172,12 @@ cdef extern void adiabatclimate_epsj_set(AdiabatClimate *ptr, double *val)
 cdef extern void adiabatclimate_xtol_rc_get(AdiabatClimate *ptr, double *val)
 cdef extern void adiabatclimate_xtol_rc_set(AdiabatClimate *ptr, double *val)
 
+cdef extern void adiabatclimate_dt_increment_get(AdiabatClimate *ptr, double *val)
+cdef extern void adiabatclimate_dt_increment_set(AdiabatClimate *ptr, double *val)
+
+cdef extern void adiabatclimate_rce_solve_strategy_get(AdiabatClimate *ptr, int *val)
+cdef extern void adiabatclimate_rce_solve_strategy_set(AdiabatClimate *ptr, int *val)
+
 cdef extern void adiabatclimate_max_rc_iters_get(AdiabatClimate *ptr, int *val)
 cdef extern void adiabatclimate_max_rc_iters_set(AdiabatClimate *ptr, int *val)
 
@@ -222,4 +228,3 @@ cdef extern void adiabatclimate_n_surface_get(AdiabatClimate *ptr, int *dim1, do
 
 cdef extern void adiabatclimate_n_ocean_get_size(AdiabatClimate *ptr, int *dim1, int *dim2)
 cdef extern void adiabatclimate_n_ocean_get(AdiabatClimate *ptr, int *dim1, int *dim2, double *arr)
-

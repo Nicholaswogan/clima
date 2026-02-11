@@ -1068,6 +1068,42 @@ subroutine adiabatclimate_xtol_rc_set(ptr, val) bind(c)
   c%xtol_rc = val
 end subroutine
 
+subroutine adiabatclimate_dt_increment_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%dt_increment
+end subroutine
+
+subroutine adiabatclimate_dt_increment_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%dt_increment = val
+end subroutine
+
+subroutine adiabatclimate_rce_solve_strategy_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%rce_solve_strategy
+end subroutine
+
+subroutine adiabatclimate_rce_solve_strategy_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%rce_solve_strategy = val
+end subroutine
+
 subroutine adiabatclimate_max_rc_iters_get(ptr, val) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), value, intent(in) :: ptr

@@ -129,6 +129,9 @@ module clima_adiabat
     real(dp) :: epsj = 1.0e-2_dp
     !> xtol for RC equilibrium
     real(dp) :: xtol_rc = 1.0e-5_dp
+    !> Multiplicative growth factor for PTC timestep updates.
+    !> Values > 1 increase `dt` after successful steps.
+    real(dp) :: dt_increment = 1.5_dp
     !> Max number of iterations in the RCE routine
     integer :: max_rc_iters = 30
     !> Max number of iterations for which convective layers can

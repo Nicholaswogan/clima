@@ -864,6 +864,24 @@ cdef class AdiabatClimate:
     def __set__(self, double val):
       wa_pxd.adiabatclimate_xtol_rc_set(self._ptr, &val)
 
+  property dt_increment:
+    "float. Multiplicative growth factor for PTC timestep updates."
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_dt_increment_get(self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_dt_increment_set(self._ptr, &val)
+
+  property rce_solve_strategy:
+    "int. RCE nonlinear solve strategy selector."
+    def __get__(self):
+      cdef int val
+      wa_pxd.adiabatclimate_rce_solve_strategy_get(self._ptr, &val)
+      return val
+    def __set__(self, int val):
+      wa_pxd.adiabatclimate_rce_solve_strategy_set(self._ptr, &val)
+
   property max_rc_iters:
     "int. Max number of iterations in the RCE routine"
     def __get__(self):
