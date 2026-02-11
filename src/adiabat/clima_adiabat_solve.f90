@@ -232,7 +232,6 @@ contains
       do k = 2,size(self%inds_Tx)
         x_init(k) = self%T(self%inds_Tx(k)-1)
       enddo
-
       if (allocated(dFdt)) deallocate(dFdt)
       allocate(dFdt(size(self%inds_Tx)))
       if (allocated(x_stage)) deallocate(x_stage)
@@ -345,8 +344,12 @@ contains
     type(MinpackHybrj) :: mv
     integer :: k
     real(dp) :: perturbation
-    logical :: minpack_custom_converged
+    logical :: minpack_custom_converged, have_base
+    real(dp), allocatable :: dTdt_base(:), x_base(:)
     character(:), allocatable :: err
+
+    allocate(dTdt_base(size(self%inds_Tx)))
+    allocate(x_base(size(self%inds_Tx)))
 
     mv = MinpackHybrj(fcn, size(self%inds_Tx))
     mv%xtol = 1.0e-12_dp
@@ -366,6 +369,7 @@ contains
       endif
 
       minpack_custom_converged = .false.
+      have_base = .false.
       mv%x = x_seed + perturbation
       call mv%hybrj()
       if (minpack_custom_converged) then
@@ -403,6 +407,9 @@ contains
           iflag_ = -1
           return
         endif
+        dTdt_base(:) = fvec_
+        x_base(:) = x_
+        have_base = .true.
         if (custom_flux_converged(self, dFdt)) then
           minpack_custom_converged = .true.
           iflag_ = -77
@@ -410,12 +417,24 @@ contains
         endif
       elseif (iflag_ == 2) then
         ! Compute jacobian
-        call AdiabatClimate_jacobian(self, P_i_surf, x_, fjac_, err)
+        if ((.not. have_base) .or. any(x_ /= x_base)) then
+          call AdiabatClimate_objective(self, P_i_surf, x_, dFdt, dTdt_base, err)
+          if (allocated(err)) then
+            deallocate(err)
+            iflag_ = -1
+            return
+          endif
+          x_base(:) = x_
+          have_base = .true.
+        endif
+        call AdiabatClimate_jacobian_from_base(self, P_i_surf, x_, dFdt, dTdt_base, fjac_, err)
         if (allocated(err)) then
           deallocate(err)
           iflag_ = -1
           return
         endif
+        ! Base state was consumed to build this Jacobian; force refresh on next Jacobian call.
+        have_base = .false.
       endif
 
       if (iflag_ == 0 .and. self%verbose) then
@@ -440,7 +459,13 @@ contains
     logical, intent(out) :: ok
 
     type(PTCSolver) :: solver
+    real(dp), allocatable :: dTdt_base(:), x_base(:)
+    logical :: have_base
     character(:), allocatable :: err
+
+    allocate(dTdt_base(size(self%inds_Tx)))
+    allocate(x_base(size(self%inds_Tx)))
+    have_base = .false.
 
     call solver%initialize(x_seed, f_ptc, jac_ptc, PTC_JAC_DENSE, dt_increment=self%dt_increment, max_steps=300)
     call solver%set_custom_convergence(convergence_ptc)
@@ -467,6 +492,9 @@ contains
         ierr_ = 1
         return
       endif
+      dTdt_base(:) = udot_
+      x_base(:) = u_
+      have_base = .true.
 
       if (self%verbose) then
         call get_flux_metrics(self, dFdt, max_flux_imbalance_wm2_, max_flux_ratio_)
@@ -492,12 +520,25 @@ contains
         return
       endif
 
-      call AdiabatClimate_jacobian(self, P_i_surf, u_, jac_, err)
+      if ((.not. have_base) .or. any(u_ /= x_base)) then
+        call AdiabatClimate_objective(self, P_i_surf, u_, dFdt, dTdt_base, err)
+        if (allocated(err)) then
+          deallocate(err)
+          ierr_ = 1
+          return
+        endif
+        x_base(:) = u_
+        have_base = .true.
+      endif
+
+      call AdiabatClimate_jacobian_from_base(self, P_i_surf, u_, dFdt, dTdt_base, jac_, err)
       if (allocated(err)) then
         deallocate(err)
         ierr_ = 1
         return
       endif
+      ! Base state was consumed to build this Jacobian; force refresh on next Jacobian call.
+      have_base = .false.
 
     end subroutine
 
@@ -659,10 +700,6 @@ contains
     character(:), allocatable, intent(out) :: err
 
     real(dp), allocatable :: dFdt(:), dTdt(:)
-    real(dp), allocatable :: dFdt_perturb(:), dTdt_perturb(:), T_perturb(:), T_in(:)
-    real(dp) :: deltaT
-
-    integer :: i, ind
 
     ! Check inputs
     if (size(jac,1) /= size(self%inds_Tx) .or. size(jac,2) /= size(self%inds_Tx)) then
@@ -672,17 +709,46 @@ contains
 
     ! allocate work
     allocate(dFdt(size(self%inds_Tx)), dTdt(size(self%inds_Tx)))
-    allocate(dFdt_perturb(size(self%inds_Tx)), dTdt_perturb(size(self%inds_Tx)))
-    allocate(T_in(self%nz+1))
 
     ! First evaluate res at T.
     call AdiabatClimate_objective(self, P_i_surf, x, dFdt, dTdt, err)
     if (allocated(err)) return
 
+    call AdiabatClimate_jacobian_from_base(self, P_i_surf, x, dFdt, dTdt, jac, err)
+    if (allocated(err)) return
+
+  end subroutine
+
+  subroutine AdiabatClimate_jacobian_from_base(self, P_i_surf, x, dFdt, dTdt, jac, err)
+    class(AdiabatClimate), intent(inout) :: self
+    real(dp), intent(in) :: P_i_surf(:)
+    real(dp), intent(in) :: x(:)
+    real(dp), intent(in) :: dFdt(:), dTdt(:)
+    real(dp), intent(out) :: jac(:,:)
+    character(:), allocatable, intent(out) :: err
+
+    real(dp), allocatable :: dFdt_perturb(:), dTdt_perturb(:), T_perturb(:), T_in(:)
+    real(dp) :: deltaT
+    integer :: i, ind
+
+    ! Check inputs
+    if (size(jac,1) /= size(self%inds_Tx) .or. size(jac,2) /= size(self%inds_Tx)) then
+      err = "jac has the wrong dimension"
+      return
+    endif
+    if (size(dFdt) /= size(self%inds_Tx) .or. size(dTdt) /= size(self%inds_Tx)) then
+      err = "Base residual vectors have wrong dimension in AdiabatClimate_jacobian_from_base"
+      return
+    endif
+
+    ! allocate work
+    allocate(dFdt_perturb(size(self%inds_Tx)), dTdt_perturb(size(self%inds_Tx)))
+    allocate(T_in(self%nz+1), T_perturb(self%nz+1))
+
     T_in(1) = self%T_surf
     T_in(2:) = self%T
 
-    T_perturb = T_in
+    T_perturb(:) = T_in(:)
     do i = 1,size(x)
 
       ! Perturb temperature
