@@ -239,7 +239,16 @@ module clima_adiabat
       logical :: converged !! Whether the routine converged or not.
     end function
   end interface
-  
+
+  abstract interface
+    subroutine toa_fluxes_fcn(T_surf, T_trop, ASR, OLR, err)
+      import :: dp
+      real(dp), intent(in) :: T_surf, T_trop
+      real(dp), intent(out) :: ASR, OLR
+      character(:), allocatable, intent(out) :: err
+    end subroutine
+  end interface
+
 contains
   
   function create_AdiabatClimate(species_f, settings_f, star_f, data_dir, double_radiative_grid, err) result(c)
@@ -800,169 +809,122 @@ contains
     if (allocated(err)) return
     
   end subroutine
+
+  function AdiabatClimate_simple_solver(self, fcn, T_guess, err) result(T_surf)
+    use minpack_module, only: hybrd1
+    use clima_useful, only: MinpackHybrd1Vars
+    class(AdiabatClimate), intent(inout) :: self
+    procedure(toa_fluxes_fcn) :: fcn
+    real(dp), optional, intent(in) :: T_guess !! K
+    character(:), allocatable, intent(out) :: err
+    real(dp) :: T_surf
+
+    real(dp) :: T_guess_
+    type(MinpackHybrd1Vars) :: mv
+    
+    if (present(T_guess)) then
+      T_guess_ = T_guess
+    else
+      T_guess_ = 280.0_dp
+    endif
+    
+    if (self%solve_for_T_trop) then
+      mv = MinpackHybrd1Vars(2)
+      mv%x(1) = log10(T_guess_)
+      mv%x(2) = log10(self%T_trop)
+    else
+      mv = MinpackHybrd1Vars(1)
+      mv%x(1) = log10(T_guess_)
+    endif
+    call hybrd1(fcn_hybrj, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+    if (mv%info == 0 .or. mv%info > 1) then
+      err = 'hybrd1 root solve failed.'
+      return
+    elseif (mv%info < 0) then
+      err = 'hybrd1 root solve failed: '//err
+      return
+    endif
+    
+    T_surf = 10.0_dp**mv%x(1)
+    call fcn_hybrj(mv%n, mv%x, mv%fvec, mv%info)
+
+  contains
+    subroutine fcn_hybrj(n_, x_, fvec_, iflag_)
+      integer, intent(in) :: n_
+      real(dp), intent(in) :: x_(n_)
+      real(dp), intent(out) :: fvec_(n_)
+      integer, intent(inout) :: iflag_
+      real(dp) :: T, T_trop, ISR, OLR, rad_enhancement
+      T = 10.0_dp**x_(1)
+      if (self%solve_for_T_trop) then
+        T_trop = 10.0_dp**x_(2)
+      else
+        T_trop = self%T_trop
+      endif
+      call fcn(T, T_trop, ISR, OLR, err)
+      if (allocated(err)) then
+        iflag_ = -1
+        return
+      endif
+      rad_enhancement = 1.0_dp
+      if (self%tidally_locked_dayside) then; block
+        real(dp) :: tau_LW, k_term, f_term
+        call self%heat_redistribution_parameters(tau_LW, k_term, f_term, err)
+        if (allocated(err)) then
+          iflag_ = -1
+          return
+        endif
+        ! Increase the stellar flux, because we are computing the climate of
+        ! observed dayside.
+        rad_enhancement = 4.0_dp*f_term
+        call self%rad%apply_radiation_enhancement(rad_enhancement)
+      endblock; endif
+      fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
+
+      if (self%solve_for_T_trop) then; block
+        use clima_eqns, only: skin_temperature
+        real(dp) :: bond_albedo, stellar_radiation
+        bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
+        stellar_radiation = self%rad%bolometric_flux()
+        fvec_(2) = skin_temperature(stellar_radiation*rad_enhancement, bond_albedo) - T_trop
+      endblock; endif
+    end subroutine    
+  end function
   
   !> Does a non-linear solve for the surface temperature that balances incoming solar
   !> and outgoing longwave radiation. Uses `make_profile`.
   function AdiabatClimate_surface_temperature(self, P_i_surf, T_guess, err) result(T_surf)
-    use minpack_module, only: hybrd1
-    use clima_useful, only: MinpackHybrd1Vars
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: P_i_surf(:) !! dynes/cm^2
     real(dp), optional, intent(in) :: T_guess !! K
     character(:), allocatable, intent(out) :: err
-    
     real(dp) :: T_surf
-    
-    real(dp) :: T_guess_
-    type(MinpackHybrd1Vars) :: mv
-    
-    if (present(T_guess)) then
-      T_guess_ = T_guess
-    else
-      T_guess_ = 280.0_dp
-    endif
-    
-    if (self%solve_for_T_trop) then
-      mv = MinpackHybrd1Vars(2)
-      mv%x(1) = log10(T_guess_)
-      mv%x(2) = log10(self%T_trop)
-    else
-      mv = MinpackHybrd1Vars(1)
-      mv%x(1) = log10(T_guess_)
-    endif
-    call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
-    if (mv%info == 0 .or. mv%info > 1) then
-      err = 'hybrd1 root solve failed in surface_temperature.'
-      return
-    elseif (mv%info < 0) then
-      err = 'hybrd1 root solve failed in surface_temperature: '//err
-      return
-    endif
-    
-    T_surf = 10.0_dp**mv%x(1)
-    call fcn(mv%n, mv%x, mv%fvec, mv%info)
-    
+    T_surf = AdiabatClimate_simple_solver(self, fcn, T_guess, err)
   contains
-    subroutine fcn(n_, x_, fvec_, iflag_)
-      integer, intent(in) :: n_
-      real(dp), intent(in) :: x_(n_)
-      real(dp), intent(out) :: fvec_(n_)
-      integer, intent(inout) :: iflag_
-      real(dp) :: T, ISR, OLR, rad_enhancement
-      T = 10.0_dp**x_(1)
-      if (self%solve_for_T_trop) then
-        self%T_trop = 10.0_dp**x_(2)
-      endif
-      call self%TOA_fluxes(T, P_i_surf, ISR, OLR, err)
-      if (allocated(err)) then
-        iflag_ = -1
-        return
-      endif
-      rad_enhancement = 1.0_dp
-      if (self%tidally_locked_dayside) then; block
-        real(dp) :: tau_LW, k_term, f_term
-        call self%heat_redistribution_parameters(tau_LW, k_term, f_term, err)
-        if (allocated(err)) then
-          iflag_ = -1
-          return
-        endif
-        ! Increase the stellar flux, because we are computing the climate of
-        ! observed dayside.
-        rad_enhancement = 4.0_dp*f_term
-        call self%rad%apply_radiation_enhancement(rad_enhancement)
-      endblock; endif
-      fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
-
-      if (self%solve_for_T_trop) then; block
-        use clima_eqns, only: skin_temperature
-        real(dp) :: bond_albedo, stellar_radiation
-        bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
-        stellar_radiation = self%rad%bolometric_flux()
-        fvec_(2) = skin_temperature(stellar_radiation*rad_enhancement, bond_albedo) - self%T_trop
-      endblock; endif
+    subroutine fcn(T_surf_, T_trop_, ASR_, OLR_, err_)
+      real(dp), intent(in) :: T_surf_, T_trop_
+      real(dp), intent(out) :: ASR_, OLR_
+      character(:), allocatable, intent(out) :: err_
+      self%T_trop = T_trop_
+      call self%TOA_fluxes(T_surf_, P_i_surf, ASR_, OLR_, err_)
     end subroutine
-    
   end function
 
   function AdiabatClimate_surface_temperature_column(self, N_i_surf, T_guess, err) result(T_surf)
-    use minpack_module, only: hybrd1
-    use clima_useful, only: MinpackHybrd1Vars
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: N_i_surf(:)
     real(dp), optional, intent(in) :: T_guess
     character(:), allocatable, intent(out) :: err
-    
     real(dp) :: T_surf
-    
-    real(dp) :: T_guess_
-    type(MinpackHybrd1Vars) :: mv
-    
-    if (present(T_guess)) then
-      T_guess_ = T_guess
-    else
-      T_guess_ = 280.0_dp
-    endif
-    
-    if (self%solve_for_T_trop) then
-      mv = MinpackHybrd1Vars(2)
-      mv%x(1) = log10(T_guess_)
-      mv%x(2) = log10(self%T_trop)
-    else
-      mv = MinpackHybrd1Vars(1)
-      mv%x(1) = log10(T_guess_)
-    endif
-    call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
-    if (mv%info == 0 .or. mv%info > 1) then
-      err = 'hybrd1 root solve failed in surface_temperature_column.'
-      return
-    elseif (mv%info < 0) then
-      err = 'hybrd1 root solve failed in surface_temperature_column: '//err
-      return
-    endif
-    
-    T_surf = 10.0_dp**mv%x(1)
-    call fcn(mv%n, mv%x, mv%fvec, mv%info)
-    
+    T_surf = AdiabatClimate_simple_solver(self, fcn, T_guess, err)
   contains
-    subroutine fcn(n_, x_, fvec_, iflag_)
-      integer, intent(in) :: n_
-      real(dp), intent(in) :: x_(n_)
-      real(dp), intent(out) :: fvec_(n_)
-      integer, intent(inout) :: iflag_
-      real(dp) :: T, ISR, OLR, rad_enhancement
-      T = 10.0_dp**x_(1)
-      if (self%solve_for_T_trop) then
-        self%T_trop = 10.0_dp**x_(2)
-      endif
-      call self%TOA_fluxes_column(T, N_i_surf, ISR, OLR, err)
-      if (allocated(err)) then
-        iflag_ = -1
-        return
-      endif
-      rad_enhancement = 1.0_dp
-      if (self%tidally_locked_dayside) then; block
-        real(dp) :: tau_LW, k_term, f_term
-        call self%heat_redistribution_parameters(tau_LW, k_term, f_term, err)
-        if (allocated(err)) then
-          iflag_ = -1
-          return
-        endif
-        ! Increase the stellar flux, because we are computing the climate of
-        ! observed dayside.
-        rad_enhancement = 4.0_dp*f_term
-        call self%rad%apply_radiation_enhancement(rad_enhancement)
-      endblock; endif
-      fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
-
-      if (self%solve_for_T_trop) then; block
-        use clima_eqns, only: skin_temperature
-        real(dp) :: bond_albedo, stellar_radiation
-        bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
-        stellar_radiation = self%rad%bolometric_flux()
-        fvec_(2) = skin_temperature(stellar_radiation*rad_enhancement, bond_albedo) - self%T_trop
-      endblock; endif
+    subroutine fcn(T_surf_, T_trop_, ASR_, OLR_, err_)
+      real(dp), intent(in) :: T_surf_, T_trop_
+      real(dp), intent(out) :: ASR_, OLR_
+      character(:), allocatable, intent(out) :: err_
+      self%T_trop = T_trop_
+      call self%TOA_fluxes_column(T_surf_, N_i_surf, ASR_, OLR_, err_)
     end subroutine
-    
   end function
 
   !> Similar to surface_temperature. The difference is that this function imposes
@@ -977,74 +939,14 @@ contains
     real(dp), optional, intent(in) :: T_guess
     character(:), allocatable, intent(out) :: err
     real(dp) :: T_surf
-    
-    real(dp) :: T_guess_
-    type(MinpackHybrd1Vars) :: mv
-
-    if (present(T_guess)) then
-      T_guess_ = T_guess
-    else
-      T_guess_ = 280.0_dp
-    endif
-
-    if (self%solve_for_T_trop) then
-      mv = MinpackHybrd1Vars(2)
-      mv%x(1) = log10(T_guess_)
-      mv%x(2) = log10(self%T_trop)
-    else
-      mv = MinpackHybrd1Vars(1)
-      mv%x(1) = log10(T_guess_)
-    endif
-    call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
-    if (mv%info == 0 .or. mv%info > 1) then
-      err = 'hybrd1 root solve failed in surface_temperature_bg_gas.'
-      return
-    elseif (mv%info < 0) then
-      err = 'hybrd1 root solve failed in surface_temperature_bg_gas: '//err
-      return
-    endif
-
-    T_surf = 10.0**mv%x(1)
-    call fcn(mv%n, mv%x, mv%fvec, mv%info)
-
+    T_surf = AdiabatClimate_simple_solver(self, fcn, T_guess, err)
   contains
-    subroutine fcn(n_, x_, fvec_, iflag_)
-      integer, intent(in) :: n_
-      real(dp), intent(in) :: x_(n_)
-      real(dp), intent(out) :: fvec_(n_)
-      integer, intent(inout) :: iflag_
-      real(dp) :: T, ISR, OLR, rad_enhancement
-      T = 10.0_dp**x_(1)
-      if (self%solve_for_T_trop) then
-        self%T_trop = 10.0_dp**x_(2)
-      endif
-      call self%TOA_fluxes_bg_gas(T, P_i_surf, P_surf, bg_gas, ISR, OLR, err)
-      if (allocated(err)) then
-        iflag_ = -1
-        return
-      endif
-      rad_enhancement = 1.0_dp
-      if (self%tidally_locked_dayside) then; block
-        real(dp) :: tau_LW, k_term, f_term
-        call self%heat_redistribution_parameters(tau_LW, k_term, f_term, err)
-        if (allocated(err)) then
-          iflag_ = -1
-          return
-        endif
-        ! Increase the stellar flux, because we are computing the climate of
-        ! observed dayside.
-        rad_enhancement = 4.0_dp*f_term
-        call self%rad%apply_radiation_enhancement(rad_enhancement)
-      endblock; endif
-      fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
-
-      if (self%solve_for_T_trop) then; block
-        use clima_eqns, only: skin_temperature
-        real(dp) :: bond_albedo, stellar_radiation
-        bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
-        stellar_radiation = self%rad%bolometric_flux()
-        fvec_(2) = skin_temperature(stellar_radiation*rad_enhancement, bond_albedo) - self%T_trop
-      endblock; endif
+    subroutine fcn(T_surf_, T_trop_, ASR_, OLR_, err_)
+      real(dp), intent(in) :: T_surf_, T_trop_
+      real(dp), intent(out) :: ASR_, OLR_
+      character(:), allocatable, intent(out) :: err_
+      self%T_trop = T_trop_
+      call self%TOA_fluxes_bg_gas(T_surf_, P_i_surf, P_surf, bg_gas, ASR_, OLR_, err_)
     end subroutine
   end function
 
