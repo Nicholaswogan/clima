@@ -31,6 +31,7 @@ module clima_ptc
     procedure(verify_step_fcn), pointer, nopass :: verify => null()  !! Optional step verification callback.
     procedure(timestep_fcn), pointer, nopass :: compute_dt => null()  !! Optional timestep update callback.
     procedure(convergence_fcn), pointer, nopass :: custom_convergence => null()  !! Optional custom convergence callback.
+    procedure(progress_fcn), pointer, nopass :: progress => null()  !! Optional progress callback (called at step 0 and after accepted steps).
 
     real(wp) :: dt = 0.0_wp  !! Current pseudo-time step size.
     real(wp) :: dt_initial = 0.0_wp  !! Initial pseudo-time step size.
@@ -61,6 +62,7 @@ module clima_ptc
     real(wp) :: stagnation_rel_improve_tol = 1.0e-3_wp  !! Relative improvement threshold counted as progress.
     integer :: stagnation_count = 0  !! Counter of consecutive accepted non-improving steps.
     real(wp) :: fnorm_best = huge(1.0_wp)  !! Best residual norm seen so far.
+    logical :: progress_step0_emitted = .false.  !! Internal guard to emit initial progress only once.
 
     logical :: initialized = .false.  !! True once arrays and callbacks are configured.
 
@@ -90,6 +92,7 @@ module clima_ptc
     procedure :: set_verify_timestep => PTCSolver_set_verify_timestep
     procedure :: set_compute_timestep => PTCSolver_set_compute_timestep
     procedure :: set_custom_convergence => PTCSolver_set_custom_convergence
+    procedure :: set_progress => PTCSolver_set_progress
   end type PTCSolver
 
     abstract interface
@@ -147,6 +150,17 @@ module clima_ptc
       logical, intent(out) :: converged  !! Set true to terminate as converged.
       integer, intent(out) :: ierr  !! Callback status (`0` success, nonzero fatal failure).
     end subroutine convergence_fcn
+
+    !> Progress callback timing/data contract.
+    !! Called once at start of `solve()` (step 0, with residual current),
+    !! and once after each accepted step.
+    !! For a given reported step, this callback is invoked after `rhs_fcn`
+    !! and before `jac_fcn`.
+    subroutine progress_fcn(solver)
+      import PTCSolver
+      implicit none
+      class(PTCSolver), intent(in) :: solver
+    end subroutine progress_fcn
 
   end interface
 
@@ -368,6 +382,14 @@ contains
     self%custom_convergence => convergence
   end subroutine PTCSolver_set_custom_convergence
 
+  !> Register a callback for progress reporting.
+  subroutine PTCSolver_set_progress(self, progress)
+    class(PTCSolver), intent(inout) :: self  !! Solver object to update.
+    procedure(progress_fcn) :: progress  !! User callback for per-step reporting.
+
+    self%progress => progress
+  end subroutine PTCSolver_set_progress
+
   !> Advance the solver by one accepted pseudo-step (with internal retries).
   !!
   !! Performs linearized PTC update, optional verify callback, default/custom
@@ -474,6 +496,7 @@ contains
       self%fnorm_previous = self%fnorm
       self%steps = self%steps + 1
       call self%update_stagnation()
+      if (associated(self%progress)) call self%progress(self)
 
       call PTCSolver_check_convergence(self)
       return
@@ -611,6 +634,10 @@ contains
         return
       end if
       self%residual_valid = .true.
+    end if
+    if (self%steps == 0 .and. .not. self%progress_step0_emitted) then
+      if (associated(self%progress)) call self%progress(self)
+      self%progress_step0_emitted = .true.
     end if
 
     inv_dt = 1.0_wp / self%dt
@@ -754,6 +781,8 @@ contains
     self%verify => null()
     self%compute_dt => null()
     self%custom_convergence => null()
+    self%progress => null()
+    self%progress_step0_emitted = .false.
   end subroutine reset_storage
 
 end module clima_ptc
