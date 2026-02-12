@@ -859,6 +859,8 @@ contains
 
     have_base = .false.
     allocate(x_base(size(x_seed)), fvec_base(size(x_seed)))
+    x_base = huge(1.0_dp)
+    fvec_base = huge(1.0_dp)
 
     ! Initialize solver.
     call solver%initialize(x_seed, fcn_ptc, jac_ptc, PTC_JAC_DENSE, dt_increment=self%dt_increment, max_steps=300)
