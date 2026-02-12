@@ -811,8 +811,7 @@ contains
   end subroutine
 
   function AdiabatClimate_simple_solver(self, fcn, T_guess, err) result(T_surf)
-    use minpack_module, only: hybrd1
-    use clima_useful, only: MinpackHybrd1Vars
+    use clima_ptc, only: PTCSolver, PTC_JAC_DENSE, PTC_CONVERGED_USER
     class(AdiabatClimate), intent(inout) :: self
     procedure(toa_fluxes_fcn) :: fcn
     real(dp), optional, intent(in) :: T_guess !! K
@@ -820,41 +819,75 @@ contains
     real(dp) :: T_surf
 
     real(dp) :: T_guess_
-    type(MinpackHybrd1Vars) :: mv
+    real(dp) :: T_trop_guess
+    real(dp) :: scale_factor
+    type(PTCSolver) :: solver
+    real(dp), allocatable :: x_seed(:), x_base(:), fvec_base(:)
+    logical :: have_base
     
+    ! Initial guesses
     if (present(T_guess)) then
       T_guess_ = T_guess
     else
-      T_guess_ = 280.0_dp
+      T_guess_ = self%rad%equilibrium_temperature(0.0_dp)
     endif
-    
-    if (self%solve_for_T_trop) then
-      mv = MinpackHybrd1Vars(2)
-      mv%x(1) = log10(T_guess_)
-      mv%x(2) = log10(self%T_trop)
+    if (self%T_trop > 0.0_dp) then
+      T_trop_guess = self%T_trop
     else
-      mv = MinpackHybrd1Vars(1)
-      mv%x(1) = log10(T_guess_)
-    endif
-    call hybrd1(fcn_hybrj, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
-    if (mv%info == 0 .or. mv%info > 1) then
-      err = 'hybrd1 root solve failed.'
-      return
-    elseif (mv%info < 0) then
-      err = 'hybrd1 root solve failed: '//err
-      return
+      T_trop_guess = self%rad%skin_temperature(0.0_dp)
     endif
     
-    T_surf = 10.0_dp**mv%x(1)
-    call fcn_hybrj(mv%n, mv%x, mv%fvec, mv%info)
+    if (self%solve_for_T_trop) then; block
+      real(dp), allocatable :: fvec_seed(:)
+      integer :: ierr
+      allocate(x_seed(2), fvec_seed(2))
+      x_seed(1) = log10(max(T_guess_, tiny(1.0_dp)))
+      x_seed(2) = log10(max(T_trop_guess, tiny(1.0_dp)))
+      ! Work out a scale factor for the second residual to make it faster than the first.
+      scale_factor = 1.0_dp
+      call fcn_ptc(solver, x_seed, fvec_seed, ierr)
+      if (ierr /= 0) then
+        err = 'ptc root solve failed to initialize.'
+        return
+      endif
+      scale_factor = 1.0e2_dp * abs(fvec_seed(1)) / max(abs(fvec_seed(2)), 1.0e-12_dp)
+      scale_factor = min(max(scale_factor, 1.0e-3_dp), 1.0e6_dp)
+    endblock; else
+      allocate(x_seed(1))
+      x_seed(1) = log10(max(T_guess_, tiny(1.0_dp)))
+    endif
+
+    have_base = .false.
+    allocate(x_base(size(x_seed)), fvec_base(size(x_seed)))
+
+    ! Initialize solver.
+    call solver%initialize(x_seed, fcn_ptc, jac_ptc, PTC_JAC_DENSE, dt_increment=self%dt_increment, max_steps=300)
+    if (self%verbose) call solver%set_progress(progress_ptc)
+    if (self%solve_for_T_trop) call solver%set_verify_timestep(verify_ptc)
+    call solver%set_custom_convergence(convergence_ptc)
+    call solver%solve()
+    if (solver%reason /= PTC_CONVERGED_USER) then
+      if (allocated(err)) then
+        err = 'ptc root solve failed: '//err
+      else
+        err = 'ptc root solve failed.'
+      endif
+      return
+    endif
+
+    T_surf = 10.0_dp**solver%x(1)
+    call fcn_ptc(solver, solver%x, solver%fvec, solver%reason)
 
   contains
-    subroutine fcn_hybrj(n_, x_, fvec_, iflag_)
-      integer, intent(in) :: n_
-      real(dp), intent(in) :: x_(n_)
-      real(dp), intent(out) :: fvec_(n_)
-      integer, intent(inout) :: iflag_
-      real(dp) :: T, T_trop, ISR, OLR, rad_enhancement
+
+    subroutine fcn_ptc(solver_, x_, fvec_, ierr_)
+      class(PTCSolver), intent(in) :: solver_
+      real(dp), intent(in) :: x_(:)
+      real(dp), intent(out) :: fvec_(:)
+      integer, intent(out) :: ierr_
+      real(dp) :: T, T_trop, ISR, OLR, rad_enhancement, stellar_radiation
+
+      ierr_ = 0
       T = 10.0_dp**x_(1)
       if (self%solve_for_T_trop) then
         T_trop = 10.0_dp**x_(2)
@@ -863,7 +896,7 @@ contains
       endif
       call fcn(T, T_trop, ISR, OLR, err)
       if (allocated(err)) then
-        iflag_ = -1
+        ierr_ = -1
         return
       endif
       rad_enhancement = 1.0_dp
@@ -871,7 +904,7 @@ contains
         real(dp) :: tau_LW, k_term, f_term
         call self%heat_redistribution_parameters(tau_LW, k_term, f_term, err)
         if (allocated(err)) then
-          iflag_ = -1
+          ierr_ = -1
           return
         endif
         ! Increase the stellar flux, because we are computing the climate of
@@ -879,16 +912,108 @@ contains
         rad_enhancement = 4.0_dp*f_term
         call self%rad%apply_radiation_enhancement(rad_enhancement)
       endblock; endif
-      fvec_(1) = ISR*rad_enhancement - OLR + self%surface_heat_flow
+      stellar_radiation = self%rad%bolometric_flux()
+      fvec_(1) = (ISR*rad_enhancement - OLR + self%surface_heat_flow)/(1.0e3_dp*stellar_radiation/4.0_dp)
 
       if (self%solve_for_T_trop) then; block
         use clima_eqns, only: skin_temperature
-        real(dp) :: bond_albedo, stellar_radiation
+        real(dp) :: bond_albedo
         bond_albedo = self%rad%wrk_sol%fup_n(self%nz_r+1)/self%rad%wrk_sol%fdn_n(self%nz_r+1)
-        stellar_radiation = self%rad%bolometric_flux()
-        fvec_(2) = skin_temperature(stellar_radiation*rad_enhancement, bond_albedo) - T_trop
+        fvec_(2) = scale_factor*(skin_temperature(stellar_radiation*rad_enhancement, bond_albedo) - T_trop)/skin_temperature(stellar_radiation, 0.0_dp)
       endblock; endif
-    end subroutine    
+      if (allocated(x_base) .and. allocated(fvec_base)) then
+        fvec_base(:) = fvec_
+        x_base(:) = x_
+        have_base = .true.
+      endif
+
+    end subroutine
+
+    subroutine jac_ptc(solver_, x_, jac_, ierr_)
+      class(PTCSolver), intent(in) :: solver_
+      real(dp), intent(in) :: x_(:)
+      real(dp), intent(out) :: jac_(:, :)
+      integer, intent(out) :: ierr_
+      real(dp), allocatable :: xpert(:), fbase(:), fpert(:)
+      real(dp) :: h
+      integer :: ii, ierr_loc
+
+      ierr_ = 0
+      allocate(xpert(size(x_)), fbase(size(x_)), fpert(size(x_)))
+      if ((.not. have_base) .or. any(x_ /= x_base)) then
+        call fcn_ptc(solver_, x_, fbase, ierr_loc)
+        if (ierr_loc /= 0) then
+          ierr_ = ierr_loc
+          return
+        endif
+      else
+        fbase(:) = fvec_base
+      endif
+
+      do ii = 1,size(x_)
+        xpert = x_
+        h = 1.0e-7_dp*max(abs(x_(ii)), 1.0_dp)
+        xpert(ii) = x_(ii) + h
+        call fcn_ptc(solver_, xpert, fpert, ierr_loc)
+        if (ierr_loc /= 0) then
+          ierr_ = ierr_loc
+          return
+        endif
+        jac_(:,ii) = (fpert - fbase)/h
+      enddo
+      ! Base residual has been consumed; refresh it on next Jacobian call.
+      have_base = .false.
+    end subroutine
+
+    subroutine verify_ptc(solver_, accept_, reject_dt_, ierr_)
+      class(PTCSolver), intent(in) :: solver_
+      logical, intent(out) :: accept_
+      real(dp), intent(out) :: reject_dt_
+      integer, intent(out) :: ierr_
+      real(dp) :: T_surf_, T_trop_
+
+      ierr_ = 0
+      T_surf_ = 10.0_dp**solver_%x(1)
+      T_trop_ = 10.0_dp**solver_%x(2)
+      if (T_trop_ < T_surf_) then
+        accept_ = .true.
+        reject_dt_ = solver_%dt
+      else
+        accept_ = .false.
+        reject_dt_ = max(0.25_dp*solver_%dt, 1.0e-12_dp)
+      endif
+    end subroutine
+
+    subroutine convergence_ptc(solver_, converged_, ierr_)
+      class(PTCSolver), intent(in) :: solver_
+      logical, intent(out) :: converged_
+      integer, intent(out) :: ierr_
+      real(dp) :: fvec_(solver_%neq)
+
+      fvec_ = solver_%fvec
+      if (self%solve_for_T_trop) then
+        fvec_(2) = fvec_(2)/scale_factor
+      endif
+
+      ierr_ = 0
+      converged_ = maxval(abs(fvec_)) < self%xtol_rc
+    end subroutine
+
+    subroutine progress_ptc(solver_)
+      class(PTCSolver), intent(in) :: solver_
+      real(dp) :: T, T_trop, r2
+
+      T = 10.0_dp**solver_%x(1)
+      if (self%solve_for_T_trop) then
+        T_trop = 10.0_dp**solver_%x(2)
+        r2 = solver_%fvec(2)/scale_factor
+      else
+        T_trop = self%T_trop
+        r2 = 0.0_dp
+      endif
+      print '(A,1X,I4,1X,A,1X,ES12.4,1X,A,1X,ES12.4,1X,A,1X,ES12.4,1X,A,1X,ES12.4)', &
+            'step', solver_%steps, 'T=', T, 'T_trop=', T_trop, 'r1=', solver_%fvec(1), 'r2=', r2
+    end subroutine
   end function
   
   !> Does a non-linear solve for the surface temperature that balances incoming solar
