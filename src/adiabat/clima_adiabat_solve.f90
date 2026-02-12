@@ -480,11 +480,13 @@ contains
     type(PTCSolver) :: solver
     real(dp), allocatable :: dTdt_base(:), x_base(:)
     logical :: have_base
+    integer :: last_printed_step
     character(:), allocatable :: err
 
     allocate(dTdt_base(size(self%inds_Tx)))
     allocate(x_base(size(self%inds_Tx)))
     have_base = .false.
+    last_printed_step = -1
 
     call solver%initialize(x_seed, f_ptc, jac_ptc, PTC_JAC_DENSE, dt_increment=self%dt_increment, max_steps=300)
     call solver%set_custom_convergence(convergence_ptc)
@@ -515,12 +517,13 @@ contains
       x_base(:) = u_
       have_base = .true.
 
-      if (self%verbose) then
+      if (self%verbose .and. solver_%steps > last_printed_step) then
         call get_flux_metrics(self, dFdt, max_flux_imbalance_wm2_, max_flux_ratio_)
         print"(3x,'step =',i4,3x,'dt   =',es10.3,3x,'max|F| = ',es9.2,3x,'max|F/F0| = ',es9.2,3x,'max(T) = ',f7.1,3x,'min(T) = ',f7.1)", &
               solver_%steps, solver_%dt, &
               max_flux_imbalance_wm2_, max_flux_ratio_, &
               maxval(u_), minval(u_)
+        last_printed_step = solver_%steps
       endif
 
     end subroutine
