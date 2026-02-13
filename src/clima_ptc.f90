@@ -410,6 +410,9 @@ contains
 
     if (self%steps == 0) self%dt_initial = self%dt
 
+    call PTCSolver_check_step0_convergence(self)
+    if (self%reason /= PTC_REASON_NONE) return
+
     rejections = 0
 
     do
@@ -502,6 +505,40 @@ contains
       return
     end do
   end subroutine PTCSolver_step
+
+  !> For step 0, ensure residual/progress/convergence are current before any timestep.
+  subroutine PTCSolver_check_step0_convergence(self)
+    class(PTCSolver), intent(inout) :: self
+    integer :: ierr
+
+    if (self%steps /= 0) return
+
+    if (.not. self%residual_valid) then
+      call PTCSolver_compute_residual(self, self%x, self%fvec, self%fnorm, ierr)
+      if (ierr < 0) then
+        self%reason = PTC_DIVERGED_CALLBACK_FATAL
+        self%residual_valid = .false.
+        return
+      end if
+      if (ierr > 0) then
+        self%residual_valid = .false.
+        return
+      end if
+      self%residual_valid = .true.
+    end if
+
+    if (self%fnorm_initial < 0.0_wp) then
+      self%fnorm_initial = self%fnorm
+      self%fnorm_previous = self%fnorm
+    end if
+
+    if (.not. self%progress_step0_emitted) then
+      if (associated(self%progress)) call self%progress(self)
+      self%progress_step0_emitted = .true.
+    end if
+
+    call PTCSolver_check_convergence(self)
+  end subroutine PTCSolver_check_step0_convergence
 
   !> Repeatedly call `step()` until convergence or a terminal failure reason.
   subroutine PTCSolver_solve(self)
