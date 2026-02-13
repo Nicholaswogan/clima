@@ -208,6 +208,24 @@ subroutine radtran_surface_emissivity_set(ptr, dim1, arr) bind(c)
   rad%surface_emissivity = arr
 end subroutine
 
+subroutine radtran_has_hard_surface_get(ptr, val) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), value, intent(in) :: ptr
+  logical(c_bool), intent(out) :: val
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  val = rad%has_hard_surface
+end subroutine
+
+subroutine radtran_has_hard_surface_set(ptr, val) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), value, intent(in) :: ptr
+  logical(c_bool), intent(in) :: val
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  rad%has_hard_surface = val
+end subroutine
+
 subroutine radtran_photon_scale_factor_get(ptr, val) bind(c)
   use clima, only: Radtran
   type(c_ptr), value, intent(in) :: ptr

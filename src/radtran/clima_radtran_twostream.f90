@@ -153,7 +153,7 @@ contains
 
   end subroutine
   
-  subroutine two_stream_ir(nz, tau, w0, gt, emissivity, bplanck, &
+  subroutine two_stream_ir(nz, tau, w0, gt, emissivity, has_hard_surface, bplanck, &
                            fup, fdn)
     use clima_const, only: pi
     integer, intent(in) :: nz
@@ -161,6 +161,7 @@ contains
     real(dp), intent(in) :: w0(nz)
     real(dp), intent(in) :: gt(nz)
     real(dp), intent(in) :: emissivity
+    logical, intent(in) :: has_hard_surface
     real(dp), intent(in) :: bplanck(nz+1)
     real(dp), intent(out) :: fup(nz+1), fdn(nz+1)
     
@@ -175,14 +176,19 @@ contains
     integer :: i, l
     real(dp) :: wrk_real, Ssfc, Rsfc
     real(dp) :: b0n, b1n
-    real(dp) :: b_avg
+    real(dp) :: b_avg, b1_bot
 
     real(dp), parameter :: tau_min = 1.0e-10_dp
     
     real(dp), parameter :: u1 = 0.5_dp ! (Hemispheric mean)
     real(dp), parameter :: norm = 2.0_dp*pi*u1
     
-    Rsfc = 1.0_dp - emissivity
+    ! .true. = terrestrial hard surface, .false. = gas-giant no hard surface.
+    if (has_hard_surface) then
+      Rsfc = 1.0_dp - emissivity
+    else
+      Rsfc = 0.0_dp
+    endif
 
     ! no Delta-Eddington scaling in ir
 
@@ -228,7 +234,18 @@ contains
 
     enddo
 
-    Ssfc = emissivity*pi*bplanck(nz+1) ! ground
+    if (has_hard_surface) then
+      Ssfc = emissivity*pi*bplanck(nz+1) ! ground
+    else
+      ! PICASO-like no-hard-surface thermal lower BC:
+      ! B_surface = pi * (B_bottom + mu1 * dB/dtau), with mu1=u1=0.5.
+      if (tau(nz) <= tau_min) then
+        b1_bot = 0.0_dp
+      else
+        b1_bot = (bplanck(nz+1) - bplanck(nz))/tau(nz)
+      endif
+      Ssfc = pi*(bplanck(nz+1) + u1*b1_bot)
+    endif
       
     ! Coefficients of tridiagonal linear system (Equations 39 - 43)
     ! Odd coeficients (Equation 41)

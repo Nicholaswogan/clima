@@ -170,6 +170,15 @@ cdef class Radtran:
         raise ClimaException('"surface_emissivity" is the wrong size')
       rad_pxd.radtran_surface_emissivity_set(self._ptr, &dim1, <double *>arr.data)
 
+  property has_hard_surface:
+    "bool. If true use hard-surface lower thermal BC; if false use gas-giant no-hard-surface BC."
+    def __get__(self):
+      cdef cbool val
+      rad_pxd.radtran_has_hard_surface_get(self._ptr, &val)
+      return val
+    def __set__(self, cbool val):
+      rad_pxd.radtran_has_hard_surface_set(self._ptr, &val)
+
   property photon_scale_factor:
     """float. A scale factor that is applied to `photons_sol` so that
     bolometric luminosity can be easily changed."""

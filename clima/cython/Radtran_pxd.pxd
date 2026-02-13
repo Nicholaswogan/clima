@@ -1,6 +1,8 @@
 cimport RTChannel_pxd as rtc_pxd
 cimport ClimaRadtranWrk_pxd as rwrk_pxd
-
+from libcpp cimport bool
+cdef extern from "<stdbool.h>":
+  pass
 cdef extern from *:
   struct Radtran:
     pass
@@ -39,6 +41,9 @@ cdef extern void radtran_surface_albedo_set(Radtran *ptr, int *dim1, double *arr
 cdef extern void radtran_surface_emissivity_get_size(Radtran *ptr, int *dim1)
 cdef extern void radtran_surface_emissivity_get(Radtran *ptr, int *dim1, double *arr)
 cdef extern void radtran_surface_emissivity_set(Radtran *ptr, int *dim1, double *arr)
+
+cdef extern void radtran_has_hard_surface_get(Radtran *ptr, bool *val)
+cdef extern void radtran_has_hard_surface_set(Radtran *ptr, bool *val)
 
 cdef extern void radtran_photon_scale_factor_get(Radtran *ptr, double *val)
 cdef extern void radtran_photon_scale_factor_set(Radtran *ptr, double *val)
