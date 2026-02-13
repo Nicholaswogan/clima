@@ -244,6 +244,12 @@ contains
         return
       end if
     end if
+    if (present(dt_increment)) then
+      if (dt_increment <= 0.0_wp) then
+        self%reason = PTC_DIVERGED_INVALID_INPUT
+        return
+      end if
+    end if
     if (present(stagnation_warmup_steps)) then
       if (stagnation_warmup_steps < 0) then
         self%reason = PTC_DIVERGED_INVALID_INPUT
