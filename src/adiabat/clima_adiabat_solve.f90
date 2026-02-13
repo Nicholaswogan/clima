@@ -188,6 +188,8 @@ contains
     logical :: solver_ok, converged1
     logical :: mask_changed
 
+    converged = .false.
+
     if (.not.self%double_radiative_grid) then
       err = 'AdiabatClimate must be initialized with "double_radiative_grid" set to True '// &
             'in order to call RCE.'
@@ -195,6 +197,9 @@ contains
     endif
     if (size(T_guess) /= self%nz) then
       err = "T_guess has the wrong dimension"
+      return
+    endif
+    if (self%max_rc_iters < 1) then
       return
     endif
 
@@ -221,7 +226,6 @@ contains
     endif
 
     converged1 = .false.
-    converged = .false.
     do i = 1,self%max_rc_iters
       j = i
 
