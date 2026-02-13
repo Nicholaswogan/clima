@@ -364,11 +364,13 @@ contains
     integer :: k
     real(dp) :: perturbation
     logical :: minpack_custom_converged, have_base
-    real(dp), allocatable :: dTdt_base(:), x_base(:)
+    real(dp), allocatable :: dTdt_base(:), x_base(:), x_conv(:), f_conv(:)
     character(:), allocatable :: err
 
     allocate(dTdt_base(size(self%inds_Tx)))
     allocate(x_base(size(self%inds_Tx)))
+    allocate(x_conv(size(self%inds_Tx)))
+    allocate(f_conv(size(self%inds_Tx)))
 
     mv = MinpackHybrj(fcn, size(self%inds_Tx))
     mv%xtol = 1.0e-12_dp
@@ -389,11 +391,13 @@ contains
 
       minpack_custom_converged = .false.
       have_base = .false.
+      x_conv(:) = 0.0_dp
+      f_conv(:) = 0.0_dp
       mv%x = x_seed + perturbation
       call mv%hybrj()
       if (minpack_custom_converged) then
-        x_out = mv%x
-        f_out = mv%fvec
+        x_out = x_conv
+        f_out = f_conv
         ok = .true.
         return
       endif
@@ -417,6 +421,7 @@ contains
       real(dp), dimension(ldfjac_, n_), intent(inout) :: fjac_
       integer, intent(inout) :: iflag_
       real(dp) :: max_flux_imbalance_wm2_, max_flux_ratio_
+      logical :: compute_objective_
 
       if (iflag_ == 1) then
         ! Compute right-hand-side
@@ -431,12 +436,18 @@ contains
         have_base = .true.
         if (custom_flux_converged(self, dFdt)) then
           minpack_custom_converged = .true.
+          x_conv(:) = x_
+          f_conv(:) = fvec_
           iflag_ = -77
           return
         endif
       elseif (iflag_ == 2) then
         ! Compute jacobian
-        if ((.not. have_base) .or. any(x_ /= x_base)) then
+        compute_objective_ = .not. have_base
+        if (.not. compute_objective_) then
+          compute_objective_ = any(x_ /= x_base)
+        endif
+        if (compute_objective_) then
           call AdiabatClimate_objective(self, P_i_surf, x_, dFdt, dTdt_base, err)
           if (allocated(err)) then
             deallocate(err)
@@ -524,6 +535,8 @@ contains
       real(wp), intent(out) :: jac_(:, :)
       integer, intent(out) :: ierr_
 
+      logical :: compute_objective_
+
       ierr_ = 0
       if (allocated(err)) then
         deallocate(err)
@@ -531,7 +544,11 @@ contains
         return
       endif
 
-      if ((.not. have_base) .or. any(u_ /= x_base)) then
+      compute_objective_ = .not. have_base
+      if (.not. compute_objective_) then
+        compute_objective_ = any(u_ /= x_base)
+      endif
+      if (compute_objective_) then
         call AdiabatClimate_objective(self, P_i_surf, u_, dFdt, dTdt_base, err)
         if (allocated(err)) then
           deallocate(err)
