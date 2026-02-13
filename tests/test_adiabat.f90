@@ -171,6 +171,7 @@ contains
       stop 1
     endif
 
+    c%rce_solve_strategy = 3
     c%convective_max_boundary_shift = 1
     c%P_top = 1.0e2_dp
     c%T_trop = 200.0_dp
@@ -188,6 +189,20 @@ contains
         c%T, &
         c%convecting_with_below, &
         err=err&
+    )
+    if (allocated(err)) then
+      print*,err
+      stop 1
+    endif
+
+    ! Test RCE path 2
+    c%rce_solve_strategy = 2
+    converged = c%RCE( &
+        P_i_surf, &
+        c%T_surf + 0.1_dp, &
+        c%T, &
+        c%convecting_with_below, &
+        err=err &
     )
     if (allocated(err)) then
       print*,err
@@ -216,6 +231,7 @@ contains
       allocate(mix_custom(2,1))
       mix_custom(:,1) = [1.0_dp, 1.0_dp]
 
+      c%rce_solve_strategy = 3
       converged = c%RCE( &
           P_i_surf, &
           c%T_surf, &
