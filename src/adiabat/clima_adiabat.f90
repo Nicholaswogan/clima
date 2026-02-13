@@ -859,8 +859,6 @@ contains
 
     have_base = .false.
     allocate(x_base(size(x_seed)), fvec_base(size(x_seed)))
-    x_base = huge(1.0_dp)
-    fvec_base = huge(1.0_dp)
 
     ! Initialize solver.
     call solver%initialize(x_seed, fcn_ptc, jac_ptc, PTC_JAC_DENSE, dt_increment=self%dt_increment, max_steps=300)
@@ -939,10 +937,16 @@ contains
       real(dp), allocatable :: xpert(:), fbase(:), fpert(:)
       real(dp) :: h
       integer :: ii, ierr_loc
+      logical :: compute_objective_
 
       ierr_ = 0
       allocate(xpert(size(x_)), fbase(size(x_)), fpert(size(x_)))
-      if ((.not. have_base) .or. any(x_ /= x_base)) then
+
+      compute_objective_ = .not. have_base
+      if (.not. compute_objective_) then
+        compute_objective_ = any(x_ /= x_base)
+      endif
+      if (compute_objective_) then
         call fcn_ptc(solver_, x_, fbase, ierr_loc)
         if (ierr_loc /= 0) then
           ierr_ = ierr_loc
