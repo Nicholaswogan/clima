@@ -458,25 +458,9 @@ contains
       allocate(op%cia(op%ncia))
 
       do i = 1,op%ncia
-        
-        j = index(cia_list(i), "-")
-        if (j == 0) then
-          err = 'missing "-" in CIA species "'//trim(cia_list(i))//'"'
-          return
-        endif
-        ind1 = findloc(species_names, trim(cia_list(i)(1:j-1)), 1)
-        ind2 = findloc(species_names, trim(cia_list(i)(j+1:)), 1)
-        if (ind1 == 0) then
-          err = 'Species "'//trim(cia_list(i)(1:j-1))//'" in optical property '// &
-                '"CIA" is not in the list of species.'
-          return
-        endif
-        if (ind2 == 0) then
-          err = 'Species "'//trim(cia_list(i)(j+1:))//'" in optical property '// &
-                '"CIA" is not in the list of species.'
-          return
-        endif
-        
+        call parse_cia_pair(trim(cia_list(i)), species_names, ind1, ind2, err)
+        if (allocated(err)) return
+
         filename = datadir//"/CIA/"//trim(cia_list(i))//".h5"
         op%cia(i) = create_CIAXsection(filename, [ind1, ind2], op%wavl, err)
         if (allocated(err)) return
@@ -699,6 +683,51 @@ contains
 
     call h%close()
     
+  end subroutine
+
+  subroutine parse_cia_pair(pair_str, species_names, ind1, ind2, err)
+    character(*), intent(in) :: pair_str
+    character(*), intent(in) :: species_names(:)
+    integer, intent(out) :: ind1
+    integer, intent(out) :: ind2
+    character(:), allocatable, intent(out) :: err
+
+    integer :: p, nmatch, cand_ind1, cand_ind2, nchar
+    character(:), allocatable :: left, right
+
+    ind1 = 0
+    ind2 = 0
+    nmatch = 0
+
+    nchar = len_trim(pair_str)
+    if (nchar < 2) then
+      err = 'Could not parse CIA species pair "'//trim(pair_str)//'"'
+      return
+    endif
+
+    do p = 2,nchar - 1
+      if (pair_str(p:p) /= '-') cycle
+      left = trim(pair_str(1:p-1))
+      right = trim(pair_str(p+1:nchar))
+      if (len_trim(left) == 0 .or. len_trim(right) == 0) cycle
+
+      cand_ind1 = findloc(species_names, left, 1)
+      cand_ind2 = findloc(species_names, right, 1)
+      if (cand_ind1 /= 0 .and. cand_ind2 /= 0) then
+        nmatch = nmatch + 1
+        ind1 = cand_ind1
+        ind2 = cand_ind2
+      endif
+    enddo
+
+    if (nmatch == 0) then
+      err = 'Could not parse CIA species pair "'//trim(pair_str)//'" into two known species.'
+      return
+    elseif (nmatch > 1) then
+      err = 'CIA species pair "'//trim(pair_str)//'" is ambiguous; matched multiple species splits.'
+      return
+    endif
+
   end subroutine
 
   function create_ParticleXsection(filename, p_ind, dat_name, wavl, err) result(part)
