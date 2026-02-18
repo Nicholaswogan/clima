@@ -223,6 +223,7 @@ module clima_radtran_types
     real(dp), allocatable :: log10P_cgs(:) ! (nz)
     real(dp), allocatable :: cols(:,:) ! (nz,ng)
     real(dp), allocatable :: foreign_col(:) ! (nz)
+    logical, allocatable :: pair_reuse(:) ! (nz) doubled-grid paired-layer cache mask
 
     ! Work space for each wavelength bin
     type(OpacityBinWork), allocatable :: bins(:)
@@ -573,6 +574,7 @@ contains
   subroutine OpticalProperties_compute_opacity(self, P, T, densities, dz, pdensities, radii, opw, res, err)
     use clima_const, only: pi
     use clima_eqns, only: ten2power
+    use futils, only: is_close
     class(OpticalProperties), intent(inout) :: self
 
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
@@ -588,7 +590,6 @@ contains
 
     integer :: nz, ng
     integer :: l
-
     ! Ensure
     if (self%nk == 0) then
       err = 'There are no k-distributions, yet there must be some to compute total opacity.'
@@ -598,6 +599,7 @@ contains
     ! Pre-compute log10P and columns.
     block
     integer :: i, j
+    real(dp), parameter :: pair_tol = 1.0e-12_dp
       nz = size(dz)
       ng = size(densities, 2)
       opw%log10P = log10(P)
@@ -613,6 +615,19 @@ contains
               opw%foreign_col(j) = opw%foreign_col(j) + opw%cols(j,i)
             endif
           enddo
+        enddo
+      endif
+
+      opw%pair_reuse = .false.
+      if (mod(nz,2) == 0) then
+        do j = 2,nz,2
+          opw%pair_reuse(j) = .true.
+          opw%pair_reuse(j) = opw%pair_reuse(j) .and. is_close(P(j), P(j-1), tol=pair_tol)
+          opw%pair_reuse(j) = opw%pair_reuse(j) .and. is_close(T(j), T(j-1), tol=pair_tol)
+          opw%pair_reuse(j) = opw%pair_reuse(j) .and. all(is_close(opw%cols(j,:), opw%cols(j-1,:), tol=pair_tol))
+          if (present(radii) .and. self%npart > 0) then
+            opw%pair_reuse(j) = opw%pair_reuse(j) .and. all(is_close(radii(j,:), radii(j-1,:), tol=pair_tol))
+          endif
         enddo
       endif
     end block
@@ -634,32 +649,36 @@ contains
       do i = 1,self%nk
         do k = 1,self%k(i)%ngauss
           do j = 1,nz
-            TT = min(max(T(j), self%k(i)%T_min), self%k(i)%T_max)
-            log10PP = min(max(opw%log10P(j), self%k(i)%log10P_min), self%k(i)%log10P_max)
-            call self%k(i)%log10k(k,l)%evaluate(log10PP, TT, wrk%ks(i)%k(j,k))
-            wrk%ks(i)%k(j,k) = ten2power(wrk%ks(i)%k(j,k))
+            if (opw%pair_reuse(j)) then
+              wrk%ks(i)%k(j,k) = wrk%ks(i)%k(j-1,k)
+            else
+              TT = min(max(T(j), self%k(i)%T_min), self%k(i)%T_max)
+              log10PP = min(max(opw%log10P(j), self%k(i)%log10P_min), self%k(i)%log10P_max)
+              call self%k(i)%log10k(k,l)%evaluate(log10PP, TT, wrk%ks(i)%k(j,k))
+              wrk%ks(i)%k(j,k) = ten2power(wrk%ks(i)%k(j,k))
+            endif
           enddo
         enddo
       enddo
 
       ! Interpolate CIA
       do i = 1,self%ncia
-        call interpolate_Xsection(self%cia(i), l, T, wrk%cia(:,i))
+        call interpolate_Xsection(self%cia(i), l, T, wrk%cia(:,i), opw%pair_reuse)
       enddo
 
       ! Interpolate photolysis
       do i = 1,self%npxs
-        call interpolate_Xsection(self%pxs(i), l, T, wrk%pxs(:,i))
+        call interpolate_Xsection(self%pxs(i), l, T, wrk%pxs(:,i), opw%pair_reuse)
       enddo
 
       ! Interpolate water continuum
       if (allocated(self%cont)) then
-        call interpolate_WaterContinuum(self%cont, l, T, wrk%H2O, wrk%foreign)
+        call interpolate_WaterContinuum(self%cont, l, T, wrk%H2O, wrk%foreign, opw%pair_reuse)
       endif
 
       ! Interpolate particles
       do i = 1,self%npart
-        call interpolate_Particle(self%part(i), l, radii, wrk%w0p(:,i), wrk%qextp(:,i), wrk%gtp(:,i), ierr)
+        call interpolate_Particle(self%part(i), l, radii, wrk%w0p(:,i), wrk%qextp(:,i), wrk%gtp(:,i), ierr, opw%pair_reuse)
         opw%ierrs(l) = opw%ierrs(l) + ierr
       enddo
 
@@ -811,21 +830,25 @@ contains
       enddo
 
       do i = 1,nz
-        ! Sort tau_xy and the weights
-        do j = 1,size(tau_xy,2)
-          tau_xy1(j) = tau_xy(i,j)
-        enddo
-        call mrgrnk(tau_xy1, inds)
-        do j = 1,size(inds)
-          tau_xy2(j) = tau_xy1(inds(j))
-          wxy1(j) = kset%wxy(inds(j))
-        enddo
-        ! Rebin to smaller grid
-        call weights_to_bins(wxy1, wxy_e)
-        call rebin(wxy_e, tau_xy2, kset%wbin_e, tau_k1)
-        do j = 1,size(tau_k1)
-          tau_k(i,j) = tau_k1(j)
-        enddo
+        if (opw%pair_reuse(i)) then
+          tau_k(i,:) = tau_k(i-1,:)
+        else
+          ! Sort tau_xy and the weights
+          do j = 1,size(tau_xy,2)
+            tau_xy1(j) = tau_xy(i,j)
+          enddo
+          call mrgrnk(tau_xy1, inds)
+          do j = 1,size(inds)
+            tau_xy2(j) = tau_xy1(inds(j))
+            wxy1(j) = kset%wxy(inds(j))
+          enddo
+          ! Rebin to smaller grid
+          call weights_to_bins(wxy1, wxy_e)
+          call rebin(wxy_e, tau_xy2, kset%wbin_e, tau_k1)
+          do j = 1,size(tau_k1)
+            tau_k(i,j) = tau_k1(j)
+          enddo
+        endif
       enddo
 
     enddo
@@ -864,12 +887,13 @@ contains
     
   end subroutine
 
-  subroutine interpolate_Xsection(xs, l, T, res)
+  subroutine interpolate_Xsection(xs, l, T, res, pair_reuse)
     use clima_eqns, only: ten2power
     type(Xsection), intent(inout) :: xs
     integer, intent(in) :: l
     real(dp), intent(in) :: T(:)
     real(dp), intent(out) :: res(:)
+    logical, intent(in) :: pair_reuse(:)
     
     integer :: j
     real(dp) :: val, TT
@@ -880,16 +904,19 @@ contains
       enddo
     elseif (xs%dim == 1) then
       do j = 1,size(T)
-        TT = min(max(T(j), xs%T_min), xs%T_max)
-
-        call xs%log10_xs_1d(l)%evaluate(TT, val)
-        res(j) = ten2power(val)
+        if (pair_reuse(j)) then
+          res(j) = res(j-1)
+        else
+          TT = min(max(T(j), xs%T_min), xs%T_max)
+          call xs%log10_xs_1d(l)%evaluate(TT, val)
+          res(j) = ten2power(val)
+        endif
       enddo
     endif
     
   end subroutine
   
-  subroutine interpolate_WaterContinuum(cont, l, T, H2O, foreign)
+  subroutine interpolate_WaterContinuum(cont, l, T, H2O, foreign, pair_reuse)
     use clima_eqns, only: ten2power
     
     type(WaterContinuum), intent(inout) :: cont
@@ -897,24 +924,27 @@ contains
     real(dp), intent(in) :: T(:)
     real(dp), intent(out) :: H2O(:)
     real(dp), intent(out) :: foreign(:)
+    logical, intent(in) :: pair_reuse(:)
     
     integer :: j
     real(dp) :: val, TT
     
     do j = 1,size(T)
-
-      TT = min(max(T(j), cont%T_min), cont%T_max)
-      
-      call cont%log10_xs_H2O(l)%evaluate(TT, val)
-      H2O(j) = ten2power(val)
-      
-      call cont%log10_xs_foreign(l)%evaluate(TT, val)
-      foreign(j) = ten2power(val)
+      if (pair_reuse(j)) then
+        H2O(j) = H2O(j-1)
+        foreign(j) = foreign(j-1)
+      else
+        TT = min(max(T(j), cont%T_min), cont%T_max)
+        call cont%log10_xs_H2O(l)%evaluate(TT, val)
+        H2O(j) = ten2power(val)
+        call cont%log10_xs_foreign(l)%evaluate(TT, val)
+        foreign(j) = ten2power(val)
+      endif
     enddo
     
   end subroutine
 
-  subroutine interpolate_Particle(part, l, radii, w0, qext, gt, ierr)
+  subroutine interpolate_Particle(part, l, radii, w0, qext, gt, ierr, pair_reuse)
     type(ParticleXsection), intent(inout) :: part
     integer, intent(in) :: l
     real(dp), intent(in) :: radii(:,:)
@@ -922,6 +952,7 @@ contains
     real(dp), intent(out) :: qext(:)
     real(dp), intent(out) :: gt(:)
     integer, intent(out) :: ierr
+    logical, intent(in) :: pair_reuse(:)
 
     integer :: j
     real(dp) :: rp
@@ -929,6 +960,13 @@ contains
     ierr = 0
 
     do j = 1,size(radii,1)
+      if (pair_reuse(j)) then
+        w0(j) = w0(j-1)
+        qext(j) = qext(j-1)
+        gt(j) = gt(j-1)
+        cycle
+      endif
+
       rp = radii(j,part%p_ind)
 
       ! Error indication if radius is outside bounds

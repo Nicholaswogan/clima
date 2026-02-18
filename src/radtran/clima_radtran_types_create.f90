@@ -143,6 +143,7 @@ contains
     allocate(opw%log10P_cgs(nz))
     allocate(opw%cols(nz,size(op%species_names)))
     allocate(opw%foreign_col(nz))
+    allocate(opw%pair_reuse(nz))
 
     allocate(opw%bins(op%nw))
     do i = 1,op%nw
