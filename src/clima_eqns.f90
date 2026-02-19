@@ -90,6 +90,17 @@ contains
     cp = coeffs(1) + coeffs(2)*TT + coeffs(3)*TT**2 + &
          coeffs(4)*TT**3 + coeffs(5)/TT**2
   end function
+
+  pure function heat_capacity_nasa9(coeffs, T) result(cp)
+    real(dp), intent(in) :: coeffs(9)
+    real(dp), intent(in) :: T
+    real(dp) :: cp !! J/(mol K)
+
+    real(dp), parameter :: Rgas_J = 8.31446261815324_dp
+
+    cp = Rgas_J * (coeffs(1)/T**2 + coeffs(2)/T + coeffs(3) + coeffs(4)*T + &
+                   coeffs(5)*T**2 + coeffs(6)*T**3 + coeffs(7)*T**4)
+  end function
   
   pure subroutine heat_capacity_eval(thermo, T, found, cp)
     use clima_types, only: ShomatePolynomial, Nasa9Polynomial
@@ -111,8 +122,7 @@ contains
         if (thermo%dtype == ShomatePolynomial) then
           cp = heat_capacity_shomate(thermo%data(1:7,k), T)
         elseif (thermo%dtype == Nasa9Polynomial) then
-          ! gibbs_energy = gibbs_energy_nasa9(thermo%data(1:9,k), T)
-          found = .false.         
+          cp = heat_capacity_nasa9(thermo%data(1:9,k), T)
         endif
   
         exit
