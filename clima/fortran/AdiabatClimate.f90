@@ -556,6 +556,24 @@ subroutine adiabatclimate_p_top_set(ptr, val) bind(c)
   c%P_top = val
 end subroutine
 
+subroutine adiabatclimate_reference_pressure_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%reference_pressure
+end subroutine
+
+subroutine adiabatclimate_reference_pressure_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%reference_pressure = val
+end subroutine
+
 subroutine adiabatclimate_t_trop_get(ptr, val) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), value, intent(in) :: ptr

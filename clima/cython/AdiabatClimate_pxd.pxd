@@ -92,6 +92,9 @@ cdef extern void adiabatclimate_heat_redistribution_parameters_wrapper(AdiabatCl
 cdef extern void adiabatclimate_p_top_get(AdiabatClimate *ptr, double *val)
 cdef extern void adiabatclimate_p_top_set(AdiabatClimate *ptr, double *val)
 
+cdef extern void adiabatclimate_reference_pressure_get(AdiabatClimate *ptr, double *val)
+cdef extern void adiabatclimate_reference_pressure_set(AdiabatClimate *ptr, double *val)
+
 cdef extern void adiabatclimate_t_trop_get(AdiabatClimate *ptr, double *val)
 cdef extern void adiabatclimate_t_trop_set(AdiabatClimate *ptr, double *val)
 

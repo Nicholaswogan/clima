@@ -59,6 +59,9 @@ module clima_adiabat
     ! planet properties
     real(dp) :: planet_mass !! (g)
     real(dp) :: planet_radius !! (cm)
+    !> Reference pressure for which `planet_radius` is defined (dynes/cm^2).
+    !> If <= 0, then `planet_radius` is defined at the surface pressure.
+    real(dp) :: reference_pressure = -1.0_dp
     
     ! species in the model
     character(s_str_len), allocatable :: species_names(:) !! copy of species names

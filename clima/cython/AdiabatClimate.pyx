@@ -584,6 +584,17 @@ cdef class AdiabatClimate:
     def __set__(self, double val):
       wa_pxd.adiabatclimate_p_top_set(self._ptr, &val)
 
+  property reference_pressure:
+    """float. Reference pressure for which `planet_radius` is defined (dynes/cm^2).
+    If <= 0, `planet_radius` is interpreted at `P_surf`.
+    """
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_reference_pressure_get(self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      wa_pxd.adiabatclimate_reference_pressure_set(self._ptr, &val)
+
   property T_trop:
     "float. Tropopause temperature (K)"
     def __get__(self):

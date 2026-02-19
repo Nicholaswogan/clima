@@ -1,6 +1,7 @@
 module clima_useful
   use clima_const, only: dp
   use minpack_module, only: fcn_hybrj
+  use dop853_module, only: dop853_class
   use h5fortran, only: hdf5_file
   implicit none
   private
@@ -8,6 +9,26 @@ module clima_useful
   public :: hdf5_file_closer
   public :: MinpackHybrd1Vars, MinpackHybrj
   public :: linear_solve
+  public :: solve_ivp_dop853
+
+  abstract interface
+    subroutine dop853_rhs_fcn(x, y, dy)
+      import :: dp
+      real(dp), intent(in) :: x
+      real(dp), intent(in) :: y(:)
+      real(dp), intent(out) :: dy(:)
+    end subroutine
+  end interface
+
+  type, extends(dop853_class) :: dop853_solveivp
+    procedure(dop853_rhs_fcn), pointer, nopass :: rhs => null()
+    integer :: j = 1
+    integer :: neq = 0
+    integer :: neval = 0
+    real(dp), pointer :: x_eval(:) => null()
+    real(dp), pointer :: y_eval(:,:) => null()
+    real(dp) :: xtol = 0.0_dp
+  end type
 
   ! Helps close hdf5 files
   type :: hdf5_file_closer
@@ -72,6 +93,147 @@ module clima_useful
   end interface
 
 contains
+
+  subroutine solve_ivp_dop853(rhs, x_start, y_start, x_eval, rtol, atol, y_eval, idid, err)
+    procedure(dop853_rhs_fcn) :: rhs
+    real(dp), intent(in) :: x_start
+    real(dp), intent(in) :: y_start(:)
+    real(dp), intent(in), target :: x_eval(:)
+    real(dp), intent(in) :: rtol, atol
+    real(dp), intent(out), target :: y_eval(:,:)
+    integer, intent(out) :: idid
+    character(:), allocatable, intent(out) :: err
+
+    type(dop853_solveivp) :: dop
+    logical :: status_ok
+    integer :: i, n, m
+    integer, allocatable :: icomp(:)
+    real(dp) :: x0, x_end
+    real(dp), allocatable :: y0(:)
+
+    n = size(y_start)
+    m = size(x_eval)
+
+    if (size(y_eval,1) /= n .or. size(y_eval,2) /= m) then
+      err = 'solve_ivp_dop853: y_eval has wrong shape.'
+      return
+    endif
+    if (m < 1) then
+      err = 'solve_ivp_dop853: x_eval must have size >= 1.'
+      return
+    endif
+
+    x_end = x_eval(m)
+    if (x_end >= x_start) then
+      do i = 2,m
+        if (x_eval(i) < x_eval(i-1)) then
+          err = 'solve_ivp_dop853: x_eval must be nondecreasing.'
+          return
+        endif
+      enddo
+      if (x_eval(1) < x_start) then
+        err = 'solve_ivp_dop853: x_eval(1) must be >= x_start for forward integration.'
+        return
+      endif
+    else
+      do i = 2,m
+        if (x_eval(i) > x_eval(i-1)) then
+          err = 'solve_ivp_dop853: x_eval must be nonincreasing.'
+          return
+        endif
+      enddo
+      if (x_eval(1) > x_start) then
+        err = 'solve_ivp_dop853: x_eval(1) must be <= x_start for backward integration.'
+        return
+      endif
+    endif
+
+    dop%xtol = max(1.0e-12_dp*max(1.0_dp, abs(x_start), maxval(abs(x_eval))), &
+                   10.0_dp*spacing(max(1.0_dp, abs(x_start), maxval(abs(x_eval)))))
+
+    y_eval = 0.0_dp
+    dop%j = 1
+    do while (dop%j <= m .and. abs(x_eval(dop%j)-x_start) <= dop%xtol)
+      y_eval(:,dop%j) = y_start
+      dop%j = dop%j + 1
+    enddo
+    if (dop%j > m) then
+      idid = 1
+      return
+    endif
+
+    allocate(icomp(n))
+    allocate(y0(n))
+    y0 = y_start
+    do i = 1,n
+      icomp(i) = i
+    enddo
+
+    call dop%initialize(fcn=rhs_dop853_solveivp, solout=solout_dop853_solveivp, n=n, &
+                        iprint=0, icomp=icomp, status_ok=status_ok)
+    if (.not.status_ok) then
+      err = 'solve_ivp_dop853: failed to initialize dop853.'
+      return
+    endif
+
+    dop%rhs => rhs
+    dop%neq = n
+    dop%neval = m
+    dop%x_eval => x_eval
+    dop%y_eval => y_eval
+
+    x0 = x_start
+    call dop%integrate(x0, y0, x_end, [rtol], [atol], iout=2, idid=idid)
+    if (idid < 0) then
+      err = 'solve_ivp_dop853: dop853 integration failed.'
+      return
+    endif
+
+    if (dop%j <= m) then
+      err = 'solve_ivp_dop853: integration finished before sampling all output points.'
+      idid = -1
+      return
+    endif
+
+  end subroutine
+
+  subroutine rhs_dop853_solveivp(self, x, y, dy)
+    class(dop853_class), intent(inout) :: self
+    real(dp), intent(in) :: x
+    real(dp), intent(in) :: y(:)
+    real(dp), intent(out) :: dy(:)
+
+    select type (self)
+    class is (dop853_solveivp)
+      call self%rhs(x, y, dy)
+    end select
+  end subroutine
+
+  subroutine solout_dop853_solveivp(self, nr, xold, x, y, irtrn, xout)
+    class(dop853_class),intent(inout) :: self
+    integer,intent(in) :: nr
+    real(dp),intent(in) :: xold
+    real(dp),intent(in) :: x
+    real(dp),dimension(:),intent(in) :: y
+    integer,intent(inout) :: irtrn
+    real(dp),intent(out) :: xout
+
+    real(dp) :: x_lo, x_hi, xe
+    integer :: i
+
+    xout = x
+    select type (self)
+    class is (dop853_solveivp)
+      x_lo = min(xold, x) - self%xtol
+      x_hi = max(xold, x) + self%xtol
+      do while (self%j <= self%neval)
+        xe = self%x_eval(self%j)
+        if (xe < x_lo .or. xe > x_hi) exit
+        self%y_eval(:,self%j) = [(self%contd8(i, xe), i=1,self%neq)]
+        self%j = self%j + 1
+      enddo
+    end select
+  end subroutine
 
   subroutine hdf5_file_closer_final(self)
     type(hdf5_file_closer), intent(inout) :: self
