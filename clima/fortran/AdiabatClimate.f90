@@ -1318,6 +1318,34 @@ subroutine adiabatclimate_dz_get(ptr, dim1, arr) bind(c)
   arr = c%dz
 end subroutine
 
+subroutine adiabatclimate_gravity_surf_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%gravity_surf
+end subroutine
+
+subroutine adiabatclimate_gravity_get_size(ptr, dim1) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(out) :: dim1
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  dim1 = size(c%gravity,1)
+end subroutine
+
+subroutine adiabatclimate_gravity_get(ptr, dim1, arr) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  integer(c_int), intent(in) :: dim1
+  real(c_double), intent(out) :: arr(dim1)
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  arr = c%gravity
+end subroutine
+
 subroutine adiabatclimate_densities_get_size(ptr, dim1, dim2) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), value, intent(in) :: ptr

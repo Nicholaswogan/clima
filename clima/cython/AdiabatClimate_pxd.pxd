@@ -214,6 +214,11 @@ cdef extern void adiabatclimate_z_get(AdiabatClimate *ptr, int *dim1, double *ar
 cdef extern void adiabatclimate_dz_get_size(AdiabatClimate *ptr, int *dim1)
 cdef extern void adiabatclimate_dz_get(AdiabatClimate *ptr, int *dim1, double *arr)
 
+cdef extern void adiabatclimate_gravity_surf_get(AdiabatClimate *ptr, double *val)
+
+cdef extern void adiabatclimate_gravity_get_size(AdiabatClimate *ptr, int *dim1)
+cdef extern void adiabatclimate_gravity_get(AdiabatClimate *ptr, int *dim1, double *arr)
+
 cdef extern void adiabatclimate_densities_get_size(AdiabatClimate *ptr, int *dim1, int *dim2)
 cdef extern void adiabatclimate_densities_get(AdiabatClimate *ptr, int *dim1, int *dim2, double *arr)
 

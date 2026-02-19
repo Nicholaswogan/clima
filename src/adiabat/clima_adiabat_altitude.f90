@@ -14,13 +14,14 @@ submodule(clima_adiabat) clima_adiabat_altitude
 contains
 
   module subroutine AdiabatClimate_compute_altitude(self, err)
+    use clima_eqns, only: gravity
     class(AdiabatClimate), intent(inout) :: self
     character(:), allocatable, intent(out) :: err
 
     type(AltitudeIntegrationData), target :: d
     integer :: i, j, ierr, k
     integer :: j_start_top, j_start_bot
-    real(dp) :: z_shift
+    real(dp) :: z_shift, z_ref_for_radius
     real(dp) :: sentinel
     logical :: is_on_k, is_on_kp1
     real(dp), allocatable :: T_grid(:), mubar_grid(:), P_grid(:)
@@ -106,6 +107,7 @@ contains
     if (self%reference_pressure <= 0.0_dp) then
       call integrate_altitude_profile(d, self%rtol, self%atol, err)
       if (allocated(err)) return
+      z_ref_for_radius = 0.0_dp
     else
       do k = 1,size(P_e)-1
         if (self%reference_pressure <= P_e(k) .and. self%reference_pressure >= P_e(k+1)) then
@@ -163,12 +165,15 @@ contains
       z_shift = z_e(1)
       z_e(1:size(P_e)-1) = z_e(1:size(P_e)-1) - z_shift
       z_e(size(P_e)) = z_e(size(P_e)-1) + (z_e(size(P_e)-1) - z_e(size(P_e)-2))
+      z_ref_for_radius = -z_shift
     endif
 
     do i = 1,self%nz
       self%z(i) = z_e(2*i)
       self%dz(i) = z_e(2*i+1) - z_e(2*i-1)
+      self%gravity(i) = gravity(self%planet_radius, self%planet_mass, self%z(i) - z_ref_for_radius)
     enddo
+    self%gravity_surf = gravity(self%planet_radius, self%planet_mass, -z_ref_for_radius)
 
   end subroutine
 

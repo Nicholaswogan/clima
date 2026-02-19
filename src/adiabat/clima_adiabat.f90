@@ -164,6 +164,8 @@ module clima_adiabat
     real(dp), allocatable :: f_i(:,:) !! mixing ratios of species in each grid cell (nz,ng)
     real(dp), allocatable :: z(:) !! Altitude at the center of the grid cell, cm (nz)
     real(dp), allocatable :: dz(:) !! Thickness of each grid cell, cm (nz)
+    real(dp) :: gravity_surf !! Surface gravity (cm/s^2)
+    real(dp), allocatable :: gravity(:) !! Gravity at each layer center (cm/s^2) (nz)
     real(dp), allocatable :: densities(:,:) !! densities in each grid cell, molecules/cm^3 (nz,ng)
     real(dp), allocatable :: N_atmos(:) !! reservoir of gas in atmosphere mol/cm^2 (ng)
     real(dp), allocatable :: N_surface(:) !! reservoir of gas on surface mol/cm^2 (ng)
@@ -362,7 +364,8 @@ contains
     allocate(c%ocean_fcns(c%sp%ng))
 
     ! allocate work variables
-    allocate(c%f_i_surf(c%sp%ng), c%P(c%nz), c%T(c%nz), c%f_i(c%nz,c%sp%ng), c%z(c%nz), c%dz(c%nz))
+    allocate(c%f_i_surf(c%sp%ng), c%P(c%nz), c%T(c%nz), c%f_i(c%nz,c%sp%ng), c%z(c%nz), c%dz(c%nz), &
+             c%gravity(c%nz))
     allocate(c%densities(c%nz,c%sp%ng))
     allocate(c%N_atmos(c%sp%ng),c%N_surface(c%sp%ng),c%N_ocean(c%sp%ng,c%sp%ng))
     allocate(c%pdensities(c%nz,c%sp%np),c%pradii(c%nz,c%sp%np))

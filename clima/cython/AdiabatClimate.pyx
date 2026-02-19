@@ -999,6 +999,22 @@ cdef class AdiabatClimate:
       wa_pxd.adiabatclimate_dz_get(self._ptr, &dim1, <double *>arr.data)
       return arr
 
+  property gravity_surf:
+    "double. Surface gravity (cm/s^2)"
+    def __get__(self):
+      cdef double val
+      wa_pxd.adiabatclimate_gravity_surf_get(self._ptr, &val)
+      return val
+
+  property gravity:
+    "ndarray[double,ndim=1], shape (nz). Gravity at grid-cell centers (cm/s^2)"
+    def __get__(self):
+      cdef int dim1
+      wa_pxd.adiabatclimate_gravity_get_size(self._ptr, &dim1)
+      cdef ndarray arr = np.empty(dim1, np.double)
+      wa_pxd.adiabatclimate_gravity_get(self._ptr, &dim1, <double *>arr.data)
+      return arr
+
   property densities:
     "ndarray[double,ndim=2], shape (nz,ng). Densities in each grid cell (molecules/cm^3)"
     def __get__(self):
