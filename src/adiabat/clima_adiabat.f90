@@ -196,6 +196,7 @@ module clima_adiabat
     procedure :: RCE => AdiabatClimate_RCE
     ! Utilities
     procedure, private :: interpolate_particles => AdiabatClimate_interpolate_particles
+    procedure, private :: compute_altitude => AdiabatClimate_compute_altitude
     procedure :: set_particle_density_and_radii => AdiabatClimate_set_particle_density_and_radii
     procedure :: set_ocean_solubility_fcn => AdiabatClimate_set_ocean_solubility_fcn
     procedure :: to_regular_grid => AdiabatClimate_to_regular_grid
@@ -216,6 +217,11 @@ module clima_adiabat
       class(AdiabatClimate), intent(inout) :: self
       real(dp), intent(in) :: P_i_surf(:) !! dynes/cm^2
       real(dp), intent(in) :: T_in(:)
+      character(:), allocatable, intent(out) :: err
+    end subroutine
+
+    module subroutine AdiabatClimate_compute_altitude(self, err)
+      class(AdiabatClimate), intent(inout) :: self
       character(:), allocatable, intent(out) :: err
     end subroutine
 
@@ -419,6 +425,9 @@ contains
         self%f_i(i,j) = f_i_e(2*i,j)
       enddo
     enddo
+
+    call self%compute_altitude(err)
+    if (allocated(err)) return
     
     density = self%P/(k_boltz*self%T)
     do j =1,self%sp%ng
@@ -494,6 +503,9 @@ contains
         self%f_i(i,j) = f_i_e(2*i,j)
       enddo
     enddo
+
+    call self%compute_altitude(err)
+    if (allocated(err)) return
     
     density = self%P/(k_boltz*self%T)
     do j =1,self%sp%ng
@@ -638,6 +650,9 @@ contains
         self%f_i(i,j) = f_i_e(2*i,j)
       enddo
     enddo
+
+    call self%compute_altitude(err)
+    if (allocated(err)) return
 
     density = self%P/(k_boltz*self%T)
     do j =1,self%sp%ng

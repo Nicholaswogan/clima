@@ -36,6 +36,7 @@ set(ADIABAT_SOURCES
   adiabat/clima_adiabat_solve.f90
   adiabat/clima_adiabat_dry.f90
   adiabat/clima_adiabat.f90
+  adiabat/clima_adiabat_altitude.f90
 )
 
 set(CLIMATE_SOURCES
@@ -83,4 +84,3 @@ if (BUILD_WITH_OPENMP)
   endif()
 endif()
 message (STATUS "Building clima with OpenMP multi-threading = ${BUILD_WITH_OPENMP}")
-

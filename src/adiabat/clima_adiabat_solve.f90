@@ -57,6 +57,9 @@ contains
       enddo
     enddo
 
+    call self%compute_altitude(err)
+    if (allocated(err)) return
+
     density = self%P/(k_boltz*self%T)
     do j =1,self%sp%ng
       self%densities(:,j) = self%f_i(:,j)*density(:)
