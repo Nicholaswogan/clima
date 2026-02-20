@@ -50,8 +50,6 @@ contains
     self%P_surf = P_e(1)
     do i = 1,self%nz
       self%P(i) = P_e(2*i)
-      self%z(i) = z_e(2*i)
-      self%dz(i) = z_e(2*i+1) - z_e(2*i-1)
       do j =1,self%sp%ng
         self%f_i(i,j) = f_i_e(2*i,j)
       enddo

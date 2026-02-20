@@ -127,7 +127,7 @@ module clima_adiabat
 
     ! tolerances
     !> Relative tolerance of integration
-    real(dp) :: rtol = 1.0e-12_dp
+    real(dp) :: rtol = 1.0e-9_dp
     !> Absolute tolerance of integration
     real(dp) :: atol = 1.0e-12_dp
     !> Tolerance for nonlinear solve in make_column
@@ -425,8 +425,6 @@ contains
     do i = 1,self%nz
       self%P(i) = P_e(2*i)
       self%T(i) = T_e(2*i)
-      self%z(i) = z_e(2*i)
-      self%dz(i) = z_e(2*i+1) - z_e(2*i-1)
       do j =1,self%sp%ng
         self%f_i(i,j) = f_i_e(2*i,j)
       enddo
@@ -503,8 +501,6 @@ contains
     do i = 1,self%nz
       self%P(i) = P_e(2*i)
       self%T(i) = T_e(2*i)
-      self%z(i) = z_e(2*i)
-      self%dz(i) = z_e(2*i+1) - z_e(2*i-1)
       do j =1,self%sp%ng
         self%f_i(i,j) = f_i_e(2*i,j)
       enddo
@@ -650,8 +646,6 @@ contains
     do i = 1,self%nz
       self%P(i) = P_e(2*i)
       self%T(i) = T_e(2*i)
-      self%z(i) = z_e(2*i)
-      self%dz(i) = z_e(2*i+1) - z_e(2*i-1)
       do j =1,self%sp%ng
         self%f_i(i,j) = f_i_e(2*i,j)
       enddo
