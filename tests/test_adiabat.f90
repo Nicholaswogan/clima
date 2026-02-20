@@ -24,6 +24,7 @@ program test
   endif
 
   ! Test tidally locked dayside
+  c%reference_pressure = 1.0e3_dp
   c%solve_for_T_trop = .true.
   c%tidally_locked_dayside = .true.
   P_i_surf = [270.0_dp, 400e-6_dp, 1.0_dp, 1.0e-10_dp, 1.0e-10_dp, 1.0e-10_dp, 1.0e-10_dp]
