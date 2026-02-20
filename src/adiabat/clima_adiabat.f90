@@ -168,10 +168,13 @@ module clima_adiabat
     real(dp), allocatable :: gravity(:) !! Gravity at each layer center (cm/s^2) (nz)
     real(dp), allocatable :: densities(:,:) !! densities in each grid cell, molecules/cm^3 (nz,ng)
     real(dp), allocatable :: N_atmos(:) !! reservoir of gas in atmosphere mol/cm^2 (ng)
-    real(dp), allocatable :: N_surface(:) !! reservoir of gas on surface mol/cm^2 (ng)
+    !> reservoir of gas on surface mol/cm^2 (ng).
+    !> Strictly consistent when `reference_pressure <= 0` (i.e., `planet_radius` at `P_surf`).
+    real(dp), allocatable :: N_surface(:)
     !> reservoir of gas dissolved in oceans in mol/cm^2 (ng, ng). There can be multiple oceans.
     !> The gases dissolved in ocean made of species 1 is given by `N_ocean(:,1)`.
-    real(dp), allocatable :: N_ocean(:,:) 
+    !> Strictly consistent when `reference_pressure <= 0` (i.e., `planet_radius` at `P_surf`).
+    real(dp), allocatable :: N_ocean(:,:)
     !> particle densities in particles/cm^3. (nz,np)
     real(dp), allocatable :: pdensities(:,:)
     !> For interpolating particle densities
@@ -464,77 +467,110 @@ contains
   !> Similar to `make_profile`, but instead the input is column reservoirs 
   !> of each gas (mol/cm^2). 
   subroutine AdiabatClimate_make_column(self, T_surf, N_i_surf, err)
-    use clima_adiabat_general, only: make_column
-    use clima_const, only: k_boltz, N_avo
+    use minpack_module, only: hybrd1
+    use clima_useful, only: MinpackHybrd1Vars
+    use clima_eqns, only: gravity
+    use ieee_arithmetic, only: ieee_positive_inf, ieee_value
     class(AdiabatClimate), intent(inout) :: self
     real(dp), intent(in) :: T_surf !! K
     real(dp), intent(in) :: N_i_surf(:) !! mole/cm^2
     character(:), allocatable, intent(out) :: err
     
-    real(dp), allocatable :: P_e(:), z_e(:), T_e(:), f_i_e(:,:)
-    real(dp), allocatable :: density(:)
-    integer :: i, j
+    type(MinpackHybrd1Vars) :: mv
+    real(dp), parameter :: scale_factors(*) = [1.0_dp, 0.5_dp, 2.0_dp, 0.1_dp, 5.0_dp, 0.01_dp]
+    real(dp), allocatable :: P_i(:), N_i(:)
+    real(dp) :: grav
+    integer :: i, ii
 
     if (size(N_i_surf) /= self%sp%ng) then
       err = "N_i_surf has the wrong dimension"
       return
     endif
-    
-    allocate(P_e(2*self%nz+1),  z_e(2*self%nz+1), T_e(2*self%nz+1))
-    allocate(f_i_e(2*self%nz+1,self%sp%ng))
-    allocate(density(self%nz))
-    
-    call make_column(T_surf, N_i_surf, &
-                     self%sp, self%nz, self%planet_mass, &
-                     self%planet_radius, self%P_top, self%T_trop, self%RH, &
-                     self%rtol, self%atol, self%tol_make_column, &
-                     self%ocean_fcns, self%ocean_args_p, &
-                     self%use_make_column_P_guess, self%make_column_P_guess, &
-                     P_e, z_e, T_e, f_i_e, self%P_trop, &
-                     self%N_surface, self%N_ocean, &
-                     err)
-    if (allocated(err)) return
-    
-    self%f_i_surf = f_i_e(1,:)
-    self%T_surf = T_surf
-    self%P_surf = P_e(1)
-    do i = 1,self%nz
-      self%P(i) = P_e(2*i)
-      self%T(i) = T_e(2*i)
-      do j =1,self%sp%ng
-        self%f_i(i,j) = f_i_e(2*i,j)
+
+    ! Allocate memory for minpack
+    mv = MinpackHybrd1Vars(n=self%sp%ng, tol=self%tol_make_column)
+    mv%info = 0
+
+    ! Allocate some work memory
+    allocate(P_i(self%sp%ng), N_i(self%sp%ng))
+
+    ! Gravity at the surface
+    grav = gravity(self%planet_radius, self%planet_mass, 0.0_dp)
+
+    ! First, if a initial guess is provided, then we try it
+    if (self%use_make_column_P_guess) then
+      do i = 1,mv%n
+        mv%x(i) = log10(max(self%make_column_P_guess(i), sqrt(tiny(1.0_dp))))
       enddo
-    enddo
+      ! Attempt the root solve
+      call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+    endif
 
-    call self%compute_altitude(err)
+    ! If the initial guess fails, or if an initial guess is not provided
+    ! then we try to solve anyway using a variety of initial guesses.
+    if (mv%info /= 1) then
+      do ii = 1,size(scale_factors)
+        ! Initial guess will be crude conversion of moles/cm2 (column) to 
+        ! to dynes/cm2 (pressure). I try a few different `scale_factors` 
+        ! to this guess.
+        do i = 1,mv%n
+          mv%x(i) = log10(max(N_i_surf(i)*self%sp%g(i)%mass*grav*scale_factors(ii), sqrt(tiny(1.0_dp))))
+        enddo
+        ! Attempt the root solve
+        call hybrd1(fcn, mv%n, mv%x, mv%fvec, mv%tol, mv%info, mv%wa, mv%lwa)
+        if (mv%info == 1) exit ! Success, so we exit.
+      enddo
+    endif
+
+    if (mv%info == 0 .or. mv%info > 1) then
+      err = 'hybrd1 root solve failed in make_column.'
+      return
+    elseif (mv%info < 0) then
+      err = 'hybrd1 root solve failed in make_column: '//err
+      return
+    elseif (mv%info == 1) then
+      ! Converged, ensure there no allocated error
+      if (allocated(err)) deallocate(err)
+    endif
+
+    ! Call one more time with solution
+    call fcn(mv%n, mv%x, mv%fvec, mv%info)
     if (allocated(err)) return
-    
-    density = self%P/(k_boltz*self%T)
-    do j =1,self%sp%ng
-      self%densities(:,j) = self%f_i(:,j)*density(:)
-    enddo
+    self%make_column_P_guess = 10.0_dp**mv%x
 
-    call self%interpolate_particles(self%P, err)
-    if (allocated(err)) return
+  contains
 
-    do i = 1,self%sp%ng
-      ! mol/cm^2 in atmosphere
-      self%N_atmos(i) = sum(density*self%f_i(:,i)*self%dz)/N_avo
-    enddo
+    subroutine fcn(n_, x_, fvec_, iflag_)
+      integer, intent(in) :: n_
+      real(dp), intent(in) :: x_(n_)
+      real(dp), intent(out) :: fvec_(n_)
+      integer, intent(inout) :: iflag_
 
-    do i = 1,self%nz
-      if (self%P(i) > self%P_trop) then
-        self%convecting_with_below(i) = .true.
-      else
-        self%convecting_with_below(i) = .false.
+      P_i(:) = 10.0_dp**x_(:)
+      if (any(P_i == ieee_value(1.0_dp, ieee_positive_inf))) then
+        err = 'infinity values were encountered.'
+        iflag_ = -1
+        return
       endif
-    enddo
 
-    self%lapse_rate(1) = (log(self%T(1)) - log(self%T_surf))/(log(self%P(1)) - log(self%P_surf))
-    do i = 2,self%nz
-      self%lapse_rate(i) = (log(self%T(i)) - log(self%T(i-1)))/(log(self%P(i)) - log(self%P(i-1)))
-    enddo
-    
+      call self%make_profile(T_surf, P_i, err)
+      if (allocated(err)) then
+        iflag_ = -1
+        return
+      endif
+
+      ! mol/cm^2 in atmosphere, on surface, and in ocean.
+      N_i(:) = self%N_atmos(:)
+      N_i(:) = N_i(:) + self%N_surface(:)
+      do i = 1,self%sp%ng
+        N_i(:) = N_i(:) + self%N_ocean(:,i)
+      enddo
+
+      ! Residual
+      fvec_(:) = N_i - N_i_surf
+
+    end subroutine
+
   end subroutine
 
   !> Similar to `make_profile`, but instead imposes a background gas and fixed

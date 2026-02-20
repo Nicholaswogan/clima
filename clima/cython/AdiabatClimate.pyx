@@ -1052,7 +1052,9 @@ cdef class AdiabatClimate:
       return arr
   
   property N_surface:
-    "ndarray[double,ndim=1], shape (ng). Reservoir of gas on surface (mol/cm^2)"
+    """ndarray[double,ndim=1], shape (ng). Reservoir of gas on surface (mol/cm^2).
+    Strictly consistent when `reference_pressure <= 0` (i.e., `planet_radius` at `P_surf`).
+    """
     def __get__(self):
       cdef int dim1
       wa_pxd.adiabatclimate_n_surface_get_size(self._ptr, &dim1)
@@ -1063,6 +1065,7 @@ cdef class AdiabatClimate:
   property N_ocean:
     """ndarray[double,ndim=2], shape (ng,ng). Reservoir of gas dissolved in oceans (mol/cm^2).
     There can be multiple oceans. The gases dissolved in ocean made of species 0 is given by `N_ocean[:,0]`.
+    Strictly consistent when `reference_pressure <= 0` (i.e., `planet_radius` at `P_surf`).
     """
     def __get__(self):
       cdef int dim1, dim2
