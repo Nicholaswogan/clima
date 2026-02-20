@@ -141,7 +141,7 @@ contains
       ! Integrate from reference pressure upward (toward lower pressures/top).
       if (j_start_top <= size(P_e)-1) then
         call integrate_altitude_segment(d, self%rtol, self%atol, &
-                                        self%reference_pressure, 0.0_dp, P_e(size(P_e)-1), &
+                                        self%reference_pressure, 0.0_dp, &
                                         j_start_top, size(P_e)-1, +1, err)
         if (allocated(err)) return
       endif
@@ -149,7 +149,7 @@ contains
       ! Integrate from reference pressure downward (toward higher pressures/surface).
       if (j_start_bot >= 1) then
         call integrate_altitude_segment(d, self%rtol, self%atol, &
-                                        self%reference_pressure, 0.0_dp, P_e(1), &
+                                        self%reference_pressure, 0.0_dp, &
                                         j_start_bot, 1, -1, err)
         if (allocated(err)) return
       endif
@@ -185,7 +185,7 @@ contains
     d%z_e(1) = 0.0_dp
 
     call integrate_altitude_segment(d, rtol, atol, &
-                                    d%P_e(1), 0.0_dp, d%P_e(size(d%P_e)-1), &
+                                    d%P_e(1), 0.0_dp, &
                                     2, size(d%P_e)-1, +1, err)
     if (allocated(err)) return
     d%z_e(size(d%z_e)) = d%z_e(size(d%z_e)-1) + (d%z_e(size(d%z_e)-1) - d%z_e(size(d%z_e)-2))
@@ -193,11 +193,11 @@ contains
   end subroutine
 
   subroutine integrate_altitude_segment(d, rtol, atol, &
-                                        P_start, z_start, P_end, &
+                                        P_start, z_start, &
                                         j_start, j_end, j_step, err)
     type(AltitudeIntegrationData), target, intent(inout) :: d
     real(dp), intent(in) :: rtol, atol
-    real(dp), intent(in) :: P_start, z_start, P_end
+    real(dp), intent(in) :: P_start, z_start
     integer, intent(in) :: j_start, j_end, j_step
     character(:), allocatable, intent(out) :: err
 
@@ -226,19 +226,19 @@ contains
 
   contains
 
-  subroutine rhs_altitude_segment(P, u, du)
-    use clima_eqns, only: gravity
-    use clima_eqns_water, only: Rgas_cgs => Rgas
-    real(dp), intent(in) :: P
-    real(dp), intent(in) :: u(:)
-    real(dp), intent(out) :: du(:)
+    subroutine rhs_altitude_segment(P, u, du)
+      use clima_eqns, only: gravity
+      use clima_eqns_water, only: Rgas_cgs => Rgas
+      real(dp), intent(in) :: P
+      real(dp), intent(in) :: u(:)
+      real(dp), intent(out) :: du(:)
 
-    real(dp) :: T, mubar, grav
-    call d%T_interp%evaluate(log10(P), T)
-    call d%mubar_interp%evaluate(log10(P), mubar)
-    grav = gravity(d%planet_radius, d%planet_mass, u(1))
-    du(1) = -(Rgas_cgs*T)/(grav*P*mubar)
-  end subroutine
+      real(dp) :: T, mubar, grav
+      call d%T_interp%evaluate(log10(P), T)
+      call d%mubar_interp%evaluate(log10(P), mubar)
+      grav = gravity(d%planet_radius, d%planet_mass, u(1))
+      du(1) = -(Rgas_cgs*T)/(grav*P*mubar)
+    end subroutine
 
   end subroutine
 
