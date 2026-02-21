@@ -159,6 +159,8 @@ cdef extern void adiabatclimate_convective_max_boundary_shift_set(AdiabatClimate
 
 cdef extern void adiabatclimate_prevent_overconvection_get(AdiabatClimate *ptr, bint *val)
 cdef extern void adiabatclimate_prevent_overconvection_set(AdiabatClimate *ptr, bint *val)
+cdef extern void adiabatclimate_require_mode2_get(AdiabatClimate *ptr, bint *val)
+cdef extern void adiabatclimate_require_mode2_set(AdiabatClimate *ptr, bint *val)
 
 cdef extern void adiabatclimate_rtol_get(AdiabatClimate *ptr, double *val)
 cdef extern void adiabatclimate_rtol_set(AdiabatClimate *ptr, double *val)

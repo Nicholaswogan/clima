@@ -830,6 +830,15 @@ cdef class AdiabatClimate:
     def __set__(self, bint val):
       wa_pxd.adiabatclimate_prevent_overconvection_set(self._ptr, &val)
 
+  property require_mode2:
+    "bool. If true, require passing through mode 2 when mode 1 converges before optional mode 3 polishing."
+    def __get__(self):
+      cdef bint val
+      wa_pxd.adiabatclimate_require_mode2_get(self._ptr, &val)
+      return bool(val)
+    def __set__(self, bint val):
+      wa_pxd.adiabatclimate_require_mode2_set(self._ptr, &val)
+
   property rtol:
     "float. Relative tolerance of integration."
     def __get__(self):

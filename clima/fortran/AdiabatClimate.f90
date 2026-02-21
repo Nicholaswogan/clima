@@ -996,6 +996,24 @@ subroutine adiabatclimate_prevent_overconvection_set(ptr, val) bind(c)
   c%prevent_overconvection = val
 end subroutine
 
+subroutine adiabatclimate_require_mode2_get(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  logical(c_bool), intent(out) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  val = c%require_mode2
+end subroutine
+
+subroutine adiabatclimate_require_mode2_set(ptr, val) bind(c)
+  use clima, only: AdiabatClimate
+  type(c_ptr), value, intent(in) :: ptr
+  logical(c_bool), intent(in) :: val
+  type(AdiabatClimate), pointer :: c
+  call c_f_pointer(ptr, c)
+  c%require_mode2 = val
+end subroutine
+
 subroutine adiabatclimate_rtol_get(ptr, val) bind(c)
   use clima, only: AdiabatClimate
   type(c_ptr), value, intent(in) :: ptr

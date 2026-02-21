@@ -186,7 +186,7 @@ contains
     logical, allocatable :: convecting_with_below_save(:,:)
     real(dp), allocatable :: T_in(:), x_init(:), dFdt(:), x_stage(:), x_sol(:), f_sol(:)
     integer :: i, j, k, mode_update
-    logical :: solver_ok, converged1
+    logical :: solver_ok, perform_solve
     logical :: mask_changed
 
     converged = .false.
@@ -226,13 +226,20 @@ contains
       if (allocated(err)) return
     endif
 
-    converged1 = .false.
+    perform_solve = .true.
+    mode_update = 1
+    if (self%max_rc_iters_convection <= 1) then
+      mode_update = 2
+    endif
+
     do i = 1,self%max_rc_iters
       j = i
 
       if (self%verbose) then
         print"(1x,'Iteration =',i3)", i
       endif
+
+      if (perform_solve) then
 
       if (allocated(x_init)) deallocate(x_init)
       allocate(x_init(size(self%inds_Tx)))
@@ -299,54 +306,73 @@ contains
       call AdiabatClimate_objective(self, P_i_surf, x_sol, dFdt, f_sol, err)
       if (allocated(err)) return
 
+      endif
+      perform_solve = .true.
+
       ! Save the current convective zones
       convecting_with_below_save = reshape(convecting_with_below_save,shape=[self%nz,i],pad=self%convecting_with_below)
-
-      if (.not.converged1) then
-        if (i < self%max_rc_iters_convection) then
-          ! permit both convective<->radiative flips
-          mode_update = 1
-        else
-          ! permit only radiative->convective growth
-          mode_update = 2
-        endif
-      else
-        ! final polish: trim over-convective tops only
-        mode_update = 3
-      endif
 
       call AdiabatClimate_update_convecting_zones(self, P_i_surf, [self%T_surf, self%T], mode_update, err)
       if (allocated(err)) return
       mask_changed = .not. all(convecting_with_below_save(:,i) .eqv. self%convecting_with_below)
 
-      if (.not.converged1) then
+      ! Change modes and check convergence
+      select case (mode_update)
+      case (1)
         if (.not.mask_changed) then
-          converged1 = .true.
-          if (.not.self%prevent_overconvection) then
-            converged = .true.
-          else
+          if (self%require_mode2) then
+            ! We must pass through mode 2
+            mode_update = 2
+            perform_solve = .false.
+            cycle
+          endif
+          if (self%prevent_overconvection) then
+            ! We must skip to mode 3
+            mode_update = 3
+            perform_solve = .false.
             if (self%verbose) then
               print'(1x,A)','Preventing overconvection'
             endif
-            ! Transition directly into polish once stage-1/2 converges.
-            call AdiabatClimate_update_convecting_zones(self, P_i_surf, [self%T_surf, self%T], 3, err)
-            if (allocated(err)) return
-            mask_changed = .not. all(convecting_with_below_save(:,i) .eqv. self%convecting_with_below)
-            if (.not.mask_changed) converged = .true.
+            cycle
+          endif
+          ! If we get here, then we are converged
+          converged = .true.
+          exit
+        else
+          ! Mask is still changing
+          if (i >= self%max_rc_iters_convection - 1) then
+            ! We skip to mode 2
+            mode_update = 2
+            cycle
           endif
         endif
-      else
-        if (.not.mask_changed) converged = .true.
-      endif
-
-      if (converged) then
-        if (self%verbose) then
-          print'(1x,A)','CONVERGED'
+      case (2)
+        if (.not.mask_changed) then
+          if (self%prevent_overconvection) then
+            ! We move on to mode 3
+            mode_update = 3
+            perform_solve = .false.
+            if (self%verbose) then
+              print'(1x,A)','Preventing overconvection'
+            endif
+            cycle
+          endif
+          ! Otherwise we are converged
+          converged = .true.
+          exit
         endif
-        exit
-      endif
+      case (3)
+        if (.not.mask_changed) then
+          converged = .true.
+          exit
+        endif
+      end select
 
     enddo
+
+    if (converged .and. self%verbose) then
+      print'(1x,A)','CONVERGED'
+    endif
 
     ! Return all information to what is was prior to checking for the root
     call AdiabatClimate_set_convecting_zones(self, convecting_with_below_save(:,j), err)

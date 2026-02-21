@@ -120,6 +120,9 @@ module clima_adiabat
     integer :: convective_max_boundary_shift = -1
     !> If true, shrink convective tops when a strong inversion exists just above.
     logical :: prevent_overconvection = .true.
+    !> If true, require passing through mode 2 when mode 1 converges
+    !> before optional mode 3 polishing.
+    logical :: require_mode2 = .false.
     !> Per-layer lockout counter used by prevent_overconvection polishing.
     !> A positive value temporarily prevents immediate re-demotion of the same
     !> convective top boundary to avoid ABAB oscillations.
