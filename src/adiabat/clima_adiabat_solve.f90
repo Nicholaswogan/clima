@@ -236,7 +236,7 @@ contains
       j = i
 
       if (self%verbose) then
-        print"(1x,'Iteration =',i3)", i
+        print"(1x,'Iteration =',i3,', Mode =',i3)", i, mode_update
       endif
 
       if (perform_solve) then
@@ -330,9 +330,6 @@ contains
             ! We must skip to mode 3
             mode_update = 3
             perform_solve = .false.
-            if (self%verbose) then
-              print'(1x,A)','Preventing overconvection'
-            endif
             cycle
           endif
           ! If we get here, then we are converged
@@ -352,9 +349,6 @@ contains
             ! We move on to mode 3
             mode_update = 3
             perform_solve = .false.
-            if (self%verbose) then
-              print'(1x,A)','Preventing overconvection'
-            endif
             cycle
           endif
           ! Otherwise we are converged
