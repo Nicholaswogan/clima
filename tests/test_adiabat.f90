@@ -31,7 +31,7 @@ program test
   P_i_surf = P_i_surf*1.0e6_dp
   T = c%surface_temperature( &
       P_i_surf, &
-      T_guess = 280.0_dp, err=err)
+      T_guess = 380.0_dp, err=err)
   if (allocated(err)) then
     print*,err
     stop 1
