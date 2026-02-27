@@ -58,6 +58,8 @@ module clima_radtran
     !> If true, use a hard-surface lower thermal boundary; if false, use
     !> a gas-giant style no-hard-surface diffusion boundary.
     logical :: has_hard_surface = .true.
+    !> Minimum optical depth used in IR two-stream thin-layer guard.
+    real(dp) :: ir_tau_min = 1.0e-6_dp
     !> (nw) mW/m2/Hz in each bin from the input star file. This is 
     !> later scaled by the variable `photon_scale_factor`.
     real(dp), allocatable :: photons_sol(:)
@@ -265,6 +267,7 @@ contains
       surface_emissivity=self%surface_emissivity, &
       surface_albedo=self%surface_albedo, &
       has_hard_surface=self%has_hard_surface, &
+      ir_tau_min=self%ir_tau_min, &
       diurnal_fac=0.0_dp, &
       photons_sol=[0.0_dp], &
       zenith_u=[0.0_dp], &
@@ -294,6 +297,7 @@ contains
       surface_emissivity=self%surface_emissivity, &
       surface_albedo=self%surface_albedo, &
       has_hard_surface=self%has_hard_surface, &
+      ir_tau_min=self%ir_tau_min, &
       diurnal_fac=self%diurnal_fac, &
       photons_sol=self%photons_sol*self%photon_scale_factor, &
       zenith_u=self%zenith_u, &
@@ -508,5 +512,4 @@ contains
   end subroutine
   
 end module
-  
   

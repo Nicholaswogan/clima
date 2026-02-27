@@ -189,6 +189,15 @@ cdef class Radtran:
     def __set__(self, double val):
       rad_pxd.radtran_photon_scale_factor_set(self._ptr, &val)
 
+  property ir_tau_min:
+    "float. Thin-layer optical-depth guard used in IR two-stream source terms."
+    def __get__(self):
+      cdef double val
+      rad_pxd.radtran_ir_tau_min_get(self._ptr, &val)
+      return val
+    def __set__(self, double val):
+      rad_pxd.radtran_ir_tau_min_set(self._ptr, &val)
+
   property ir:
     "The RTChannel for longwave radiative transfer"
     def __get__(self):

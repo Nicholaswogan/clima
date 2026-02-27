@@ -48,6 +48,9 @@ cdef extern void radtran_has_hard_surface_set(Radtran *ptr, bool *val)
 cdef extern void radtran_photon_scale_factor_get(Radtran *ptr, double *val)
 cdef extern void radtran_photon_scale_factor_set(Radtran *ptr, double *val)
 
+cdef extern void radtran_ir_tau_min_get(Radtran *ptr, double *val)
+cdef extern void radtran_ir_tau_min_set(Radtran *ptr, double *val)
+
 cdef extern void radtran_ir_get(Radtran *ptr, rtc_pxd.RTChannel **ptr1);
 
 cdef extern void radtran_sol_get(Radtran *ptr, rtc_pxd.RTChannel **ptr1);

@@ -6,7 +6,7 @@ contains
   
   subroutine radiate(rtc, op, opr, rw, &
                      surface_emissivity, &
-                     surface_albedo, has_hard_surface, diurnal_fac, photons_sol, &
+                     surface_albedo, has_hard_surface, ir_tau_min, diurnal_fac, photons_sol, &
                      zenith_u, zenith_weights, &
                      T_surface, T, &
                      fup_a, fdn_a, fup_n, fdn_n, amean, tau_band)
@@ -26,6 +26,7 @@ contains
 
     real(dp), intent(in) :: surface_albedo(:) !! Surface albedo (Needed only for solar)
     logical, intent(in) :: has_hard_surface !! If true, use hard-surface lower thermal BC.
+    real(dp), intent(in) :: ir_tau_min !! Thin-layer optical-depth guard for IR two-stream source terms.
     real(dp), intent(in) :: diurnal_fac !! Diurnal averaging factor (0.5) (Needed only for solar)
     real(dp), intent(in) :: photons_sol(:) !! (nw) Average solar flux in each bin (mW/m2/Hz) (Needed only for solar)
 
@@ -110,6 +111,7 @@ contains
               gt=opr%g(:,l), &
               emissivity=emissivity, &
               has_hard_surface=has_hard_surface, &
+              tau_min=ir_tau_min, &
               bplanck=rbw%bplanck, &
               fup=rbw%fup0, &
               fdn=rbw%fdn0 &
@@ -194,5 +196,4 @@ contains
   end subroutine
   
 end module
-  
   

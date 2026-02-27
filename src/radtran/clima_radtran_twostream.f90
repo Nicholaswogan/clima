@@ -153,7 +153,7 @@ contains
 
   end subroutine
   
-  subroutine two_stream_ir(nz, tau, w0, gt, emissivity, has_hard_surface, bplanck, &
+  subroutine two_stream_ir(nz, tau, w0, gt, emissivity, has_hard_surface, tau_min, bplanck, &
                            fup, fdn)
     use clima_const, only: pi
     integer, intent(in) :: nz
@@ -162,6 +162,7 @@ contains
     real(dp), intent(in) :: gt(nz)
     real(dp), intent(in) :: emissivity
     logical, intent(in) :: has_hard_surface
+    real(dp), intent(in) :: tau_min
     real(dp), intent(in) :: bplanck(nz+1)
     real(dp), intent(out) :: fup(nz+1), fdn(nz+1)
     
@@ -178,8 +179,6 @@ contains
     real(dp) :: b0n, b1n
     real(dp) :: b_avg, b1_bot
 
-    real(dp), parameter :: tau_min = 1.0e-10_dp
-    
     real(dp), parameter :: u1 = 0.5_dp ! (Hemispheric mean)
     real(dp), parameter :: norm = 2.0_dp*pi*u1
     

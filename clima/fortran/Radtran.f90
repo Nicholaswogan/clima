@@ -244,6 +244,24 @@ subroutine radtran_photon_scale_factor_set(ptr, val) bind(c)
   rad%photon_scale_factor = val
 end subroutine
 
+subroutine radtran_ir_tau_min_get(ptr, val) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), value, intent(in) :: ptr
+  real(c_double), intent(out) :: val
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  val = rad%ir_tau_min
+end subroutine
+
+subroutine radtran_ir_tau_min_set(ptr, val) bind(c)
+  use clima, only: Radtran
+  type(c_ptr), value, intent(in) :: ptr
+  real(c_double), intent(in) :: val
+  type(Radtran), pointer :: rad
+  call c_f_pointer(ptr, rad)
+  rad%ir_tau_min = val
+end subroutine
+
 subroutine radtran_ir_get(ptr, ptr1) bind(c)
   use clima, only: Radtran
   type(c_ptr), value, intent(in) :: ptr
