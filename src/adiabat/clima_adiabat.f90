@@ -122,7 +122,7 @@ module clima_adiabat
     logical :: prevent_overconvection = .true.
     !> If true, require passing through mode 2 when mode 1 converges
     !> before optional mode 3 polishing.
-    logical :: require_mode2 = .false.
+    logical :: require_mode2 = .true.
     !> Per-layer lockout counter used by prevent_overconvection polishing.
     !> A positive value temporarily prevents immediate re-demotion of the same
     !> convective top boundary to avoid ABAB oscillations.
