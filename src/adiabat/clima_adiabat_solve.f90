@@ -938,9 +938,12 @@ contains
       err = 'Invalid mode in AdiabatClimate_update_convecting_zones: expected 1, 2, or 3.'
       return
     endif
+    if (size(T_in) /= self%nz+1) then
+      err = 'T_in has wrong dimension in AdiabatClimate_update_convecting_zones'
+      return
+    endif
 
     ! work storage
-    allocate(deltaT(size(T_in)),T_perturb(size(T_in)))
     allocate(lapse_rate_perturb(self%nz),difference(self%nz))
     allocate(convecting_with_below_candidate(self%nz))
 
@@ -951,6 +954,7 @@ contains
       if (allocated(err)) return
     endif
 
+    allocate(deltaT(size(self%inds_Tx)),T_perturb(size(T_in)))
     allocate(x_in(size(self%inds_Tx)))
     do i = 1,size(self%inds_Tx)
       x_in(i) = T_in(self%inds_Tx(i))
@@ -977,7 +981,10 @@ contains
       alpha = min(max(0.0_dp, self%convective_newton_step_size), 1.0_dp)
       got_perturb = .false.
       do bt = 1,20
-        T_perturb = deltaT*alpha + T_in
+        T_perturb = T_in
+        do i = 1,size(self%inds_Tx)
+          T_perturb(self%inds_Tx(i)) = T_in(self%inds_Tx(i)) + alpha*deltaT(i)
+        enddo
 
         ! Ensure there are no invalid temperatures
         if (minval(T_perturb) < 1.0_dp) then    
