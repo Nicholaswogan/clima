@@ -323,6 +323,10 @@ contains
       err = '"atmosphere-grid" is missing from file "'//settings_f//'"'
       return
     endif
+    if (c%nz <= 5) then
+      err = '"atmosphere-grid/nz" must be greater than 5'
+      return
+    endif
     if (.not.s%planet_is_present) then
       err = '"planet" is missing from file "'//settings_f//'"'
       return

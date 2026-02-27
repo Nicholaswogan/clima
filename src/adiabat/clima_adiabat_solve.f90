@@ -13,12 +13,14 @@ contains
     character(:), allocatable, intent(out) :: err
 
     real(dp), allocatable :: P_e(:), z_e(:), f_i_e(:,:), lapse_rate_e(:)
-    logical, allocatable :: super_saturated_e(:)
+    logical, allocatable :: super_saturated_e(:), convecting_with_below_work(:)
     real(dp), allocatable :: density(:)
     integer :: i, j
+    real(dp) :: dT_prev, T_top_extrap
 
     allocate(P_e(2*self%nz+1),z_e(2*self%nz+1),f_i_e(2*self%nz+1,self%sp%ng),lapse_rate_e(2*self%nz+1))
     allocate(super_saturated_e(2*self%nz+1))
+    allocate(convecting_with_below_work(self%nz))
     allocate(density(self%nz))
 
     if (size(P_i_surf) /= self%sp%ng) then
@@ -32,9 +34,21 @@ contains
 
     self%T_surf = T_in(1)
     self%T = T_in(2:)
+    convecting_with_below_work(:) = self%convecting_with_below(:)
+    if (self%convecting_with_below(self%nz-1)) then
+      ! If the layer below TOA is convecting, keep TOA in the same convective region.
+      convecting_with_below_work(self%nz) = .true.
+    else
+      ! Otherwise set a smooth radiative cap by linear extrapolation.
+      convecting_with_below_work(self%nz) = .false.
+      dT_prev = self%T(self%nz-1) - self%T(self%nz-2)
+      T_top_extrap = self%T(self%nz-1) + dT_prev
+      self%T(self%nz) = max(T_top_extrap, 1.0_dp)
+    endif
+
     call make_profile_rc(self%T_surf, self%T, P_i_surf, &
                          self%sp_custom, self%mix_custom, &
-                         self%convecting_with_below, &
+                         convecting_with_below_work, &
                          self%sp, self%nz, self%planet_mass, &
                          self%planet_radius, self%P_top, self%RH, &
                          self%rtol, self%atol, &
@@ -314,7 +328,8 @@ contains
 
       call AdiabatClimate_update_convecting_zones(self, P_i_surf, [self%T_surf, self%T], mode_update, err)
       if (allocated(err)) return
-      mask_changed = .not. all(convecting_with_below_save(:,i) .eqv. self%convecting_with_below)
+      mask_changed = .not. all(convecting_with_below_save(1:self%nz-1,i) .eqv. &
+                               self%convecting_with_below(1:self%nz-1))
 
       ! Change modes and check convergence
       select case (mode_update)
@@ -868,7 +883,9 @@ contains
     if (allocated(self%inds_Tx)) deallocate(self%inds_Tx)
     allocate(self%inds_Tx(1))
     self%inds_Tx(1) = 1
-    do i = 1,size(convecting_with_below)
+    ! Exclude the top atmospheric layer (index nz+1 in T_in) from the
+    ! nonlinear solve vector to avoid weakly constrained TOA-kink behavior.
+    do i = 1,self%nz-1
       if (convecting_with_below(i)) then
         ! nothing
       else
@@ -1085,6 +1102,9 @@ contains
       enddo
 
     endif
+
+    ! We always pin the TOA to the layer below it.
+    self%convecting_with_below(self%nz) = self%convecting_with_below(self%nz-1)
 
     call AdiabatClimate_set_convecting_zones(self, self%convecting_with_below, err)
     if (allocated(err)) return
