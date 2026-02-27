@@ -966,7 +966,7 @@ contains
 
     if (mode == 1) then
 
-      call AdiabatClimate_jacobian(self, P_i_surf, x_in, dTdt_dT, err)
+      call AdiabatClimate_jacobian_from_base(self, P_i_surf, x_in, dFdt, dTdt, dTdt_dT, err)
       if (allocated(err)) return
 
       deltaT = -dTdt
