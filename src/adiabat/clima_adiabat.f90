@@ -275,6 +275,9 @@ contains
     character(*), intent(in) :: settings_f !! Settings yaml file
     character(*), intent(in) :: star_f !! Star text file
     character(*), intent(in) :: data_dir !! Directory with radiative transfer data
+    !> If true, radiative transfer is computed on a refined vertical grid.
+    !> Each physical layer is split into two RT layers, and two ghost RT layers
+    !> are added above the physical top to stabilize TOA behavior.
     logical, optional, intent(in) :: double_radiative_grid
     character(:), allocatable, intent(out) :: err
     
@@ -344,7 +347,8 @@ contains
       c%double_radiative_grid = .true.
     endif
     if (c%double_radiative_grid) then
-      c%nz_r = c%nz*2
+      ! Doubled RT grid plus two ghost layers above the physical top layer.
+      c%nz_r = c%nz*2 + 2
     else
       c%nz_r = c%nz
     endif
@@ -727,6 +731,8 @@ contains
     integer :: i
 
     if (self%double_radiative_grid) then
+      ! In doubled-grid mode, each physical layer i maps to RT layers 2*i-1 and 2*i.
+      ! We then append two ghost RT layers that copy top-layer properties.
       do i = 1,self%nz
         self%T_r(2*(i-1)+1) = self%T(i)
         self%T_r(2*(i-1)+2) = self%T(i)
@@ -745,6 +751,15 @@ contains
 
         self%dz_r(2*(i-1)+1) = 0.5_dp*self%dz(i)
         self%dz_r(2*(i-1)+2) = 0.5_dp*self%dz(i)
+      enddo
+      ! Fill in ghost layers
+      do i = 1,2
+        self%T_r(2*self%nz+i) = self%T_r(2*self%nz)
+        self%P_r(2*self%nz+i) = self%P_r(2*self%nz)
+        self%densities_r(2*self%nz+i,:) = self%densities_r(2*self%nz,:)
+        self%pdensities_r(2*self%nz+i,:) = self%pdensities_r(2*self%nz,:)
+        self%pradii_r(2*self%nz+i,:) = self%pradii_r(2*self%nz,:)
+        self%dz_r(2*self%nz+i) = self%dz_r(2*self%nz)
       enddo
     else
       self%T_r = self%T
@@ -834,7 +849,7 @@ contains
     call self%rad%TOA_fluxes(T_surf, self%T_r, self%P_r/1.0e6_dp, self%densities_r, self%dz_r, &
                              self%pdensities_r, self%pradii_r, ISR=ISR, OLR=OLR, err=err)
     if (allocated(err)) return
-    
+
   end subroutine
 
   !> Calls `make_profile_dry`, then does radiative transfer on the constructed atmosphere

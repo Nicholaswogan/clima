@@ -43,6 +43,10 @@ cdef class AdiabatClimate:
         The input stellar flux file
     data_dir : str, optional
         The directory where all data is stored.
+    double_radiative_grid : bool, optional
+        If True (default), radiative transfer uses a refined grid where each
+        physical layer is split into two RT layers, plus two ghost RT layers
+        above the model top to improve TOA numerical stability.
     """
 
     self._init_called = True
