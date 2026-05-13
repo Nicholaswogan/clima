@@ -21,7 +21,7 @@ module clima_adiabat_rc
     real(dp), pointer :: RH(:)
     real(dp), pointer :: rtol
     real(dp), pointer :: atol
-    ! Ouput
+    ! Output
     real(dp), pointer :: P(:)
     real(dp), pointer :: z(:)
     real(dp), pointer :: f_i(:,:)
@@ -68,7 +68,7 @@ module clima_adiabat_rc
     real(dp), allocatable :: cp_i_cur(:)
     real(dp), allocatable :: L_i_cur(:)
 
-    !> This helps us propogate error messages outside of the integration
+    !> This helps us propagate error messages outside of the integration
     character(:), allocatable :: err
 
   end type
@@ -85,7 +85,7 @@ module clima_adiabat_rc
 contains
 
   ! inputs: P_i_surf, T_surf, T in each grid cell, P_top, planet_mass, planet_radius, nz, sp, ocean_fcns
-  !         indexes where convection is occuring
+  !         indexes where convection is occurring
 
   ! outputs: Pressure, mixing ratios, z, lapse rate everywhere
 

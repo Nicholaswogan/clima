@@ -780,7 +780,7 @@ cdef class AdiabatClimate:
   property convecting_with_below:
     """ndarray[bool,ndim=1], shape (nz). If True, then the layer below 
     is convecting with the current layer. Index 1 determines if the 
-    first atomspheric layer is convecting with the ground.
+    first atmospheric layer is convecting with the ground.
     """
     def __get__(self):
       cdef int dim1

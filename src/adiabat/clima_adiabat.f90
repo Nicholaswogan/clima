@@ -37,7 +37,7 @@ module clima_adiabat
     !> This can be used to parameterize the ice-albedo feedback.
     procedure(temp_dependent_albedo_fcn), nopass, pointer :: albedo_fcn => null()
 
-    !> Function describing how gases disolve in oceans. This allows for multiple oceans, each
+    !> Function describing how gases dissolve in oceans. This allows for multiple oceans, each
     !> made of different condensed volatiles.
     type(OceanFunction), allocatable :: ocean_fcns(:)
     !> A c-ptr which will be passed to each ocean solubility function.
@@ -97,9 +97,9 @@ module clima_adiabat
     integer, private, allocatable :: ind_conv_lower_x(:)
     !> Indicates if a layer is super-saturated
     logical, private, allocatable :: super_saturated(:)
-    !> Another representation of where convection is occuring. If True,
+    !> Another representation of where convection is occurring. If True,
     !> then the layer below is convecting with the current layer. Index 1 determines
-    !> if the first atomspheric layer is convecting with the ground.
+    !> if the first atmospheric layer is convecting with the ground.
     logical, allocatable :: convecting_with_below(:)
     integer, allocatable :: inds_Tx(:)
     real(dp), allocatable :: lapse_rate(:) !! The true lapse rate (dlnT/dlnP)

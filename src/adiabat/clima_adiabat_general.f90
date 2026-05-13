@@ -26,7 +26,7 @@ module clima_adiabat_general
     real(dp), pointer :: T_surf
     real(dp), pointer :: rtol
     real(dp), pointer :: atol
-    !> Ouput
+    !> Output
     real(dp), pointer :: P(:)
     real(dp), pointer :: z(:)
     real(dp), pointer :: T(:)
@@ -65,7 +65,7 @@ module clima_adiabat_general
     real(dp), allocatable :: cp_i_cur(:)
     real(dp), allocatable :: L_i_cur(:)
     
-    !> This helps us propogate error messages outside of the integration
+    !> This helps us propagate error messages outside of the integration
     character(:), allocatable :: err
     
   end type
@@ -294,7 +294,7 @@ contains
       return
     endif
 
-    ! intial conditions
+    ! initial conditions
     u = [d%T_surf, 0.0_dp]
     Pn = d%P_surf
     do

@@ -20,7 +20,7 @@ module clima_adiabat_dry
     real(dp), pointer :: P_top
     real(dp), pointer :: rtol
     real(dp), pointer :: atol
-    ! Ouput
+    ! Output
     real(dp), pointer :: P(:)
     real(dp), pointer :: z(:)
     real(dp), pointer :: T(:)
@@ -38,7 +38,7 @@ module clima_adiabat_dry
     !> work variables. All dimension (ng)
     real(dp), allocatable :: f_i_cur(:)
 
-    !> This helps us propogate error messages outside of the integration
+    !> This helps us propagate error messages outside of the integration
     character(:), allocatable :: err
 
   end type
