@@ -89,7 +89,7 @@ contains
   end subroutine
 
   !> initializes custom mixing ratios
-  subroutine intialize_custom_inputs(self, sp_custom, P_custom, mix_custom, err)
+  subroutine initialize_custom_inputs(self, sp_custom, P_custom, mix_custom, err)
     class(AdiabatClimate), intent(inout) :: self
     character(*), optional, intent(in) :: sp_custom(:)
     real(dp), optional, intent(in) :: P_custom(:)
@@ -204,7 +204,7 @@ contains
       return
     endif
 
-    call intialize_custom_inputs(self, sp_custom, P_custom, mix_custom, err)
+    call initialize_custom_inputs(self, sp_custom, P_custom, mix_custom, err)
     if (allocated(err)) return
     
     allocate(convecting_with_below_save(self%nz,0))
@@ -895,7 +895,7 @@ contains
   !> a T profile stable to convection, then a layer is radiative. If instead, the step
   !> tends to a T profile unstable to convection, then the layer is convective. The
   !> routine specifically updates self%convecting_with_below, self%n_convecting_zones, 
-  !> self%ind_conv_lower and self%ind_conv_upper. It also updates all atmosphere varibles.
+  !> self%ind_conv_lower and self%ind_conv_upper. It also updates all atmosphere variables.
   subroutine AdiabatClimate_update_convecting_zones(self, P_i_surf, T_in, mode, err)
     use clima_useful, only: linear_solve
     class(AdiabatClimate), intent(inout) :: self

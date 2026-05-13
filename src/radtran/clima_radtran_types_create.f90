@@ -246,7 +246,7 @@ contains
     call read_wavl(filename, channel_type, rtc%wavl, err)
     if (allocated(err)) return
 
-    ! Get indicies
+    ! Get indices
     ind1 = minloc(abs(rtc%wavl(1) - op%wavl), 1)
     ind2 = minloc(abs(rtc%wavl(size(rtc%wavl)) - op%wavl), 1)
     if (size(rtc%wavl) /= size(op%wavl(ind1:ind2))) then
@@ -1079,7 +1079,7 @@ contains
     B = tmp2%get_real("B",error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     
-    ! compute xsection for all lamda
+    ! compute xsection for all lambda
     allocate(xs%xs_0d(size(wavl)-1))
     do i = 1,size(wavl)-1
       xs%xs_0d(i) = rayleigh_vardavas(A, B, Delta, wavl(i))
