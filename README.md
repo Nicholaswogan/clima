@@ -26,7 +26,7 @@ Create a `conda` environment with all dependencies
 conda create -n clima -c conda-forge python numpy scipy pyyaml scikit-build cython h5py
 ```
 
-Clone this Gitub repository: 
+Clone this GitHub repository:
 
 ```sh
 git clone --depth=1 --recursive https://github.com/Nicholaswogan/clima.git

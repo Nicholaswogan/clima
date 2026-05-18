@@ -246,7 +246,7 @@ contains
     call read_wavl(filename, channel_type, rtc%wavl, err)
     if (allocated(err)) return
 
-    ! Get indicies
+    ! Get indices
     ind1 = minloc(abs(rtc%wavl(1) - op%wavl), 1)
     ind2 = minloc(abs(rtc%wavl(size(rtc%wavl)) - op%wavl), 1)
     if (size(rtc%wavl) /= size(op%wavl(ind1:ind2))) then
@@ -320,7 +320,7 @@ contains
           return
         endif
 
-        ! Make a list of avaliable data files
+        ! Make a list of available data files
         op%nk = j
         if (allocated(tmp_str_list)) deallocate(tmp_str_list)
         allocate(tmp_str_list(op%nk))
@@ -434,7 +434,7 @@ contains
           endif
         enddo
 
-        ! Make a list of avaliable data files
+        ! Make a list of available data files
         op%ncia = j
         if (allocated(cia_list)) deallocate(cia_list)
         allocate(cia_list(op%ncia))
@@ -548,7 +548,7 @@ contains
     if (allocated(sop%photolysis_xs) .or. tmp_bool) then
 
       if (tmp_bool) then
-        ! need to go see what photolysis data is avaliable
+        ! need to go see what photolysis data is available
         j = 0
         do i = 1,size(species_names)
           filename = datadir//"/xsections/"//trim(species_names(i))//".h5"
@@ -903,7 +903,7 @@ contains
     cont%LH2O = ind
 
     if (.not. is_hdf5(filename)) then
-      err = 'Continuum "'//model//'" is not avaliable.'
+      err = 'Continuum "'//model//'" is not available.'
       return
     endif
     
@@ -1079,7 +1079,7 @@ contains
     B = tmp2%get_real("B",error = io_err)
     if (allocated(io_err)) then; err = trim(filename)//trim(io_err%message); return; endif
     
-    ! compute xsection for all lamda
+    ! compute xsection for all lambda
     allocate(xs%xs_0d(size(wavl)-1))
     do i = 1,size(wavl)-1
       xs%xs_0d(i) = rayleigh_vardavas(A, B, Delta, wavl(i))
@@ -1351,7 +1351,7 @@ contains
 
     call h%close()
 
-    ! initalize interpolators
+    ! initialize interpolators
     allocate(k%log10k(k%ngauss,k%nwav))
     do i = 1,k%nwav
       do j = 1,k%ngauss

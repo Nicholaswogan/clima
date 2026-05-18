@@ -225,7 +225,7 @@ contains
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
-                                           !! molecule in each layer (molcules/cm3)
+                                           !! molecule in each layer (molecules/cm3)
     real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:)
     logical, optional, intent(in) :: compute_solar
     logical, optional, intent(in) :: compute_opacity
@@ -325,7 +325,7 @@ contains
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
-                                           !! molecule in each layer (molcules/cm3)
+                                           !! molecule in each layer (molecules/cm3)
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
     real(dp), optional, target, intent(in) :: pdensities(:,:), radii(:,:) !! (nz,np)
     logical, optional, intent(in) :: compute_solar
@@ -467,7 +467,7 @@ contains
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
-                                           !! molecule in each layer (molcules/cm3)
+                                           !! molecule in each layer (molecules/cm3)
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
     character(:), allocatable, intent(out) :: err
     
@@ -497,7 +497,7 @@ contains
     real(dp), intent(in) :: P(:) !! Array of pressures in dynes/cm^2. Must be decreasing.
     real(dp), intent(in) :: dtau_dz(:,:) !! (size(P),size(wv)), Optical depth per altitude (1/cm).
     real(dp), intent(in) :: w0(:,:) !! (size(P),size(wv)), Single scattering albedo
-    real(dp), intent(in) :: g0(:,:) !! (size(P),size(wv)), Asymetry parameter
+    real(dp), intent(in) :: g0(:,:) !! (size(P),size(wv)), Asymmetry parameter
     character(:), allocatable, intent(out) :: err
 
     call self%op%set_custom_optical_properties(wv, P, dtau_dz, w0, g0, err)
