@@ -18,7 +18,7 @@ optical-properties:
   # `k-method` is the method for mixing k-distributions. The only option is RandomOverlapResortRebin
   k-method: RandomOverlapResortRebin
 
-  # Here you specify opacites. You can see avaliable opacities by looking in
+  # Here you specify opacities. You can see available opacities by looking in
   # `clima/data/` folder. `CIA`, `rayleigh`, `photolysis-xs` and `water-continuum`
   # are optional. If you omit these keys then these opacities will not be included.
   # `k-distributions` is the only required key. The simplest way to set opacities

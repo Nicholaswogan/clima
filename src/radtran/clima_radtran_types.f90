@@ -198,7 +198,7 @@ module clima_radtran_types
     ! end work arrays that are needed for k_RandomOverlapResortRebin
 
     ! work arrays that are only needed for if 
-    ! k_method == k_AdapativeEquivalentExtinction
+    ! k_method == k_AdaptiveEquivalentExtinction
     real(dp), allocatable :: tau_grey(:,:) ! (nz,op%nk)
     real(dp), allocatable :: tau_grey_sum(:) ! (nz)
     integer, allocatable :: ind_major(:) ! (nz)
@@ -551,7 +551,7 @@ contains
     integer, intent(in) :: l !! Wavelength index
     real(dp), intent(out) :: tau(:) !! (nz), Optical depth.
     real(dp), intent(out) :: w0(:) !! (nz), Single scattering albedo
-    real(dp), intent(out) :: g0(:) !! (nz), Asymetry parameter
+    real(dp), intent(out) :: g0(:) !! (nz), Asymmetry parameter
 
     integer :: j
 
@@ -580,7 +580,7 @@ contains
     real(dp), intent(in) :: P(:) !! (nz) Pressure (bars)
     real(dp), intent(in) :: T(:) !! (nz) Temperature (K) 
     real(dp), intent(in) :: densities(:,:) !! (nz,ng) number density of each 
-                                           !! molecule in each layer (molcules/cm3)
+                                           !! molecule in each layer (molecules/cm3)
     real(dp), intent(in) :: dz(:) !! (nz) thickness of each layer (cm)
     real(dp), optional, intent(in) :: pdensities(:,:) !! (nz,np) particles/cm3
     real(dp), optional, intent(in) :: radii(:,:) !! (nz,np) cm
