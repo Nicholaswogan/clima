@@ -22,7 +22,7 @@ jobs:
           cmake=3 
           fypp 
           clang 
-          gfortran
+          gfortran<16
           valgrind
 
     - name: Install glibc debug symbols for valgrind
