@@ -910,6 +910,191 @@ natural residual evaluated at nearby scalar values. Agreement at $\alpha/10$,
 $\alpha$, and $10\alpha$ is a direct check that numerical projection details have
 not introduced an unwanted scaling dependence.
 
+## Coupling steady RCE to chemistry and clouds
+
+The projected residual need not contain every physical variable as an explicit
+Newton unknown. The appropriate coupling depends on whether another process is a
+cheap diagnostic closure, an expensive steady subproblem, or a genuinely
+time-dependent state equation. In all cases, approximate derivatives may lag
+expensive physics, but final convergence must be tested with all coupled physics
+updated consistently.
+
+### Equilibrium chemistry: eliminate it inside the residual
+
+If chemical equilibrium is unique and inexpensive, define composition as a
+diagnostic function of temperature, pressure, and elemental abundances,
+
+$$
+\mathbf q_{\mathrm{eq}}=Q(\mathbf T,p,\mathbf b),
+$$
+
+and construct the reduced radiative tendency
+
+$$
+\mathbf f_{\mathrm{rad}}(\mathbf T)
+=R[\mathbf T,Q(\mathbf T),\kappa(\mathbf T,Q(\mathbf T))].
+$$
+
+Chemical equilibrium should then be solved during every complete base-state and
+candidate residual evaluation. Temperature remains the exposed projected-PTC
+unknown, while composition is eliminated by the inner equilibrium solve. This
+lets candidate acceptance see feedbacks such as
+$T\rightarrow q\rightarrow\kappa\rightarrow R$ without greatly enlarging the
+nonlinear system.
+
+The approximate Jacobian need not include all of that response initially. A
+practical inexact-Newton implementation can freeze equilibrium composition and
+opacity in the perturbed `radiate` calls, while recomputing both in every complete
+accepted-state and candidate residual. Rebuild the approximation after large
+temperature changes, relevant chemical transitions, poor residual reduction, or
+active-set changes accompanied by stagnation. Complete equilibrium chemistry and
+opacity must always be restored for the final convergence test.
+
+A completely separate outer equilibrium-chemistry iteration is useful for initial
+implementation and debugging, but it is a weaker final architecture. Solving RCE
+to tight tolerance with obsolete composition can overshoot strongly coupled
+opacity transitions and lead to oscillation or heavy under-relaxation.
+
+### Steady photochemistry: an inexact outer block solve
+
+A full steady photochemical model is different. Solving reaction--transport
+kinetics during every projected residual or every Jacobian perturbation would
+usually dominate the calculation. The natural first production architecture is a
+block nonlinear iteration for
+
+$$
+G_T(\mathbf T,\mathbf q)=0,
+\qquad
+G_q(\mathbf T,\mathbf q)=0,
+$$
+
+where $G_T$ is the projected RCE residual and $G_q$ is the steady
+reaction--transport residual. One outer cycle is
+
+1. hold composition fixed and take several projected-PTC climate steps;
+2. hold the updated climate and atmospheric structure fixed and solve
+   photochemistry to steady state, warm-started from the previous composition;
+3. update mean molecular weight, heat capacity, hydrostatic structure, opacity,
+   photolysis rates, and other shared quantities; and
+4. repeat until both blocks and their shared state stop changing.
+
+Neither block should be tightly converged early in the outer iteration. It is
+wasteful to solve RCE accurately with composition that will soon change, and
+similarly wasteful to solve photochemistry accurately at a climate state far from
+the coupled solution. Early cycles can use a fixed small number of climate PTC
+steps and looser photochemical tolerances; both tolerances should tighten as the
+coupled residual falls.
+
+Photochemistry should be updated adaptively rather than necessarily after every
+climate step. Useful triggers include:
+
+- a sufficiently large accumulated temperature change;
+- a material change in convective topology or tropopause location;
+- a large change in UV or thermal optical depth;
+- a prescribed reduction in the climate residual;
+- stagnation of projected PTC with frozen composition; or
+- a maximum number of accepted climate steps since the previous update.
+
+Warm starts are essential. Previous abundances, timestep history, Jacobian
+sparsity, symbolic factorizations, and unchanged photolysis intermediates should be
+reused where possible. Strong climate--chemistry feedback may require safeguarded
+under-relaxation, preferably in logarithmic abundance variables with explicit
+positivity and elemental-conservation checks. Anderson acceleration is a natural
+next step for the expensive outer fixed point; limited-memory Broyden or a block
+Newton method should be considered only if simpler acceleration is inadequate.
+
+A converged outer fixed point is a valid coupled steady solution if the subproblems
+are solved consistently and are locally unique. The final verification should use
+a handshake cycle: converge photochemistry at the latest climate, reevaluate and
+converge climate with that composition, rerun photochemistry, and verify that the
+climate residual, chemical residual, temperature, abundances, and opacities all
+remain within tolerance.
+
+An advanced future alternative is a reduced coupled Jacobian. If
+$F_q(T,q)=0$, then
+
+$$
+\frac{d\mathbf q}{d\mathbf T}
+=-\left(\frac{\partial F_q}{\partial\mathbf q}\right)^{-1}
+\frac{\partial F_q}{\partial\mathbf T}.
+$$
+
+A photochemical solver already constructs the stiff chemical Jacobian
+$\partial F_q/\partial q$. Reusing its factorization for sensitivity solves could
+capture chemical feedback in the climate Jacobian without rerunning a complete
+steady photochemical integration for every temperature perturbation. This
+Schur-complement approach is promising but substantially more complex than the
+inexact outer block iteration.
+
+### Clouds: choose the coupling from the cloud model
+
+Clouds range from inexpensive diagnostic closures to prognostic microphysical
+systems, so there is no single correct update location.
+
+For a deterministic diagnostic cloud model,
+
+$$
+\mathbf c=C(\mathbf T,p,\mathbf q,K_{zz},\ldots),
+$$
+
+the eventual reduced steady residual can evaluate cloud properties during every
+complete candidate residual, just like equilibrium chemistry. Cloud opacity may
+still be frozen in approximate Jacobian calls. This is attractive only when the
+diagnostic map is unique, inexpensive, and sufficiently continuous.
+
+Many 1-D cloud models instead contain an internal steady closure involving cloud
+base, particle size, sedimentation, mixing, supersaturation, rainout, and elemental
+depletion. They may also depend on a convective flux diagnosed from the climate
+solution. The safer initial coupling is then a damped outer cloud iteration:
+
+1. hold cloud properties fixed and take several projected-PTC steps;
+2. update the cloud solution;
+3. limit abrupt changes in cloud optical depth or use continuation from clear to
+   cloudy opacity; and
+4. repeat until climate, cloud structure, and opacity are all stationary.
+
+Cloud bases appearing, disappearing, or crossing grid cells introduce
+nonsmoothness and possibly hysteresis beyond the clean convex nonsmoothness of dry
+PAVA. Useful safeguards include cloud-opacity continuation, limits on accepted
+optical-depth changes, lagged cloud updates, trust-region globalization, and
+Jacobian rebuilds after cloud-topology changes. Anderson acceleration may help a
+well-defined outer cloud fixed point, but it does not cure a nonunique or
+hysteretic closure.
+
+If clouds affect only opacity, they can remain part of the radiative closure. If
+condensation changes latent heating, molecular weight, condensable inventory, or
+the critical lapse rate, that thermodynamic effect belongs inside the moist
+convective projection. An outer opacity update cannot substitute for a
+conservative $P_{\mathrm{moist}}$.
+
+For prognostic nucleation, growth, evaporation, sedimentation, or aerosol
+transport, cloud variables are genuine unknowns. Their steady equations should
+eventually be included in a block-coupled nonlinear solve, although a split outer
+iteration remains a useful first implementation and preconditioner.
+
+### What carries over to time evolution
+
+The block-organization ideas carry over, but projected PTC itself is a
+steady-state solver and its pseudo-trajectory is not time accurate. A physical
+time integration must distinguish diagnostic assumptions from prognostic
+processes:
+
+- equilibrium chemistry may be reevaluated each physical timestep if
+  instantaneous equilibrium is the intended model;
+- finite-rate photochemistry must be advanced over the same physical interval,
+  using operator splitting, subcycling, or a coupled implicit integrator rather
+  than a steady photochemical solve at every step;
+- diagnostic clouds may be updated each step, while prognostic clouds must evolve
+  through their physical microphysical and transport equations; and
+- instantaneous convection can use explicit adjustment or constrained implicit
+  integration, but projected PTC should be reserved for finding the steady state.
+
+For time-accurate splitting, the ordering and update frequency create temporal
+error and must be checked by timestep refinement; Strang splitting may be useful
+when individual subsolvers permit it. For a steady solve, update scheduling affects
+efficiency and globalization but not the desired fixed point, provided every block
+is ultimately converged against the latest values of all the others.
+
 ## Extension to moist atmospheres
 
 Nothing in the toy yet establishes a self-consistent moist lapse rate. The dry
@@ -970,6 +1155,14 @@ conservation must be coupled to the temperature equations.
    hybrid path only as a finite-rate comparison.
 10. Design and unit-test a conservative moist block adjustment before coupling it
     to explicit, constrained-implicit, or projected-PTC evolution.
+11. Add equilibrium chemistry inside complete projected residual evaluations while
+    initially freezing its composition and opacity response in approximate
+    Jacobians.
+12. Couple expensive steady photochemistry through an inexact, warm-started outer
+    block iteration and test safeguarded relaxation and Anderson acceleration.
+13. Introduce clouds first through a safeguarded outer continuation; move a cloud
+    closure inside the complete residual only after its uniqueness, continuity,
+    conservation, and cost are understood.
 
 ## Present conclusion
 
@@ -994,6 +1187,15 @@ must still be tested against the existing active-set Newton solver under realist
 opacity, composition, and convective-zone changes. Metric preconditioning should
 remain a second-stage optimization unless real RT demonstrates that scalar scaling
 is a persistent limitation.
+
+For coupled steady problems, the same reduced-space principle should be used where
+it is economical. Fast equilibrium chemistry and simple diagnostic clouds can be
+eliminated inside complete climate residual evaluations while remaining frozen in
+approximate Jacobians. Expensive steady photochemistry and complex cloud closures
+should begin as inexact, warm-started outer blocks, with all component residuals
+and shared opacities checked together at final convergence. This retains the
+steady-state efficiency of projected PTC without multiplying every radiative
+Jacobian call by another expensive nonlinear solve.
 
 For time-accurate evolution, explicit radiation followed by PAVA is the current
 recommendation. In the fixed-time benchmark it reached essentially the same
