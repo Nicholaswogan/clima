@@ -1,22 +1,26 @@
 # Dry radiative-convective equilibrium: smooth fluxes and convective adjustment
 
 This note accompanies [`smooth_rce_toy.py`](smooth_rce_toy.py). The script is a
-self-contained experiment for comparing three ways to calculate a dry,
+self-contained experiment for comparing four ways to calculate a dry,
 one-dimensional radiative-convective equilibrium (RCE):
 
 1. a smooth, finite-rate convective flux with automatic continuation in its
    strength;
 2. conventional energy-conserving convective adjustment after explicit radiative
    steps; and
-3. the same exact adjustment written as a projected steady residual and solved
+3. exact adjustment coupled to radiation in a constrained backward-Euler
+   timestep; and
+4. the same exact adjustment written as a projected steady residual and solved
    with pseudo-transient continuation (PTC).
 
-The main result is encouraging: all three formulations approach the same dry RCE.
+The main result is encouraging: all four formulations approach the same dry RCE.
 Exact explicit adjustment is simple and reliable when its timestep is stable, but
-it needs many radiative-transfer (RT) evaluations. Projected PTC reaches the same
-solution with far fewer RT evaluations, at the cost of a piecewise-smooth nonlinear
-solve. The smooth-flux formulation is also robust, but only approaches an exact
-adiabat as its convective diffusivity tends to infinity.
+it needs many radiative-transfer (RT) evaluations. Constrained backward Euler
+removes that explicit stability limit and supplies a time-accurate implicit path,
+but requires a nonsmooth solve at every timestep. Projected PTC reaches the same
+steady solution with far fewer RT evaluations. The smooth-flux formulation is also
+robust, but only approaches an exact adiabat as its convective diffusivity tends to
+infinity.
 
 The toy deliberately excludes chemistry, condensation, latent heating, clouds,
 scattering, and temperature-dependent opacity. It tests numerical formulations,
@@ -30,11 +34,12 @@ The default remains the smooth hybrid-continuation calculation:
 python smooth_rce_toy.py
 ```
 
-The two exact-adjustment calculations are
+The three exact-adjustment calculations are
 
 ```bash
 python smooth_rce_toy.py --continuation-mode projected
 python smooth_rce_toy.py --continuation-mode projected-explicit
+python smooth_rce_toy.py --continuation-mode projected-implicit
 ```
 
 For terminal-only runs, add `--no-plot`. The available modes are:
@@ -45,6 +50,7 @@ For terminal-only runs, add `--no-plot`. The available modes are:
 | `coupled` | Smooth finite-$K$ flux | Increase $K$ during one PTC solve |
 | `hybrid` | Smooth finite-$K$ flux | Guard transient lapse rates and increase $K$ near equilibrium |
 | `projected-explicit` | Exact dry adjustment | Forward-Euler radiation, then adjustment |
+| `projected-implicit` | Exact dry adjustment | Constrained backward Euler with step doubling |
 | `projected` | Exact dry adjustment | PTC on a projected natural residual |
 
 Important controls are:
@@ -58,6 +64,11 @@ Important controls are:
 --projection-time ALPHA
 --explicit-dt-max DTMAX
 --explicit-max-temperature-step DTEMP
+--implicit-dt-initial DT
+--implicit-dt-max DTMAX
+--implicit-temperature-tolerance DTEMP
+--implicit-flux-tolerance DFLUX
+--implicit-max-steps NSTEPS
 ```
 
 `--k-conv` remains an alias for `--k-conv-initial`.
@@ -379,6 +390,55 @@ timestep can oscillate indefinitely even while remaining bounded, and a very slo
 optically thin or ocean mode can require many RT calls after the bulk profile looks
 converged.
 
+## Constrained backward Euler
+
+The implicit exact-adjustment timestep is
+
+$$
+\mathbf T^{n+1}
+=P\!\left[\mathbf T^n+\Delta t\,
+\mathbf f_{\mathrm{rad}}(\mathbf T^{n+1})\right].
+$$
+
+It is computed by solving the nonsmooth residual
+
+$$
+\mathbf H(\mathbf Y)
+=\mathbf Y-P\!\left[\mathbf T^n+\Delta t\,
+\mathbf f_{\mathrm{rad}}(\mathbf Y)\right]=0.
+$$
+
+This is fundamentally different from applying PAVA after an arbitrary implicit
+radiative or Newton correction: the radiation operator is evaluated at the new
+constrained state inside the equation defining the timestep. The surface is
+implicit but unprojected. The atmospheric PAVA step conserves the energy of the
+implicit radiative trial state.
+
+The toy solves $\mathbf H=0$ with damped Newton iterations and a one-sided
+finite-difference Jacobian through both RT and PAVA. The projection is piecewise
+linear, so active-set changes make the residual semismooth. Invalid trials or a
+failed nonlinear solve reject the physical timestep.
+
+Time adaptivity uses one full step and two half steps. Their maximum temperature
+difference estimates the local error; the two-half-step solution is accepted when
+
+$$
+\left\|\mathbf T_{\Delta t}
+-\mathbf T_{\Delta t/2,\Delta t/2}\right\|_\infty
+\le \epsilon_T.
+$$
+
+This costs three nonlinear solves per attempted macro-step, but cleanly separates
+temporal accuracy from nonlinear convergence. Small-step tests show that the
+backward-Euler versus forward-Euler difference grows by approximately a factor of
+four when $\Delta t$ doubles, as expected for the $O(\Delta t^2)$ local difference
+between two first-order methods.
+
+The method is time-accurate for the ideal instantaneous-adjustment evolution
+defined by this weighted projection. That does not make the transient a unique
+model of real three-dimensional convection; the projection and its weighting are
+part of the physical idealization.
+
 ## PTC on the projected natural residual
 
 Define the projected map for any positive scaling time $\alpha$:
@@ -468,21 +528,40 @@ adjustment:
 The escalating $K$ and solve cost illustrate why an exact constraint becomes
 attractive when a nearly neutral profile is required.
 
-### Explicit adjustment versus projected PTC
+### Exact-adjustment methods
 
-Both exact methods converge to the same surface temperature and their full
-temperature profiles agree within $4.5\times10^{-5}$ K under the current stopping
-criteria.
+The explicit and projected-PTC methods converge to the same surface temperature,
+and their full temperature profiles agree within $4.5\times10^{-5}$ K under their
+current stopping criteria. Constrained backward Euler agrees in the dynamically
+important lower column but, with its looser default physical-integration stopping
+tolerance, stops earlier along the slow optically thin upper-atmosphere mode.
 
 | Method | Accepted steps | Full RT evaluations | Jacobian evaluations | Surface temperature [K] |
 |---|---:|---:|---:|---:|
 | Explicit adjustment, $\Delta t_{\max}=10^6$ s | 23,971 | 23,972 | 0 | 337.361368 |
+| Constrained backward Euler, $\epsilon_T=0.02$ K | 548 | 111,705 | 2,598 | 337.361368 |
 | Projected PTC | 31 | 1,335 | 31 | 337.361368 |
 
 The PTC count includes every RT call used by its one-sided finite-difference
 Jacobians and candidate residuals. Despite rebuilding a dense Jacobian at every
 accepted step, it uses about 18 times fewer full RT evaluations than the
 conservative explicit configuration.
+
+The constrained backward-Euler run conserves each PAVA projection to about
+$8\times10^{-16}$ relative error and remains stable while its physical timestep
+grows far beyond the explicit stability boundary. It is nevertheless the most
+expensive calculation here because step doubling requires three nonlinear solves
+per attempted macro-step and every finite-difference Newton Jacobian uses a full
+set of RT calls. Jacobian reuse or an analytical PAVA derivative would reduce this
+cost substantially.
+
+Its default $10^{-5}$ W m$^{-2}$ stopping tolerance leaves the very optically thin
+top cell about 0.7 K from the more tightly converged PTC profile, even though the
+surface, convective region, TOA balance, and surface temperature agree. Tightening
+`--implicit-flux-tolerance` continues the physical integration toward the same
+upper-atmosphere solution, but exposes the genuinely long radiative timescale.
+This is an important distinction: an implicit time integrator removes stability
+limits but does not remove slow physical modes when time accuracy is retained.
 
 The explicit timestep is consequential:
 
@@ -526,23 +605,28 @@ convergence.
    leaves finite superadiabaticity.
 3. Standard dry convective adjustment can be formalized as a conservative weighted
    projection rather than an ad hoc profile correction.
-4. Explicit radiation followed by adjustment and projected PTC solve the same dry
-   constrained equilibrium when both are converged tightly.
+4. Explicit adjustment, constrained backward Euler, and projected PTC approach the
+   same dry constrained equilibrium when converged tightly.
 5. Explicit adjustment is an excellent correctness baseline but can be limited by
    stability and slow thermal modes.
-6. PTC on the projected residual is substantially more RT-efficient in this toy.
-7. An implicit radiative correction followed by projection is not equivalent to
+6. Constrained backward Euler removes the explicit stability restriction while
+   preserving a first-order physical-time trajectory, but does not accelerate
+   genuinely slow radiative modes.
+7. PTC on the projected residual is substantially more RT-efficient for steady
+   RCE in this toy.
+8. An implicit radiative correction followed by projection is not equivalent to
    solving the projected steady problem.
-8. Neither the smooth nor exact dry formulation in this script yet solves moist
+9. Neither the smooth nor exact dry formulation in this script yet solves moist
    convection.
 
 ## Moving to production radiative transfer
 
 The most useful next experiment is a dry, fixed-composition implementation using
-the production RT operator. Both exact methods should initially be retained:
-explicit adjustment as the reference trajectory and projected PTC as the candidate
-fast steady solver. The smooth hybrid method remains useful when a differentiable
-finite-rate convective closure is desired.
+the production RT operator. The exact methods have complementary roles: explicit
+adjustment is the simplest reference trajectory, constrained backward Euler is the
+robust time-accurate integrator, and projected PTC is the candidate fast steady
+solver. The smooth hybrid method remains useful when a differentiable finite-rate
+convective closure is desired.
 
 ### Always converge the full physical residual
 
@@ -639,9 +723,11 @@ G(\mathbf x)
 =\frac{P_{\mathrm{moist}}[\mathbf x+\alpha f(\mathbf x)]-\mathbf x}{\alpha}
 $$
 
-remain available. The state $\mathbf x$ would likely include composition or total
-water as well as temperature. Whether projected PTC remains efficient will depend
-on the smoothness and cost of that moist block solve.
+remain available, as does constrained backward Euler with the same moist
+projection inside each implicit timestep. The state $\mathbf x$ would likely
+include composition or total water as well as temperature. Whether either implicit
+method remains efficient will depend on the uniqueness, smoothness, and cost of
+that moist block solve.
 
 The smooth-flux route can also use a state-dependent critical moist gradient, but
 latent heating cannot be represented consistently by changing the lapse-rate
@@ -656,18 +742,20 @@ conservation must be coupled to the temperature equations.
    conservation independently of RT.
 3. Run conservative explicit adjustment over a timestep sweep; use it as the
    reference dry RCE.
-4. Implement projected PTC with a complete finite-difference Jacobian and verify
+4. Implement constrained backward Euler, verify first-order timestep convergence,
+   and compare its trajectory with the explicit reference.
+5. Implement projected PTC with a complete finite-difference Jacobian and verify
    agreement with explicit adjustment.
-5. Substitute frozen-opacity `radiate` derivatives and confirm that converged full
+6. Substitute frozen-opacity `radiate` derivatives and confirm that converged full
    residuals and profiles are unchanged.
-6. Add Jacobian lagging, refresh logic, and active-set-aware globalization; compare
+7. Add Jacobian lagging, refresh logic, and active-set-aware globalization; compare
    work in full opacity updates, fast `radiate` calls, and factorizations.
-7. Repeat over vertical resolution, initial profiles, optical depths, stellar flux,
+8. Repeat over vertical resolution, initial profiles, optical depths, stellar flux,
    and surface heat capacity.
-8. Retain the smooth hybrid path for comparison and verify its convergence toward
+9. Retain the smooth hybrid path for comparison and verify its convergence toward
    exact adjustment as its lapse tolerance is tightened.
-9. Design and unit-test a conservative moist block adjustment before coupling it to
-   projected PTC.
+10. Design and unit-test a conservative moist block adjustment before coupling it
+    to the implicit and projected-PTC methods.
 
 ## Present conclusion
 
@@ -678,12 +766,14 @@ unrestricted radiative superadiabaticity.
 
 For exact dry convective neutrality, weighted PAVA is cleaner: it removes
 $K_{\mathrm{conv}}$, conserves energy to roundoff, and exposes the problem as a
-well-defined projection/complementarity system. Explicit adjustment is the best
-reference implementation. PTC on the projected residual is the most promising fast
-steady solver tested so far, with roughly an 18-fold reduction in full RT calls in
-the default toy despite rebuilding every finite-difference Jacobian.
+well-defined projection/complementarity system. Explicit adjustment is the
+simplest reference implementation, constrained backward Euler is the strongest
+time-accurate formulation tested, and PTC on the projected residual is the most
+promising fast steady solver. The latter used roughly 18 times fewer RT calls than
+the conservative explicit run despite rebuilding every finite-difference Jacobian.
 
-The next justified step is therefore a dry production-RT comparison of explicit
-adjustment and projected PTC. Moist convection should follow only after the moist
-conservation and phase-equilibrium problem has been specified as carefully as the
-dry projection used here.
+The next justified step is therefore a dry production-RT comparison of all three
+exact formulations, with constrained backward Euler used selectively when a
+physical-time trajectory matters. Moist convection should follow only after the
+moist conservation and phase-equilibrium problem has been specified as carefully
+as the dry projection used here.

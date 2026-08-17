@@ -14,7 +14,7 @@ on a pressure-coordinate finite-volume grid. The model contains:
 * automatic continuation in convective diffusivity until a requested lapse-rate
   tolerance is reached; and
 * an alternative exact, energy-conserving dry convective adjustment, evolved
-  either explicitly after each radiative step or as a projected residual with
+  explicitly, with constrained backward Euler, or as a projected residual with
   PTC.
 
 It intentionally has no chemistry, condensation, clouds, or mixing-length theory.
@@ -491,6 +491,10 @@ class ProjectedSolveResult:
     max_projection_energy_error: float
     max_projection_relative_energy_error: float
     radiative_evaluations: int = 0
+    nonlinear_iterations: int = 0
+    simulated_time: float = 0.0
+    final_timestep: float = 0.0
+    max_estimated_local_error: float = 0.0
 
 
 def solve_ptc(
@@ -784,6 +788,426 @@ def solve_projected_explicit(
         max_energy_error,
         max_relative_energy_error,
         radiative_evaluations,
+    )
+
+
+@dataclass
+class _ImplicitStepResult:
+    """Internal result from one constrained backward-Euler solve."""
+
+    state: np.ndarray
+    mixed_blocks: list[tuple[int, int]]
+    converged: bool
+    nonlinear_iterations: int
+    jacobian_evaluations: int
+    radiative_evaluations: int
+    projection_evaluations: int
+    max_projection_energy_error: float
+
+
+def _constrained_backward_euler_residual(
+    model: Model,
+    old_state: np.ndarray,
+    new_state: np.ndarray,
+    dt: float,
+) -> tuple[np.ndarray, list[tuple[int, int]], float]:
+    """Residual of one exact-adjustment backward-Euler timestep.
+
+    The root satisfies
+
+        T_new = P[T_old + dt f_rad(T_new)],
+
+    where P acts on atmospheric temperatures and leaves the surface unchanged.
+    Radiation is evaluated at the new state, while the dry adjustment exactly
+    conserves the atmospheric energy of the implicit radiative trial state.
+    """
+
+    if dt <= 0.0:
+        raise ValueError("dt must be positive")
+    radiative = evaluate(model, new_state, 0.0)
+    trial = old_state + dt * radiative["tendency"]
+    if np.any(~np.isfinite(trial)) or np.any(trial <= 0.0):
+        raise ValueError("Implicit radiative trial state is invalid")
+
+    adjusted, mixed_blocks, energy_error = dry_convective_projection(
+        model, trial[:-1]
+    )
+    mapped = trial.copy()
+    mapped[:-1] = adjusted
+    return new_state - mapped, mixed_blocks, energy_error
+
+
+def _solve_constrained_backward_euler_step(
+    model: Model,
+    old_state: np.ndarray,
+    dt: float,
+    *,
+    initial_guess: np.ndarray | None = None,
+    nonlinear_tolerance: float = 1.0e-8,
+    max_iterations: int = 18,
+) -> _ImplicitStepResult:
+    """Solve one nonsmooth constrained backward-Euler step with damped Newton."""
+
+    n = old_state.size
+    if initial_guess is None:
+        new_state = old_state.copy()
+    else:
+        new_state = np.asarray(initial_guess, dtype=float).copy()
+    if new_state.shape != old_state.shape:
+        raise ValueError("Initial guess has the wrong shape")
+
+    radiative_evaluations = 0
+    projection_evaluations = 0
+    jacobian_evaluations = 0
+    max_energy_error = 0.0
+    mixed_blocks: list[tuple[int, int]] = []
+
+    def residual_at(
+        state: np.ndarray,
+    ) -> tuple[np.ndarray, list[tuple[int, int]], float] | None:
+        nonlocal radiative_evaluations, projection_evaluations, max_energy_error
+        if (
+            np.any(~np.isfinite(state))
+            or np.min(state) < 50.0
+            or np.max(state) > 1000.0
+        ):
+            return None
+        try:
+            residual, blocks, energy_error = (
+                _constrained_backward_euler_residual(
+                    model, old_state, state, dt
+                )
+            )
+        except ValueError:
+            # Radiation was evaluated before the radiative trial was rejected.
+            radiative_evaluations += 1
+            return None
+        radiative_evaluations += 1
+        projection_evaluations += 1
+        max_energy_error = max(max_energy_error, energy_error)
+        return residual, blocks, energy_error
+
+    base = residual_at(new_state)
+    if base is None:
+        return _ImplicitStepResult(
+            new_state,
+            mixed_blocks,
+            False,
+            0,
+            0,
+            radiative_evaluations,
+            projection_evaluations,
+            max_energy_error,
+        )
+    residual, mixed_blocks, _ = base
+
+    for iteration in range(max_iterations + 1):
+        residual_norm = float(np.max(np.abs(residual)))
+        if residual_norm <= nonlinear_tolerance:
+            return _ImplicitStepResult(
+                new_state,
+                mixed_blocks,
+                True,
+                iteration,
+                jacobian_evaluations,
+                radiative_evaluations,
+                projection_evaluations,
+                max_energy_error,
+            )
+        if iteration == max_iterations:
+            break
+
+        jacobian = np.empty((n, n))
+        jacobian_ok = True
+        for j in range(n):
+            difference_step = max(1.0e-3, 1.0e-5 * abs(new_state[j]))
+            perturbed = new_state.copy()
+            perturbed[j] += difference_step
+            perturbed_result = residual_at(perturbed)
+            if perturbed_result is None:
+                perturbed[j] = new_state[j] - difference_step
+                perturbed_result = residual_at(perturbed)
+                if perturbed_result is None:
+                    jacobian_ok = False
+                    break
+                jacobian[:, j] = (
+                    residual - perturbed_result[0]
+                ) / difference_step
+            else:
+                jacobian[:, j] = (
+                    perturbed_result[0] - residual
+                ) / difference_step
+        jacobian_evaluations += 1
+        if not jacobian_ok:
+            break
+
+        try:
+            correction = np.linalg.solve(jacobian, -residual)
+        except np.linalg.LinAlgError:
+            break
+
+        accepted = False
+        damping = 1.0
+        for _ in range(16):
+            candidate = new_state + damping * correction
+            candidate_result = residual_at(candidate)
+            if candidate_result is not None:
+                candidate_residual, candidate_blocks, _ = candidate_result
+                candidate_norm = float(
+                    np.max(np.abs(candidate_residual))
+                )
+                # A weak Armijo condition works across PAVA active-set changes.
+                if candidate_norm < (1.0 - 1.0e-4 * damping) * residual_norm:
+                    new_state = candidate
+                    residual = candidate_residual
+                    mixed_blocks = candidate_blocks
+                    accepted = True
+                    break
+            damping *= 0.5
+        if not accepted:
+            break
+
+    return _ImplicitStepResult(
+        new_state,
+        mixed_blocks,
+        False,
+        min(iteration + 1, max_iterations),
+        jacobian_evaluations,
+        radiative_evaluations,
+        projection_evaluations,
+        max_energy_error,
+    )
+
+
+def solve_projected_implicit(
+    model: Model,
+    initial_temperature: np.ndarray,
+    *,
+    flux_tolerance: float = 1.0e-5,
+    tendency_tolerance: float = 1.0e-13,
+    max_steps: int = 1000,
+    dt_initial: float = 100.0,
+    dt_max: float = 1.0e12,
+    temperature_tolerance: float = 2.0e-2,
+    nonlinear_tolerance: float = 1.0e-8,
+    verbose: bool = True,
+) -> ProjectedSolveResult:
+    """Integrate exact dry adjustment with constrained backward Euler.
+
+    A full step and two half steps estimate the local temporal error. The two
+    half-step solution is accepted, providing a conservative, feasible physical
+    trajectory and separating timestep accuracy from nonlinear convergence.
+    """
+
+    if temperature_tolerance <= 0.0:
+        raise ValueError("temperature_tolerance must be positive")
+    if flux_tolerance <= 0.0:
+        raise ValueError("flux_tolerance must be positive")
+    if tendency_tolerance <= 0.0:
+        raise ValueError("tendency_tolerance must be positive")
+    if nonlinear_tolerance <= 0.0:
+        raise ValueError("nonlinear_tolerance must be positive")
+    if max_steps < 1:
+        raise ValueError("max_steps must be positive")
+    if not 0.0 < dt_initial <= dt_max:
+        raise ValueError("Require 0 < dt_initial <= dt_max")
+
+    state = np.asarray(initial_temperature, dtype=float).copy()
+    if state.shape != (model.nlev + 1,):
+        raise ValueError(f"Expected temperature shape {(model.nlev + 1,)}")
+
+    adjusted, mixed_blocks, initial_energy_error = dry_convective_projection(
+        model, state[:-1]
+    )
+    state[:-1] = adjusted
+    diagnostics = evaluate_projected_state(model, state, mixed_blocks)
+    radiative_evaluations = 1
+    projection_evaluations = 1
+    jacobian_evaluations = 0
+    nonlinear_iterations = 0
+    rejected = 0
+    max_energy_error = initial_energy_error
+    max_relative_energy_error = 0.0
+    max_estimated_error = 0.0
+    last_estimated_error = 0.0
+    simulated_time = 0.0
+    dt = dt_initial
+    last_rate = np.inf
+
+    if verbose:
+        print(
+            f"{'step':>6s} {'time [s]':>12s} {'dt [s]':>12s} "
+            f"{'mixed blocks':>13s} {'error [K]':>12s} "
+            f"{'max |dF| [W/m2]':>18s}"
+        )
+
+    for step_number in range(max_steps + 1):
+        max_flux_error = float(np.max(np.abs(diagnostics["imbalance"])))
+        if verbose and (step_number < 8 or step_number % 10 == 0):
+            print(
+                f"{step_number:6d} {simulated_time:12.4e} {dt:12.4e} "
+                f"{len(mixed_blocks):13d} {last_estimated_error:12.4e} "
+                f"{max_flux_error:18.6e}"
+            )
+
+        # A flux tolerance implies a looser tendency tolerance in layers with
+        # small heat capacity. Do not demand a temporal stopping criterion that
+        # is inconsistent with the requested finite-volume flux balance.
+        effective_tendency_tolerance = max(
+            tendency_tolerance,
+            flux_tolerance / float(np.min(model.heat_capacity)),
+        )
+        if (
+            max_flux_error < flux_tolerance
+            and last_rate < effective_tendency_tolerance
+        ):
+            if verbose:
+                print(
+                    f"Converged in {step_number} constrained backward-Euler "
+                    f"steps ({rejected} rejected)."
+                )
+            result = PTCResult(
+                state,
+                diagnostics,
+                step_number,
+                jacobian_evaluations,
+                rejected,
+                True,
+            )
+            return ProjectedSolveResult(
+                result,
+                projection_evaluations,
+                max_energy_error,
+                max_relative_energy_error,
+                radiative_evaluations,
+                nonlinear_iterations,
+                simulated_time,
+                dt,
+                max_estimated_error,
+            )
+        if step_number == max_steps:
+            break
+
+        accepted = False
+        for _ in range(20):
+            full = _solve_constrained_backward_euler_step(
+                model,
+                state,
+                dt,
+                initial_guess=state,
+                nonlinear_tolerance=nonlinear_tolerance,
+            )
+            half_1 = _solve_constrained_backward_euler_step(
+                model,
+                state,
+                0.5 * dt,
+                initial_guess=state,
+                nonlinear_tolerance=nonlinear_tolerance,
+            )
+            for solve in (full, half_1):
+                radiative_evaluations += solve.radiative_evaluations
+                projection_evaluations += solve.projection_evaluations
+                jacobian_evaluations += solve.jacobian_evaluations
+                nonlinear_iterations += solve.nonlinear_iterations
+                max_energy_error = max(
+                    max_energy_error, solve.max_projection_energy_error
+                )
+            if not full.converged or not half_1.converged:
+                dt *= 0.25
+                rejected += 1
+                continue
+
+            half_2 = _solve_constrained_backward_euler_step(
+                model,
+                half_1.state,
+                0.5 * dt,
+                initial_guess=full.state,
+                nonlinear_tolerance=nonlinear_tolerance,
+            )
+            radiative_evaluations += half_2.radiative_evaluations
+            projection_evaluations += half_2.projection_evaluations
+            jacobian_evaluations += half_2.jacobian_evaluations
+            nonlinear_iterations += half_2.nonlinear_iterations
+            max_energy_error = max(
+                max_energy_error, half_2.max_projection_energy_error
+            )
+            if not half_2.converged:
+                dt *= 0.25
+                rejected += 1
+                continue
+
+            estimated_error = float(
+                np.max(np.abs(half_2.state - full.state))
+            )
+            if estimated_error > temperature_tolerance:
+                factor = max(
+                    0.1,
+                    0.9 * np.sqrt(temperature_tolerance / estimated_error),
+                )
+                dt *= factor
+                rejected += 1
+                continue
+            accepted = True
+            break
+
+        if not accepted:
+            raise RuntimeError(
+                "Constrained backward Euler failed to find an acceptable step"
+            )
+
+        old_state = state
+        state = half_2.state
+        mixed_blocks = half_2.mixed_blocks
+        diagnostics = evaluate_projected_state(model, state, mixed_blocks)
+        radiative_evaluations += 1
+        simulated_time += dt
+        last_rate = float(np.max(np.abs(state - old_state))) / dt
+        last_estimated_error = estimated_error
+        max_estimated_error = max(max_estimated_error, estimated_error)
+
+        column_energy = abs(
+            float(np.dot(model.atmospheric_heat_capacity, state[:-1]))
+        )
+        max_relative_energy_error = max(
+            max_relative_energy_error,
+            max_energy_error / max(column_energy, np.finfo(float).tiny),
+        )
+
+        if estimated_error > 0.0:
+            factor = float(
+                np.clip(
+                    0.9 * np.sqrt(temperature_tolerance / estimated_error),
+                    0.5,
+                    2.0,
+                )
+            )
+        else:
+            factor = 2.0
+        dt = min(dt_max, dt * factor)
+
+    if verbose:
+        print(
+            f"Constrained backward Euler did not converge in {max_steps} "
+            f"steps; max flux imbalance is {np.max(np.abs(diagnostics['imbalance'])):.6e} W/m2."
+        )
+    result = PTCResult(
+        state,
+        diagnostics,
+        max_steps,
+        jacobian_evaluations,
+        rejected,
+        False,
+    )
+    return ProjectedSolveResult(
+        result,
+        projection_evaluations,
+        max_energy_error,
+        max_relative_energy_error,
+        radiative_evaluations,
+        nonlinear_iterations,
+        simulated_time,
+        dt,
+        max_estimated_error,
     )
 
 
@@ -1736,6 +2160,23 @@ def print_projected_summary(
         "  max relative energy error:  "
         f"{projected.max_projection_relative_energy_error:.6e}"
     )
+    if projected.nonlinear_iterations > 0:
+        print(
+            "  nonlinear iterations:      "
+            f"{projected.nonlinear_iterations}"
+        )
+        print(
+            "  simulated physical time:   "
+            f"{projected.simulated_time:.6e} s"
+        )
+        print(
+            "  final physical timestep:   "
+            f"{projected.final_timestep:.6e} s"
+        )
+        print(
+            "  max estimated local error: "
+            f"{projected.max_estimated_local_error:.6e} K"
+        )
 
 
 def make_plot(
@@ -1909,11 +2350,13 @@ def parse_args() -> argparse.Namespace:
             "hybrid",
             "projected",
             "projected-explicit",
+            "projected-implicit",
         ),
         default="hybrid",
         help=(
             "choose staged, coupled, or hybrid smooth-K continuation, or exact "
-            "dry adjustment via projected PTC or explicit integration "
+            "dry adjustment via projected PTC, explicit integration, or "
+            "constrained backward Euler "
             "(default: hybrid)"
         ),
     )
@@ -1942,6 +2385,51 @@ def parse_args() -> argparse.Namespace:
         help=(
             "maximum adjusted temperature change per explicit step, in K "
             "(default: 1)"
+        ),
+    )
+    parser.add_argument(
+        "--implicit-dt-initial",
+        type=float,
+        default=100.0,
+        help=(
+            "initial physical timestep for constrained backward Euler, in "
+            "seconds (default: 100)"
+        ),
+    )
+    parser.add_argument(
+        "--implicit-dt-max",
+        type=float,
+        default=1.0e12,
+        help=(
+            "maximum physical timestep for constrained backward Euler, in "
+            "seconds (default: 1e12)"
+        ),
+    )
+    parser.add_argument(
+        "--implicit-temperature-tolerance",
+        type=float,
+        default=2.0e-2,
+        help=(
+            "step-doubling local temperature error tolerance for constrained "
+            "backward Euler, in K (default: 2e-2)"
+        ),
+    )
+    parser.add_argument(
+        "--implicit-flux-tolerance",
+        type=float,
+        default=1.0e-5,
+        help=(
+            "steady maximum flux-imbalance tolerance for constrained backward "
+            "Euler, in W/m2 (default: 1e-5)"
+        ),
+    )
+    parser.add_argument(
+        "--implicit-max-steps",
+        type=int,
+        default=1000,
+        help=(
+            "maximum accepted constrained backward-Euler steps "
+            "(default: 1000)"
         ),
     )
     parser.add_argument(
@@ -1987,6 +2475,28 @@ def main() -> int:
         print_summary(
             model,
             "Explicit adjusted radiative-convective equilibrium",
+            convective_result,
+        )
+    elif args.continuation_mode == "projected-implicit":
+        print(
+            "\nSolving radiative-convective evolution with constrained "
+            "backward Euler..."
+        )
+        projected_result = solve_projected_implicit(
+            model,
+            initial,
+            flux_tolerance=args.implicit_flux_tolerance,
+            max_steps=args.implicit_max_steps,
+            dt_initial=args.implicit_dt_initial,
+            dt_max=args.implicit_dt_max,
+            temperature_tolerance=args.implicit_temperature_tolerance,
+            verbose=not args.quiet,
+        )
+        convective_result = projected_result.result
+        print_projected_summary(projected_result, "constrained backward Euler")
+        print_summary(
+            model,
+            "Implicit adjusted radiative-convective equilibrium",
             convective_result,
         )
     elif args.continuation_mode == "projected":
@@ -2096,7 +2606,7 @@ def main() -> int:
             (
                 "projected RCE"
                 if args.continuation_mode
-                in ("projected", "projected-explicit")
+                in ("projected", "projected-explicit", "projected-implicit")
                 else "smooth RCE"
             ),
             args.output,
