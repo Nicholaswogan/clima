@@ -13,22 +13,52 @@ one-dimensional radiative-convective equilibrium (RCE):
 4. the same exact adjustment written as a projected steady residual and solved
    with pseudo-transient continuation (PTC).
 
-The main result is encouraging: all four formulations approach the same dry RCE.
-Exact explicit adjustment is simple and reliable when its timestep is stable, but
-it needs many radiative-transfer (RT) evaluations. Constrained backward Euler
-removes that explicit stability limit and supplies a time-accurate implicit path,
-but requires a nonsmooth solve at every timestep. Projected PTC reaches the same
-steady solution with far fewer RT evaluations. The smooth-flux formulation is also
-robust, but only approaches an exact adiabat as its convective diffusivity tends to
-infinity.
+All four formulations approach the same dry RCE, but they are no longer equally
+attractive. If convection is intended to be instantaneous, weighted PAVA is
+cleaner than a smooth finite-$K$ flux: it has no convective-strength parameter,
+conserves thermal energy to roundoff, and enforces dry stability exactly. The
+smooth flux remains useful only when a genuinely finite-rate, differentiable
+convective closure is desired.
+
+Projected PTC is the leading steady-state method from these experiments. It solves
+the exact adjustment fixed point without physically waiting for slow radiative or
+ocean modes, and it used far fewer full radiative-transfer (RT) evaluations than
+explicit relaxation. It is a leading candidate rather than a universal winner:
+real opacity feedbacks, difficult active-set changes, moist adjustment, and
+production-scale Jacobian approximations still need to be tested.
+
+For time-accurate evolution, the recommendation is conditional. Explicit
+radiative stepping followed by PAVA decisively wins the present toy benchmark
+because its stable timestep is already comparable to the timestep required for
+accuracy. Constrained backward Euler is mathematically sound but currently much
+more expensive. Higher order, analytical projection derivatives, and Jacobian
+reuse could narrow that gap substantially, and implicit integration may become
+preferable in atmospheres where fast radiative modes make explicit stability much
+more restrictive than physical accuracy.
 
 The toy deliberately excludes chemistry, condensation, latent heating, clouds,
 scattering, and temperature-dependent opacity. It tests numerical formulations,
 not a complete habitable-planet climate model.
 
+## Current method recommendations
+
+| Objective | Preferred method | Current interpretation |
+|---|---|---|
+| Dry steady RCE | Projected PTC on the PAVA natural residual | Best steady solver tested; bypasses slow physical relaxation |
+| Time-accurate evolution without strong stability restrictions | Explicit radiation followed by PAVA | Simplest method and clear winner in the fixed-time toy benchmark |
+| Time-accurate evolution with strong radiative stiffness | Constrained implicit adjustment, after optimization | Promising for extreme problems, but not yet competitive in this implementation |
+| A deliberately finite-rate differentiable convection model | Smooth finite-$K$ flux | Valid closure, but $K$ is physical/modeling input rather than a route to exact adjustment |
+
+Weighted PAVA is the preferred dry instantaneous-convection operator in the first
+three rows. The numerical method used to couple it to radiation should be selected
+according to whether the objective is a steady root or a time-resolved trajectory.
+None of these dry results establishes a complete moist-adjustment method.
+
 ## Running the experiment
 
-The default remains the smooth hybrid-continuation calculation:
+For continuity with the original experiment, the script default remains the
+smooth hybrid-continuation calculation; this is not the current recommendation
+for exact dry convective neutrality:
 
 ```bash
 python smooth_rce_toy.py
@@ -673,11 +703,41 @@ convergence.
 ## Moving to production radiative transfer
 
 The most useful next experiment is a dry, fixed-composition implementation using
-the production RT operator. The exact methods have complementary roles: explicit
-adjustment is the simplest reference trajectory, constrained backward Euler is the
-robust time-accurate integrator, and projected PTC is the candidate fast steady
-solver. The smooth hybrid method remains useful when a differentiable finite-rate
-convective closure is desired.
+the production RT operator. Projected PTC should be treated as the leading steady
+solver, while explicit adjustment should be retained as both the reference
+trajectory and the initial time-accurate implementation. Constrained implicit
+integration should be pursued when a fixed-time benchmark demonstrates that the
+explicit stability limit is substantially smaller than the timestep required for
+accuracy. The smooth hybrid method remains useful only when a finite-rate
+differentiable convective closure is itself desired.
+
+### When implicit time integration may become preferable
+
+The gray toy does not exhibit a large separation between its explicit stability
+limit and its accuracy-limited timestep. That result should not be generalized to
+all one-dimensional atmospheres. A dry gas giant spanning roughly $10^{-6}$ to
+$10^3$ bar, for example, combines nine orders of magnitude in pressure with
+temperatures ranging from a few hundred kelvin aloft to perhaps 2000 K at depth.
+
+On a logarithmic pressure grid, layer heat capacity scales approximately as
+
+$$
+C_i=\frac{c_p\Delta p_i}{g}\propto p_i,
+$$
+
+while local thermal-emission derivatives scale as $4\sigma T^3$. Optical depth,
+radiative diffusion, weakly coupled upper layers, and a massive deep convective
+reservoir can broaden the timescale spectrum further. Exact PAVA adjustment removes
+the artificial finite-$K$ convective timescale, but it does not remove this
+radiative separation.
+
+Such a problem may have an explicit timestep fixed by fast upper or photospheric
+modes while the scientifically relevant deep evolution occurs over years or
+longer. An optimized BDF2 or TR-BDF2 constrained method could then be strongly
+favored. Pressure range alone does not prove stiffness, because very optically thin
+layers may also be weakly coupled. The decision should be based on the same
+fixed-end-time accuracy-versus-work benchmark used here, supplemented by the
+spectrum or conditioning of the projected radiative Jacobian.
 
 ### Always converge the full physical residual
 
@@ -793,38 +853,72 @@ conservation must be coupled to the temperature equations.
    conservation independently of RT.
 3. Run conservative explicit adjustment over a timestep sweep; use it as the
    reference dry RCE.
-4. Implement constrained backward Euler, verify first-order timestep convergence,
-   and compare its trajectory with the explicit reference.
-5. Implement projected PTC with a complete finite-difference Jacobian and verify
+4. Implement projected PTC with a complete finite-difference Jacobian and verify
    agreement with explicit adjustment.
+5. Compare projected PTC directly with the existing active-set Newton RCE solver
+   over difficult initial profiles and changing convective-zone structures.
 6. Substitute frozen-opacity `radiate` derivatives and confirm that converged full
    residuals and profiles are unchanged.
 7. Add Jacobian lagging, refresh logic, and active-set-aware globalization; compare
    work in full opacity updates, fast `radiate` calls, and factorizations.
-8. Repeat over vertical resolution, initial profiles, optical depths, stellar flux,
-   and surface heat capacity.
-9. Retain the smooth hybrid path for comparison and verify its convergence toward
-   exact adjustment as its lapse tolerance is tightened.
+8. For every intended time-dependent application, compare explicit adjustment at
+   a fixed end time with a timestep-refined reference. Implement optimized
+   constrained implicit integration only if stability is materially more
+   restrictive than accuracy.
+9. Repeat over vertical resolution, initial profiles, optical depths, stellar flux,
+   surface heat capacity, and deep gas-giant pressure ranges. Retain the smooth
+   hybrid path only as a finite-rate comparison.
 10. Design and unit-test a conservative moist block adjustment before coupling it
-    to the implicit and projected-PTC methods.
+    to explicit, constrained-implicit, or projected-PTC evolution.
 
 ## Present conclusion
 
-The smooth conservative ODE remains a viable formulation, especially when a
-finite-rate differentiable closure is desirable. Hybrid $K$ continuation is its
-most useful controller because it avoids both arbitrary initial stiffness and
-unrestricted radiative superadiabaticity.
+The main modeling decision is whether convection is intended to have a resolved
+finite timescale. If it is, the smooth conservative flux is a viable differentiable
+closure and hybrid $K$ continuation is its most useful controller. If convection
+is instead assumed to adjust instantaneously, finite-$K$ evolution is an indirect
+penalty approximation: it requires a strength parameter, leaves residual
+superadiabaticity, and becomes stiff as exact neutrality is approached. Weighted
+PAVA is then the cleaner dry-convection operator.
 
-For exact dry convective neutrality, weighted PAVA is cleaner: it removes
-$K_{\mathrm{conv}}$, conserves energy to roundoff, and exposes the problem as a
-well-defined projection/complementarity system. Explicit adjustment is the
-simplest reference implementation, constrained backward Euler is the strongest
-time-accurate formulation tested, and PTC on the projected residual is the most
-promising fast steady solver. The latter used roughly 18 times fewer RT calls than
-the conservative explicit run despite rebuilding every finite-difference Jacobian.
+For steady dry RCE, projected PTC is the leading method from this study. It solves
+the PAVA fixed point directly and avoids waiting for slow physical modes. In the
+default toy it used roughly 18 times fewer full RT evaluations than conservative
+explicit relaxation even though every projected Jacobian was rebuilt with forward
+differences. A production implementation should combine it with frozen-opacity
+radiative derivatives, analytical PAVA block derivatives, Jacobian reuse, and
+active-set-aware globalization. Its superiority is well supported by the toy but
+must still be tested against the existing active-set Newton solver under realistic
+opacity, composition, and convective-zone changes.
 
-The next justified step is therefore a dry production-RT comparison of all three
-exact formulations, with constrained backward Euler used selectively when a
-physical-time trajectory matters. Moist convection should follow only after the
-moist conservation and phase-equilibrium problem has been specified as carefully
-as the dry projection used here.
+For time-accurate evolution, explicit radiation followed by PAVA is the current
+recommendation. In the fixed-time benchmark it reached essentially the same
+accuracy as constrained backward Euler in 100 versus 131 accepted macro-steps, and
+its one-RT-call steps made it vastly cheaper. This demonstrates that the gray toy
+is not strongly stability-limited over the tested trajectory.
+
+The constrained implicit method should not be discarded. Its present cost is
+dominated by an intentionally conservative first implementation: first-order
+backward Euler, three nonlinear solves for step doubling, complete finite-difference
+Jacobians, and no reuse. BDF2 or TR-BDF2, an analytical generalized derivative of
+PAVA, lagged radiative Jacobians, and factorization reuse could reduce its cost by
+orders of magnitude. It becomes the more plausible time-accurate choice when a
+problem—potentially a deep gas giant—has fast radiative modes that constrain
+explicit stability far more strongly than the desired temporal accuracy. The jury
+therefore remains open for production atmospheres, and the fixed-time benchmark is
+the appropriate decision test.
+
+The practical hierarchy is:
+
+1. use projected PTC as the leading dry steady-state candidate;
+2. use explicit adjustment as the time-accurate baseline and correctness
+   reference;
+3. optimize constrained implicit integration only where measured stiffness or
+   robustness requirements justify it; and
+4. retain smooth finite-$K$ convection when finite-rate convection is the intended
+   closure rather than an approximation to instantaneous adjustment.
+
+Moist convection is a separate unresolved problem. These recommendations can be
+extended only after a unique, conservative moist adjustment map has specified
+water conservation, latent heating, phase equilibrium, condensate retention or
+rainout, and surface volatile exchange.
