@@ -518,11 +518,98 @@ continuous and piecewise differentiable; active-set changes make it semismooth
 rather than globally smooth. Candidate acceptance is therefore relaxed modestly
 when the mixed-block structure changes.
 
-The default $\alpha=10^4$ s worked well. Values from approximately $3\times10^3$
-to $3\times10^5$ s gave the same 31-step convergence in the tested 40-layer
-problem. Much smaller values can interact poorly with the toy's simple active-set
-acceptance logic. A production implementation should scale this residual and use a
-proper semismooth line search or trust-region strategy.
+The PTC pseudo-timestep $\Delta\tau$ and the projection time $\alpha$ have distinct
+roles. The former globalizes the nonlinear solve. The latter scales the natural
+residual and influences which convective constraints become active in the
+radiative trial state. They should not be increased together as though they were
+the same continuation parameter.
+
+### Automatic selection of the projection time
+
+The code now chooses one $\alpha$ from the initially projected profile and holds
+it fixed for the complete PTC solve. The default rule limits the largest relative
+unconstrained radiative trial change:
+
+$$
+\alpha
+=\frac{\eta}{\displaystyle\max_i
+\left(
+\frac{|f_{\mathrm{rad},i}|}{\max(|T_i|,T_{\mathrm{floor}})}
+\right)},
+$$
+
+with $\eta=5\times10^{-3}$ and $T_{\mathrm{floor}}=100$ K. Thus, the initial
+radiative trial changes no component by more than approximately $0.5\%$ in the
+scaled norm. A separate cooling bound keeps the trial state conservatively above
+50 K. The command-line option `--projection-relative-change` changes $\eta$;
+providing `--projection-time` bypasses automatic selection.
+
+It is important to freeze $\alpha$ while constructing and using a Jacobian.
+Changing it every accepted PTC step would change the nonlinear residual at the
+same time that the pseudo-timestep and active set are changing. A production
+solver could change $\alpha$ only on a controlled restart, invalidating the old
+Jacobian, and should freeze it completely near convergence.
+
+For the default 40-layer problem the rule selects
+$\alpha=3.0212\times10^4$ s. It converges in 31 accepted steps with no rejections,
+the same performance as the former fixed $10^4$ s value. The two final profiles
+differ by only $4.4\times10^{-7}$ K. Targets from $10^{-3}$ through
+$5\times10^{-2}$ all required 31 steps; the deliberately small $10^{-4}$ target
+required 36 steps. Grid tests with 8, 20, and 80 layers and additional thin-gray,
+thick-gray, high-forcing, and low-$c_p$ cases also converged without manual
+selection.
+
+After convergence the code reevaluates the same state at $\alpha/10$, $\alpha$,
+and $10\alpha$. In the default case all three checks have the same convective
+block, maximum flux imbalance $6.60\times10^{-8}$ W m$^{-2}$, and maximum natural
+residual $8.37\times10^{-14}$ K s$^{-1}$. This is a useful production diagnostic:
+for an exact dry convex projection, the converged complementarity state should not
+depend on a positive scalar $\alpha$.
+
+The tests also expose an important limitation. An artificial case with
+$c_p=4000$ J kg$^{-1}$ K$^{-1}$ fails with the default automatically selected
+$\alpha\simeq8.0\times10^4$ s under the toy's simple active-set acceptance rule,
+whereas a $2\%$ target selects $\alpha\simeq3.2\times10^5$ s and converges in 32
+steps. Dependence is nonmonotonic: making $\alpha$ smaller does not necessarily
+repair convergence. The relative-change rule is therefore a good initial scaling,
+not yet a production-grade globalization method. A robust implementation should
+combine it with a semismooth line search or trust region and permit a controlled
+restart with a larger or smaller $\alpha$ after genuine active-set stagnation.
+
+### Longer-term option: metric preconditioning
+
+A single scalar $\alpha$ asks every layer and the surface to use the same scaling
+time. That may be inadequate for a real column spanning many orders of magnitude
+in pressure, heat capacity, and radiative timescale. The mathematically clean
+generalization is a positive-definite scaling operator $H$:
+
+$$
+\mathbf G_H(\mathbf T)
+=H^{-1}\left\{
+P_H[\mathbf T+H\mathbf f_{\mathrm{rad}}(\mathbf T)]-\mathbf T
+\right\},
+$$
+
+where $P_H$ is the convective projection in the corresponding $H^{-1}$ metric.
+The diagonal entries of $H$ could represent layer-dependent temperature or
+radiative-timescale scaling, preventing one fast, low-mass upper layer from
+forcing an unhelpfully small scalar $\alpha$ for the entire atmosphere.
+
+The matching metric is essential. Simply using unrelated layerwise values
+$\alpha_i$ inside the trial state while retaining the original energy-weighted
+PAVA projection can change the fixed-point/complementarity problem and therefore
+the climate solution. Metric preconditioning must be derived together with the
+projection and its conservation constraints, then checked for fixed-point
+equivalence, idempotence, and energy conservation.
+
+It is not worth adding this complexity to the toy yet. Scalar automatic selection
+has a broad successful plateau in the default and most perturbed cases, while the
+high-$c_p$ failure is at least partly caused by the deliberately simple semismooth
+globalization. The next priority should be a production-quality active-set-aware
+line search or trust region and tests with real RT. Metric preconditioning becomes
+worth considering if those tests show that a few fast layers repeatedly dictate
+$\alpha$, make the projected Jacobian poorly conditioned, or cause scalar-alpha
+restarts across otherwise reasonable atmospheric types.
 
 ### Why an implicit radiative step followed by projection is not enough
 
@@ -697,7 +784,14 @@ convergence.
    RCE in this toy.
 9. An implicit radiative correction followed by projection is not equivalent to
    solving the projected steady problem.
-10. Neither the smooth nor exact dry formulation in this script yet solves moist
+10. Scaling $\alpha$ from a target relative radiative trial change removes manual
+    selection in the tested baseline and most perturbed cases, but does not replace
+    semismooth globalization; the high-$c_p$ counterexample demonstrates that its
+    convergence behavior can be nonmonotonic.
+11. Layer-dependent metric preconditioning is a plausible response to extreme
+    timescale separation, but must be derived with a matching projection metric to
+    preserve the intended complementarity equilibrium.
+12. Neither the smooth nor exact dry formulation in this script yet solves moist
    convection.
 
 ## Moving to production radiative transfer
@@ -810,6 +904,12 @@ convergence tests should include:
 A trust-region or line-search merit function should account for all of these rather
 than relying on an unweighted tendency norm.
 
+For projected PTC, production diagnostics should additionally record the selected
+$\alpha$, the scaled radiative trial displacement, active-set changes, and the
+natural residual evaluated at nearby scalar values. Agreement at $\alpha/10$,
+$\alpha$, and $10\alpha$ is a direct check that numerical projection details have
+not introduced an unwanted scaling dependence.
+
 ## Extension to moist atmospheres
 
 Nothing in the toy yet establishes a self-consistent moist lapse rate. The dry
@@ -887,9 +987,13 @@ default toy it used roughly 18 times fewer full RT evaluations than conservative
 explicit relaxation even though every projected Jacobian was rebuilt with forward
 differences. A production implementation should combine it with frozen-opacity
 radiative derivatives, analytical PAVA block derivatives, Jacobian reuse, and
-active-set-aware globalization. Its superiority is well supported by the toy but
+active-set-aware globalization. Automatic scalar-$\alpha$ selection is a useful
+default, but the high-$c_p$ experiment shows that restart logic or better
+globalization is still required. Its superiority is well supported by the toy but
 must still be tested against the existing active-set Newton solver under realistic
-opacity, composition, and convective-zone changes.
+opacity, composition, and convective-zone changes. Metric preconditioning should
+remain a second-stage optimization unless real RT demonstrates that scalar scaling
+is a persistent limitation.
 
 For time-accurate evolution, explicit radiation followed by PAVA is the current
 recommendation. In the fixed-time benchmark it reached essentially the same

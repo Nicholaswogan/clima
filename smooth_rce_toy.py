@@ -496,6 +496,103 @@ class ProjectedSolveResult:
     simulated_time: float = 0.0
     final_timestep: float = 0.0
     max_estimated_local_error: float = 0.0
+    projection_time: float = 0.0
+    projection_time_automatic: bool = False
+    initial_projection_max_relative_change: float = 0.0
+    alpha_checks: tuple[tuple[float, float, float, int], ...] = ()
+
+
+def select_projection_time(
+    model: Model,
+    state: np.ndarray,
+    *,
+    target_relative_change: float = 5.0e-3,
+    temperature_scale_floor: float = 100.0,
+    minimum_trial_temperature: float = 50.0,
+    cooling_safety_factor: float = 0.5,
+    projection_time_min: float = 1.0e-6,
+    projection_time_max: float = 1.0e12,
+) -> tuple[float, float]:
+    """Choose alpha from a bounded relative radiative trial displacement.
+
+    The returned scalar is intended to remain fixed during a projected-PTC
+    solve. Its unconstrained trial state satisfies a target bound on
+    ``abs(alpha*f_rad)/max(abs(T), temperature_scale_floor)`` and a more
+    conservative positivity bound in cooling cells.
+    """
+
+    if target_relative_change <= 0.0:
+        raise ValueError("target_relative_change must be positive")
+    if temperature_scale_floor <= 0.0:
+        raise ValueError("temperature_scale_floor must be positive")
+    if not 0.0 < cooling_safety_factor <= 1.0:
+        raise ValueError("cooling_safety_factor must be in (0, 1]")
+    if not 0.0 < projection_time_min <= projection_time_max:
+        raise ValueError("Require 0 < projection_time_min <= projection_time_max")
+
+    radiative_tendency = evaluate(model, state, 0.0)["tendency"]
+    temperature_scale = np.maximum(np.abs(state), temperature_scale_floor)
+    maximum_scaled_rate = float(
+        np.max(np.abs(radiative_tendency) / temperature_scale)
+    )
+    if maximum_scaled_rate == 0.0:
+        projection_time = projection_time_max
+    else:
+        projection_time = target_relative_change / maximum_scaled_rate
+
+    cooling = radiative_tendency < 0.0
+    if np.any(cooling):
+        temperature_margin = state[cooling] - minimum_trial_temperature
+        if np.any(temperature_margin <= 0.0):
+            raise ValueError(
+                "State is already below the minimum projection temperature"
+            )
+        cooling_limit = cooling_safety_factor * float(
+            np.min(temperature_margin / (-radiative_tendency[cooling]))
+        )
+        projection_time = min(projection_time, cooling_limit)
+
+    projection_time = float(
+        np.clip(projection_time, projection_time_min, projection_time_max)
+    )
+    maximum_relative_change = float(
+        np.max(
+            np.abs(projection_time * radiative_tendency)
+            / temperature_scale
+        )
+    )
+    return projection_time, maximum_relative_change
+
+
+def projection_time_invariance_checks(
+    model: Model,
+    state: np.ndarray,
+    projection_time: float,
+    factors: tuple[float, ...] = (0.1, 1.0, 10.0),
+) -> tuple[tuple[float, float, float, int], ...]:
+    """Evaluate a converged state using nearby natural-residual scalings.
+
+    Each entry contains ``(factor, max_abs_G, max_flux_error, block_count)``.
+    Invalid trial states are represented by infinite errors and ``-1`` blocks.
+    """
+
+    checks: list[tuple[float, float, float, int]] = []
+    for factor in factors:
+        try:
+            residual, diagnostics, blocks, _ = projected_natural_residual(
+                model, state, factor * projection_time
+            )
+            checks.append(
+                (
+                    factor,
+                    float(np.max(np.abs(residual))),
+                    float(np.max(np.abs(diagnostics["imbalance"]))),
+                    len(blocks),
+                )
+            )
+        except ValueError:
+            checks.append((factor, np.inf, np.inf, -1))
+    return tuple(checks)
 
 
 def solve_ptc(
@@ -1481,7 +1578,8 @@ def solve_projected_ptc(
     model: Model,
     initial_temperature: np.ndarray,
     *,
-    projection_time: float = 1.0e4,
+    projection_time: float | None = None,
+    projection_relative_change: float = 5.0e-3,
     flux_tolerance: float = 1.0e-5,
     max_steps: int = 300,
     dt_initial: float = 100.0,
@@ -1500,6 +1598,30 @@ def solve_projected_ptc(
         model, state[:-1]
     )
     state[:-1] = adjusted
+    projection_time_automatic = projection_time is None
+    if projection_time_automatic:
+        projection_time, initial_relative_change = select_projection_time(
+            model,
+            state,
+            target_relative_change=projection_relative_change,
+        )
+    else:
+        if projection_time <= 0.0:
+            raise ValueError("projection_time must be positive")
+        radiative_tendency = evaluate(model, state, 0.0)["tendency"]
+        initial_relative_change = float(
+            np.max(
+                np.abs(projection_time * radiative_tendency)
+                / np.maximum(np.abs(state), 100.0)
+            )
+        )
+    if verbose:
+        selection = "automatic" if projection_time_automatic else "fixed"
+        print(
+            f"Using {selection} alpha = {projection_time:.6e} s "
+            f"(initial max relative radiative trial change "
+            f"{initial_relative_change:.3e})."
+        )
     residual, diagnostics, mixed_blocks, energy_error = (
         projected_natural_residual(model, state, projection_time)
     )
@@ -1535,11 +1657,26 @@ def solve_projected_ptc(
             )
 
         if max_flux_error < flux_tolerance and max_residual < 1.0e-10:
+            alpha_checks = projection_time_invariance_checks(
+                model, state, projection_time
+            )
             if verbose:
                 print(
                     f"Converged in {step_number} accepted projected PTC steps "
                     f"({rejected} rejected)."
                 )
+                print("Alpha-invariance checks at the converged state:")
+                print(
+                    f"{'factor':>8s} {'alpha [s]':>12s} "
+                    f"{'max |G| [K/s]':>16s} "
+                    f"{'max |dF| [W/m2]':>18s} {'blocks':>8s}"
+                )
+                for factor, check_residual, check_flux, block_count in alpha_checks:
+                    print(
+                        f"{factor:8.1g} {factor*projection_time:12.4e} "
+                        f"{check_residual:16.6e} {check_flux:18.6e} "
+                        f"{block_count:8d}"
+                    )
             result = PTCResult(
                 state,
                 diagnostics,
@@ -1554,6 +1691,10 @@ def solve_projected_ptc(
                 max_energy_error,
                 max_relative_energy_error,
                 radiative_evaluations,
+                projection_time=projection_time,
+                projection_time_automatic=projection_time_automatic,
+                initial_projection_max_relative_change=initial_relative_change,
+                alpha_checks=alpha_checks,
             )
 
         if step_number == max_steps:
@@ -1689,6 +1830,9 @@ def solve_projected_ptc(
         max_energy_error,
         max_relative_energy_error,
         radiative_evaluations,
+        projection_time=projection_time,
+        projection_time_automatic=projection_time_automatic,
+        initial_projection_max_relative_change=initial_relative_change,
     )
 
 
@@ -2426,6 +2570,23 @@ def print_projected_summary(
         "  max relative energy error:  "
         f"{projected.max_projection_relative_energy_error:.6e}"
     )
+    if projected.projection_time > 0.0:
+        selection = "automatic" if projected.projection_time_automatic else "fixed"
+        print(
+            f"  natural-residual alpha:     {projected.projection_time:.6e} s "
+            f"({selection})"
+        )
+        print(
+            "  initial max relative trial: "
+            f"{projected.initial_projection_max_relative_change:.6e}"
+        )
+    if projected.alpha_checks:
+        print("  converged alpha checks:")
+        for factor, max_residual, max_flux_error, block_count in projected.alpha_checks:
+            print(
+                f"    {factor:4.1g} alpha: max|G|={max_residual:.3e} K/s, "
+                f"max|dF|={max_flux_error:.3e} W/m2, blocks={block_count}"
+            )
     if projected.nonlinear_iterations > 0:
         print(
             "  nonlinear iterations:      "
@@ -2652,10 +2813,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--projection-time",
         type=float,
-        default=1.0e4,
+        default=None,
         help=(
             "scaling time in the projected natural residual, in seconds "
-            "(default: 1e4)"
+            "(default: choose automatically from the initial radiative tendency)"
+        ),
+    )
+    parser.add_argument(
+        "--projection-relative-change",
+        type=float,
+        default=5.0e-3,
+        help=(
+            "target maximum relative radiative trial change used to choose "
+            "alpha automatically (default: 5e-3)"
         ),
     )
     parser.add_argument(
@@ -2805,6 +2975,7 @@ def main() -> int:
             model,
             initial,
             projection_time=args.projection_time,
+            projection_relative_change=args.projection_relative_change,
             verbose=not args.quiet,
         )
         convective_result = projected_result.result
