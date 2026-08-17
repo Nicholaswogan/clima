@@ -53,6 +53,18 @@ For terminal-only runs, add `--no-plot`. The available modes are:
 | `projected-implicit` | Exact dry adjustment | Constrained backward Euler with step doubling |
 | `projected` | Exact dry adjustment | PTC on a projected natural residual |
 
+An apples-to-apples transient benchmark integrates the exact-adjustment methods
+from the same initial state to the same physical end time:
+
+```bash
+python smooth_rce_toy.py --time-benchmark --no-plot
+```
+
+It compares fixed-step explicit runs and error-controlled constrained backward
+Euler against a timestep-refined explicit reference. The benchmark end time and
+reference timestep are controlled by `--benchmark-end-time` and
+`--benchmark-reference-dt`.
+
 Important controls are:
 
 ```text
@@ -69,6 +81,9 @@ Important controls are:
 --implicit-temperature-tolerance DTEMP
 --implicit-flux-tolerance DFLUX
 --implicit-max-steps NSTEPS
+--time-benchmark
+--benchmark-end-time TEND
+--benchmark-reference-dt DTREF
 ```
 
 `--k-conv` remains an alias for `--k-conv-initial`.
@@ -577,6 +592,39 @@ while the fastest stable timestep lies close to a problem-dependent stability
 boundary. The final slow convergence came mainly from an optically thin upper-layer
 mode that remained after the surface and convective region appeared equilibrated.
 
+### Fixed-time apples-to-apples comparison
+
+The `--time-benchmark` calculation removes equilibrium stopping criteria from the
+comparison. Every candidate starts from the same projected profile and ends at
+$t=10^8$ s. The reference is projected forward Euler with $\Delta t=1.25\times
+10^4$ s. Comparing it with $\Delta t=2.5\times10^4$ s changes the maximum
+atmospheric temperature by only $2.22\times10^{-3}$ K, comfortably below the
+candidate errors.
+
+| Method and control | Steps | Full RT evaluations | Maximum atmospheric error [K] | Atmospheric RMS error [K] | Surface error [K] |
+|---|---:|---:|---:|---:|---:|
+| Explicit, $\Delta t=2.5\times10^5$ s | 400 | 401 | 0.0423 | 0.00481 | 0.00339 |
+| Explicit, $\Delta t=5\times10^5$ s | 200 | 201 | 0.0872 | 0.00944 | 0.00585 |
+| Explicit, $\Delta t=10^6$ s | 100 | 101 | 0.178 | 0.0178 | 0.00688 |
+| Explicit, $\Delta t=2\times10^6$ s | 50 | 51 | 0.379 | 0.0610 | 0.0590 |
+| Implicit, $\epsilon_T=0.2$ K | 49 | 15,653 | 0.510 | 0.118 | 0.135 |
+| Implicit, $\epsilon_T=0.05$ K | 87 | 28,279 | 0.277 | 0.0640 | 0.0734 |
+| Implicit, $\epsilon_T=0.02$ K | 131 | 38,325 | 0.175 | 0.0401 | 0.0459 |
+
+At nearly identical maximum atmospheric error, explicit $\Delta t=10^6$ s and
+implicit $\epsilon_T=0.02$ K take 100 and 131 accepted macro-steps, respectively.
+The current implicit code is vastly more expensive because each macro-step uses a
+full step plus two half steps, each nonlinear iteration rebuilds a dense
+finite-difference Jacobian, and rejected attempts repeat that work.
+
+More importantly, the comparable step counts show that this particular toy
+trajectory does not yet exhibit a large separation between the explicit stability
+limit and the timestep required for accuracy. An optimized BDF2 or TR-BDF2 method
+could still become competitive by reducing temporal error per step, using the
+analytical block derivative of PAVA, and reusing radiative Jacobians. This test does
+not support replacing the simple explicit reference yet; it supplies the baseline
+against which those optimizations must demonstrate an advantage.
+
 ### Conservation and resolution
 
 Random unstable profiles at 8, 20, 40, and 80 layers were projected to machine
@@ -612,11 +660,14 @@ convergence.
 6. Constrained backward Euler removes the explicit stability restriction while
    preserving a first-order physical-time trajectory, but does not accelerate
    genuinely slow radiative modes.
-7. PTC on the projected residual is substantially more RT-efficient for steady
+7. In the present fixed-time benchmark, explicit stability is not substantially
+   more restrictive than accuracy, so the unoptimized implicit method has no
+   efficiency advantage.
+8. PTC on the projected residual is substantially more RT-efficient for steady
    RCE in this toy.
-8. An implicit radiative correction followed by projection is not equivalent to
+9. An implicit radiative correction followed by projection is not equivalent to
    solving the projected steady problem.
-9. Neither the smooth nor exact dry formulation in this script yet solves moist
+10. Neither the smooth nor exact dry formulation in this script yet solves moist
    convection.
 
 ## Moving to production radiative transfer

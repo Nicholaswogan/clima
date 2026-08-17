@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 
@@ -990,6 +991,7 @@ def solve_projected_implicit(
     dt_max: float = 1.0e12,
     temperature_tolerance: float = 2.0e-2,
     nonlinear_tolerance: float = 1.0e-8,
+    end_time: float | None = None,
     verbose: bool = True,
 ) -> ProjectedSolveResult:
     """Integrate exact dry adjustment with constrained backward Euler.
@@ -1011,6 +1013,8 @@ def solve_projected_implicit(
         raise ValueError("max_steps must be positive")
     if not 0.0 < dt_initial <= dt_max:
         raise ValueError("Require 0 < dt_initial <= dt_max")
+    if end_time is not None and end_time <= 0.0:
+        raise ValueError("end_time must be positive")
 
     state = np.asarray(initial_temperature, dtype=float).copy()
     if state.shape != (model.nlev + 1,):
@@ -1050,6 +1054,36 @@ def solve_projected_implicit(
                 f"{max_flux_error:18.6e}"
             )
 
+        reached_end_time = end_time is not None and simulated_time >= (
+            end_time
+            - 16.0 * np.finfo(float).eps * max(1.0, abs(end_time))
+        )
+        if reached_end_time:
+            if verbose:
+                print(
+                    f"Reached t = {simulated_time:.6e} s in {step_number} "
+                    f"constrained backward-Euler steps ({rejected} rejected)."
+                )
+            result = PTCResult(
+                state,
+                diagnostics,
+                step_number,
+                jacobian_evaluations,
+                rejected,
+                True,
+            )
+            return ProjectedSolveResult(
+                result,
+                projection_evaluations,
+                max_energy_error,
+                max_relative_energy_error,
+                radiative_evaluations,
+                nonlinear_iterations,
+                simulated_time,
+                dt,
+                max_estimated_error,
+            )
+
         # A flux tolerance implies a looser tendency tolerance in layers with
         # small heat capacity. Do not demand a temporal stopping criterion that
         # is inconsistent with the requested finite-volume flux balance.
@@ -1057,7 +1091,7 @@ def solve_projected_implicit(
             tendency_tolerance,
             flux_tolerance / float(np.min(model.heat_capacity)),
         )
-        if (
+        if end_time is None and (
             max_flux_error < flux_tolerance
             and last_rate < effective_tendency_tolerance
         ):
@@ -1087,6 +1121,9 @@ def solve_projected_implicit(
             )
         if step_number == max_steps:
             break
+
+        if end_time is not None:
+            dt = min(dt, end_time - simulated_time)
 
         accepted = False
         for _ in range(20):
@@ -1209,6 +1246,235 @@ def solve_projected_implicit(
         dt,
         max_estimated_error,
     )
+
+
+def integrate_projected_explicit_fixed_time(
+    model: Model,
+    initial_temperature: np.ndarray,
+    *,
+    end_time: float,
+    dt: float,
+) -> ProjectedSolveResult:
+    """Integrate projected forward Euler to an exact physical end time."""
+
+    if end_time <= 0.0 or dt <= 0.0:
+        raise ValueError("end_time and dt must be positive")
+    state = np.asarray(initial_temperature, dtype=float).copy()
+    if state.shape != (model.nlev + 1,):
+        raise ValueError(f"Expected temperature shape {(model.nlev + 1,)}")
+
+    adjusted, mixed_blocks, initial_energy_error = dry_convective_projection(
+        model, state[:-1]
+    )
+    state[:-1] = adjusted
+    max_energy_error = initial_energy_error
+    max_relative_energy_error = 0.0
+    projection_evaluations = 1
+    radiative_evaluations = 0
+    simulated_time = 0.0
+    steps = 0
+
+    while simulated_time < end_time:
+        step_dt = min(dt, end_time - simulated_time)
+        radiative = evaluate(model, state, 0.0)
+        radiative_evaluations += 1
+        trial = state + step_dt * radiative["tendency"]
+        if (
+            np.any(~np.isfinite(trial))
+            or np.min(trial) < 50.0
+            or np.max(trial) > 1000.0
+        ):
+            raise RuntimeError(
+                f"Projected explicit integration became invalid at "
+                f"t={simulated_time:.6e} s with dt={step_dt:.6e} s"
+            )
+        adjusted, mixed_blocks, energy_error = dry_convective_projection(
+            model, trial[:-1]
+        )
+        projection_evaluations += 1
+        trial[:-1] = adjusted
+        state = trial
+        simulated_time += step_dt
+        steps += 1
+        max_energy_error = max(max_energy_error, energy_error)
+        column_energy = abs(
+            float(np.dot(model.atmospheric_heat_capacity, state[:-1]))
+        )
+        max_relative_energy_error = max(
+            max_relative_energy_error,
+            energy_error / max(column_energy, np.finfo(float).tiny),
+        )
+
+    diagnostics = evaluate_projected_state(model, state, mixed_blocks)
+    radiative_evaluations += 1
+    result = PTCResult(state, diagnostics, steps, 0, 0, True)
+    return ProjectedSolveResult(
+        result,
+        projection_evaluations,
+        max_energy_error,
+        max_relative_energy_error,
+        radiative_evaluations,
+        simulated_time=simulated_time,
+        final_timestep=dt,
+    )
+
+
+@dataclass
+class TimeBenchmarkRow:
+    """Accuracy and work for one fixed-end-time projected integration."""
+
+    method: str
+    control: float
+    steps: int
+    radiative_evaluations: int
+    wall_time: float
+    max_atmospheric_error: float
+    rms_atmospheric_error: float
+    surface_error: float
+
+
+def _time_benchmark_errors(
+    model: Model,
+    state: np.ndarray,
+    reference: np.ndarray,
+) -> tuple[float, float, float]:
+    difference = state - reference
+    weights = model.atmospheric_heat_capacity
+    rms_atmospheric_error = float(
+        np.sqrt(np.dot(weights, difference[:-1] ** 2) / np.sum(weights))
+    )
+    return (
+        float(np.max(np.abs(difference[:-1]))),
+        rms_atmospheric_error,
+        float(abs(difference[-1])),
+    )
+
+
+def run_time_integration_benchmark(
+    model: Model,
+    initial_temperature: np.ndarray,
+    *,
+    end_time: float = 1.0e8,
+    reference_dt: float = 2.5e4,
+    explicit_timesteps: tuple[float, ...] = (2.5e5, 5.0e5, 1.0e6, 2.0e6),
+    implicit_tolerances: tuple[float, ...] = (2.0e-1, 5.0e-2, 2.0e-2),
+) -> list[TimeBenchmarkRow]:
+    """Compare projected explicit and implicit evolution at one physical time.
+
+    The reference is projected forward Euler with half ``reference_dt``. A run
+    at ``reference_dt`` reports the remaining reference discretization change.
+    Every candidate starts from the same dry-stable initial profile and reaches
+    exactly ``end_time``; no equilibrium convergence criterion is involved.
+    """
+
+    if end_time <= 0.0 or reference_dt <= 0.0:
+        raise ValueError("Benchmark times must be positive")
+
+    print(
+        f"\nFixed-time projected-integration benchmark: nlev={model.nlev}, "
+        f"t_end={end_time:.6e} s"
+    )
+    start = perf_counter()
+    coarse_reference = integrate_projected_explicit_fixed_time(
+        model,
+        initial_temperature,
+        end_time=end_time,
+        dt=reference_dt,
+    )
+    coarse_wall = perf_counter() - start
+    start = perf_counter()
+    fine_reference = integrate_projected_explicit_fixed_time(
+        model,
+        initial_temperature,
+        end_time=end_time,
+        dt=0.5 * reference_dt,
+    )
+    fine_wall = perf_counter() - start
+    reference_state = fine_reference.result.temperature
+    reference_change = _time_benchmark_errors(
+        model, coarse_reference.result.temperature, reference_state
+    )
+    print(
+        "Reference refinement, dt -> dt/2: "
+        f"max atmosphere={reference_change[0]:.3e} K, "
+        f"atmosphere RMS={reference_change[1]:.3e} K, "
+        f"surface={reference_change[2]:.3e} K"
+    )
+    print(
+        f"Reference work: {coarse_reference.radiative_evaluations} + "
+        f"{fine_reference.radiative_evaluations} RT evaluations, "
+        f"{coarse_wall + fine_wall:.3f} s"
+    )
+
+    rows: list[TimeBenchmarkRow] = []
+    for explicit_dt in explicit_timesteps:
+        start = perf_counter()
+        candidate = integrate_projected_explicit_fixed_time(
+            model,
+            initial_temperature,
+            end_time=end_time,
+            dt=explicit_dt,
+        )
+        wall_time = perf_counter() - start
+        errors = _time_benchmark_errors(
+            model, candidate.result.temperature, reference_state
+        )
+        rows.append(
+            TimeBenchmarkRow(
+                "explicit dt",
+                explicit_dt,
+                candidate.result.steps,
+                candidate.radiative_evaluations,
+                wall_time,
+                *errors,
+            )
+        )
+
+    for tolerance in implicit_tolerances:
+        start = perf_counter()
+        candidate = solve_projected_implicit(
+            model,
+            initial_temperature,
+            max_steps=5000,
+            dt_initial=min(100.0, end_time),
+            dt_max=end_time,
+            temperature_tolerance=tolerance,
+            nonlinear_tolerance=min(1.0e-10, 1.0e-3 * tolerance),
+            end_time=end_time,
+            verbose=False,
+        )
+        wall_time = perf_counter() - start
+        if not candidate.result.converged:
+            raise RuntimeError(
+                "Implicit benchmark failed to reach the requested end time"
+            )
+        errors = _time_benchmark_errors(
+            model, candidate.result.temperature, reference_state
+        )
+        rows.append(
+            TimeBenchmarkRow(
+                "implicit tol",
+                tolerance,
+                candidate.result.steps,
+                candidate.radiative_evaluations,
+                wall_time,
+                *errors,
+            )
+        )
+
+    print(
+        f"\n{'method':>14s} {'control':>12s} {'steps':>8s} {'RT evals':>10s} "
+        f"{'wall [s]':>10s} {'max atm [K]':>13s} {'rms atm [K]':>13s} "
+        f"{'surface [K]':>12s}"
+    )
+    for row in rows:
+        print(
+            f"{row.method:>14s} {row.control:12.4e} {row.steps:8d} "
+            f"{row.radiative_evaluations:10d} {row.wall_time:10.3f} "
+            f"{row.max_atmospheric_error:13.4e} "
+            f"{row.rms_atmospheric_error:13.4e} {row.surface_error:12.4e}"
+        )
+    return rows
 
 
 def solve_projected_ptc(
@@ -2305,6 +2571,29 @@ def parse_args() -> argparse.Namespace:
         "--no-plot", action="store_true", help="run without importing Matplotlib"
     )
     parser.add_argument(
+        "--time-benchmark",
+        action="store_true",
+        help=(
+            "compare explicit and constrained-implicit adjustment at one "
+            "physical end time, then exit"
+        ),
+    )
+    parser.add_argument(
+        "--benchmark-end-time",
+        type=float,
+        default=1.0e8,
+        help="physical end time for --time-benchmark, in seconds (default: 1e8)",
+    )
+    parser.add_argument(
+        "--benchmark-reference-dt",
+        type=float,
+        default=2.5e4,
+        help=(
+            "coarser of two explicit reference timesteps for --time-benchmark, "
+            "in seconds (default: 2.5e4)"
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("smooth_rce_toy.png"),
@@ -2433,7 +2722,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--quiet", action="store_true", help="suppress per-step PTC output"
+        "--quiet", action="store_true", help="suppress per-step solver output"
     )
     return parser.parse_args()
 
@@ -2442,6 +2731,15 @@ def main() -> int:
     args = parse_args()
     model = Model(nlev=args.nlev, k_conv=args.k_conv_initial)
     initial = initial_profile(model)
+
+    if args.time_benchmark:
+        run_time_integration_benchmark(
+            model,
+            initial,
+            end_time=args.benchmark_end_time,
+            reference_dt=args.benchmark_reference_dt,
+        )
+        return 0
 
     radiative_result: PTCResult | None = None
     if args.continuation_mode in ("staged", "coupled"):
