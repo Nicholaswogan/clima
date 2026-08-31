@@ -446,7 +446,7 @@ cdef class AdiabatClimate:
         An array describing a guess for the radiative vs. convective 
         regions of the atmosphere
     custom_dry_mix : dict of {str: ndarray[double,ndim=1]}, optional
-        Allows the user to specify vertically inhomogenous mixing ratios for dry species. 
+        Allows the user to specify vertically inhomogeneous mixing ratios for dry species.
         The dictionary must contain a "pressure" key specifying a pressure grid in dynes/cm^2.
         The other keys are mixing ratio profiles for dry species at each pressure point. 
         The total custom surface pressure is determined by:
@@ -780,7 +780,7 @@ cdef class AdiabatClimate:
   property convecting_with_below:
     """ndarray[bool,ndim=1], shape (nz). If True, then the layer below 
     is convecting with the current layer. Index 1 determines if the 
-    first atomspheric layer is convecting with the ground.
+    first atmospheric layer is convecting with the ground.
     """
     def __get__(self):
       cdef int dim1
