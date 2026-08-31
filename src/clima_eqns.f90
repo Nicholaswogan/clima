@@ -168,7 +168,7 @@ contains
     
   end function
   
-  ! coppied from Photochem
+  ! copied from Photochem
   pure subroutine vertical_grid(bottom, top, nz, z, dz)
     real(dp), intent(in) :: bottom, top
     integer, intent(in) :: nz

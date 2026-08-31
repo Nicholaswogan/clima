@@ -551,7 +551,7 @@ contains
     integer, intent(in) :: l !! Wavelength index
     real(dp), intent(out) :: tau(:) !! (nz), Optical depth.
     real(dp), intent(out) :: w0(:) !! (nz), Single scattering albedo
-    real(dp), intent(out) :: g0(:) !! (nz), Asymetry parameter
+    real(dp), intent(out) :: g0(:) !! (nz), Asymmetry parameter
 
     integer :: j
 

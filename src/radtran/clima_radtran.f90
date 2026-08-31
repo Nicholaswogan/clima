@@ -497,7 +497,7 @@ contains
     real(dp), intent(in) :: P(:) !! Array of pressures in dynes/cm^2. Must be decreasing.
     real(dp), intent(in) :: dtau_dz(:,:) !! (size(P),size(wv)), Optical depth per altitude (1/cm).
     real(dp), intent(in) :: w0(:,:) !! (size(P),size(wv)), Single scattering albedo
-    real(dp), intent(in) :: g0(:,:) !! (size(P),size(wv)), Asymetry parameter
+    real(dp), intent(in) :: g0(:,:) !! (size(P),size(wv)), Asymmetry parameter
     character(:), allocatable, intent(out) :: err
 
     call self%op%set_custom_optical_properties(wv, P, dtau_dz, w0, g0, err)
