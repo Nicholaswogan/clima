@@ -1,5 +1,8 @@
 # Clima
 
+> [!IMPORTANT]
+> **This standalone repository is no longer maintained.** Its source code has been incorporated directly into [Photochem](https://github.com/Nicholaswogan/photochem), where all future development, releases, documentation, and issue tracking will take place. Please use the version included with Photochem.
+
 `Clima` is a radiative transfer code and a climate model.
 
 ## Installation
